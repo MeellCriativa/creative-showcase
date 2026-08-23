@@ -16,12 +16,12 @@ export const Route = createFileRoute("/painel")({
   component: PainelLayout,
 });
 
-const tabs: { to: string; label: string; icon: typeof LayoutGrid; exact?: boolean }[] = [
+const tabs = [
   { to: "/painel", label: "Início", icon: LayoutGrid, exact: true },
-  { to: "/painel/produtos", label: "Produtos", icon: Package },
-  { to: "/painel/categorias", label: "Categorias", icon: Store },
-  { to: "/painel/personalizar", label: "Vitrine", icon: Palette },
-];
+  { to: "/painel/produtos", label: "Produtos", icon: Package, exact: false },
+  { to: "/painel/categorias", label: "Categorias", icon: Store, exact: false },
+  { to: "/painel/personalizar", label: "Vitrine", icon: Palette, exact: false },
+] as const;
 
 function PainelLayout() {
   const { session, loading } = useAuth();
