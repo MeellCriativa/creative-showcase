@@ -14,7 +14,149 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      catalogs: {
+        Row: {
+          accent_color: string
+          cover_url: string | null
+          created_at: string
+          id: string
+          logo_url: string | null
+          primary_color: string
+          slug: string
+          store_name: string
+          updated_at: string
+          user_id: string
+          whatsapp: string | null
+        }
+        Insert: {
+          accent_color?: string
+          cover_url?: string | null
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          primary_color?: string
+          slug: string
+          store_name: string
+          updated_at?: string
+          user_id: string
+          whatsapp?: string | null
+        }
+        Update: {
+          accent_color?: string
+          cover_url?: string | null
+          created_at?: string
+          id?: string
+          logo_url?: string | null
+          primary_color?: string
+          slug?: string
+          store_name?: string
+          updated_at?: string
+          user_id?: string
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      categories: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          id: string
+          name: string
+          position: number
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          id?: string
+          name: string
+          position?: number
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "categories_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          available: boolean
+          catalog_id: string
+          category_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          images: string[]
+          is_bestseller: boolean
+          is_new: boolean
+          name: string
+          position: number
+          price: number
+          sale_price: number | null
+          updated_at: string
+          variations: Json
+        }
+        Insert: {
+          available?: boolean
+          catalog_id: string
+          category_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          images?: string[]
+          is_bestseller?: boolean
+          is_new?: boolean
+          name: string
+          position?: number
+          price?: number
+          sale_price?: number | null
+          updated_at?: string
+          variations?: Json
+        }
+        Update: {
+          available?: boolean
+          catalog_id?: string
+          category_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          images?: string[]
+          is_bestseller?: boolean
+          is_new?: boolean
+          name?: string
+          position?: number
+          price?: number
+          sale_price?: number | null
+          updated_at?: string
+          variations?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
