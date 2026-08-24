@@ -39,8 +39,8 @@ type CartItem = {
   name: string;
   unitPrice: number;
   quantity: number;
-  variation?: string;
-  image?: string;
+  variation?: string | undefined;
+  image?: string | undefined;
 };
 
 const filters = ["Todos", "Novidades", "Mais vendidos", "Promoções"] as const;

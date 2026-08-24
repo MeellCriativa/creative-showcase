@@ -81,9 +81,9 @@ export async function uploadImage(file: File, userId: string) {
 
 export function buildWhatsappMessage(opts: {
   storeName: string;
-  items: { name: string; quantity: number; unitPrice: number; variation?: string }[];
+  items: { name: string; quantity: number; unitPrice: number; variation?: string | undefined }[];
   total: number;
-  note?: string;
+  note?: string | undefined;
 }) {
   const lines: string[] = ["Olá! Quero fazer este pedido:", ""];
   for (const item of opts.items) {
