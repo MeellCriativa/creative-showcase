@@ -15,6 +15,7 @@ import { Route as PainelRouteImport } from './routes/painel'
 import { Route as PainelIndexRouteImport } from './routes/painel.index'
 import { Route as PainelCategoriasRouteImport } from './routes/painel.categorias'
 import { Route as PainelPersonalizarRouteImport } from './routes/painel.personalizar'
+import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const PainelPersonalizarRoute = PainelPersonalizarRouteImport.update({
   path: '/personalizar',
   getParentRoute: () => PainelRoute,
 } as any)
+const PainelProdutosRoute = PainelProdutosRouteImport.update({
+  id: '/produtos',
+  path: '/produtos',
+  getParentRoute: () => PainelRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/painel': typeof PainelRouteWithChildren
   '/painel/categorias': typeof PainelCategoriasRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
+  '/painel/produtos': typeof PainelProdutosRoute
   '/painel/': typeof PainelIndexRoute
 }
 export interface FileRoutesByTo {
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/painel/categorias': typeof PainelCategoriasRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
+  '/painel/produtos': typeof PainelProdutosRoute
   '/painel': typeof PainelIndexRoute
 }
 export interface FileRoutesById {
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/painel': typeof PainelRouteWithChildren
   '/painel/categorias': typeof PainelCategoriasRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
+  '/painel/produtos': typeof PainelProdutosRoute
   '/painel/': typeof PainelIndexRoute
 }
 export interface FileRouteTypes {
@@ -79,9 +88,16 @@ export interface FileRouteTypes {
     | '/painel'
     | '/painel/categorias'
     | '/painel/personalizar'
+    | '/painel/produtos'
     | '/painel/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/painel/categorias' | '/painel/personalizar' | '/painel'
+  to:
+    | '/'
+    | '/auth'
+    | '/painel/categorias'
+    | '/painel/personalizar'
+    | '/painel/produtos'
+    | '/painel'
   id:
     | '__root__'
     | '/'
@@ -89,6 +105,7 @@ export interface FileRouteTypes {
     | '/painel'
     | '/painel/categorias'
     | '/painel/personalizar'
+    | '/painel/produtos'
     | '/painel/'
   fileRoutesById: FileRoutesById
 }
@@ -142,18 +159,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelPersonalizarRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/painel/produtos': {
+      id: '/painel/produtos'
+      path: '/produtos'
+      fullPath: '/painel/produtos'
+      preLoaderRoute: typeof PainelProdutosRouteImport
+      parentRoute: typeof PainelRoute
+    }
   }
 }
 
 interface PainelRouteChildren {
   PainelCategoriasRoute: typeof PainelCategoriasRoute
   PainelPersonalizarRoute: typeof PainelPersonalizarRoute
+  PainelProdutosRoute: typeof PainelProdutosRoute
   PainelIndexRoute: typeof PainelIndexRoute
 }
 
 const PainelRouteChildren: PainelRouteChildren = {
   PainelCategoriasRoute: PainelCategoriasRoute,
   PainelPersonalizarRoute: PainelPersonalizarRoute,
+  PainelProdutosRoute: PainelProdutosRoute,
   PainelIndexRoute: PainelIndexRoute,
 }
 
