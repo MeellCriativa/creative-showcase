@@ -30,7 +30,7 @@ export const Route = createFileRoute("/c/$slug")({
       },
     ],
   }),
-  component: PublicCatalog;
+  component: PublicCatalog,
 });
 
 type CartItem = {
