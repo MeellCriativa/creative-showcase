@@ -12,7 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as PainelRouteImport } from './routes/painel'
+import { Route as CSlugRouteImport } from './routes/c.$slug'
 import { Route as PainelIndexRouteImport } from './routes/painel.index'
+import { Route as PainelCategoriasRouteImport } from './routes/painel.categorias'
+import { Route as PainelPersonalizarRouteImport } from './routes/painel.personalizar'
+import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -29,9 +33,29 @@ const PainelRoute = PainelRouteImport.update({
   path: '/painel',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CSlugRoute = CSlugRouteImport.update({
+  id: '/c/$slug',
+  path: '/c/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PainelIndexRoute = PainelIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => PainelRoute,
+} as any)
+const PainelCategoriasRoute = PainelCategoriasRouteImport.update({
+  id: '/categorias',
+  path: '/categorias',
+  getParentRoute: () => PainelRoute,
+} as any)
+const PainelPersonalizarRoute = PainelPersonalizarRouteImport.update({
+  id: '/personalizar',
+  path: '/personalizar',
+  getParentRoute: () => PainelRoute,
+} as any)
+const PainelProdutosRoute = PainelProdutosRouteImport.update({
+  id: '/produtos',
+  path: '/produtos',
   getParentRoute: () => PainelRoute,
 } as any)
 
@@ -39,11 +63,19 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/painel': typeof PainelRouteWithChildren
+  '/c/$slug': typeof CSlugRoute
+  '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/personalizar': typeof PainelPersonalizarRoute
+  '/painel/produtos': typeof PainelProdutosRoute
   '/painel/': typeof PainelIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/c/$slug': typeof CSlugRoute
+  '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/personalizar': typeof PainelPersonalizarRoute
+  '/painel/produtos': typeof PainelProdutosRoute
   '/painel': typeof PainelIndexRoute
 }
 export interface FileRoutesById {
@@ -51,20 +83,49 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/painel': typeof PainelRouteWithChildren
+  '/c/$slug': typeof CSlugRoute
+  '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/personalizar': typeof PainelPersonalizarRoute
+  '/painel/produtos': typeof PainelProdutosRoute
   '/painel/': typeof PainelIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/painel' | '/painel/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/painel'
+    | '/c/$slug'
+    | '/painel/categorias'
+    | '/painel/personalizar'
+    | '/painel/produtos'
+    | '/painel/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/painel'
-  id: '__root__' | '/' | '/auth' | '/painel' | '/painel/'
+  to:
+    | '/'
+    | '/auth'
+    | '/c/$slug'
+    | '/painel/categorias'
+    | '/painel/personalizar'
+    | '/painel/produtos'
+    | '/painel'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/painel'
+    | '/c/$slug'
+    | '/painel/categorias'
+    | '/painel/personalizar'
+    | '/painel/produtos'
+    | '/painel/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   PainelRoute: typeof PainelRouteWithChildren
+  CSlugRoute: typeof CSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -90,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/c/$slug': {
+      id: '/c/$slug'
+      path: '/c/$slug'
+      fullPath: '/c/$slug'
+      preLoaderRoute: typeof CSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/painel/': {
       id: '/painel/'
       path: '/'
@@ -97,14 +165,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelIndexRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/painel/categorias': {
+      id: '/painel/categorias'
+      path: '/categorias'
+      fullPath: '/painel/categorias'
+      preLoaderRoute: typeof PainelCategoriasRouteImport
+      parentRoute: typeof PainelRoute
+    }
+    '/painel/personalizar': {
+      id: '/painel/personalizar'
+      path: '/personalizar'
+      fullPath: '/painel/personalizar'
+      preLoaderRoute: typeof PainelPersonalizarRouteImport
+      parentRoute: typeof PainelRoute
+    }
+    '/painel/produtos': {
+      id: '/painel/produtos'
+      path: '/produtos'
+      fullPath: '/painel/produtos'
+      preLoaderRoute: typeof PainelProdutosRouteImport
+      parentRoute: typeof PainelRoute
+    }
   }
 }
 
 interface PainelRouteChildren {
+  PainelCategoriasRoute: typeof PainelCategoriasRoute
+  PainelPersonalizarRoute: typeof PainelPersonalizarRoute
+  PainelProdutosRoute: typeof PainelProdutosRoute
   PainelIndexRoute: typeof PainelIndexRoute
 }
 
 const PainelRouteChildren: PainelRouteChildren = {
+  PainelCategoriasRoute: PainelCategoriasRoute,
+  PainelPersonalizarRoute: PainelPersonalizarRoute,
+  PainelProdutosRoute: PainelProdutosRoute,
   PainelIndexRoute: PainelIndexRoute,
 }
 
@@ -115,6 +210,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   PainelRoute: PainelRouteWithChildren,
+  CSlugRoute: CSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
