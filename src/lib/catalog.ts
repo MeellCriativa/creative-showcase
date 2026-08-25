@@ -44,6 +44,12 @@ export type Category = {
   position: number;
 };
 
+export type PriceOption = {
+  id: string;
+  label: string;
+  price: number;
+};
+
 export type Product = {
   id: string;
   catalog_id: string;
@@ -52,6 +58,7 @@ export type Product = {
   description: string | null;
   price: number;
   sale_price: number | null;
+  price_options: PriceOption[];
   images: string[];
   variations: VariationGroup[];
   available: boolean;

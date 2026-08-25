@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ImageUploader } from "@/components/ImageUploader";
 import { useAuth } from "@/hooks/useAuth";
 import { useCategories, useMyCatalog, useProducts } from "@/hooks/useCatalog";
-import { formatBRL, type Product, type VariationGroup } from "@/lib/catalog";
+import { formatBRL, type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/produtos")({
@@ -21,6 +21,7 @@ type Draft = {
   description: string;
   price: string;
   sale_price: string;
+  price_options: PriceOption[];
   category_id: string;
   images: string[];
   variations: VariationGroup[];
@@ -34,6 +35,7 @@ const emptyDraft: Draft = {
   description: "",
   price: "",
   sale_price: "",
+  price_options: [],
   category_id: "",
   images: [],
   variations: [],
@@ -79,6 +81,7 @@ function ProdutosPage() {
       description: product.description ?? "",
       price: String(product.price),
       sale_price: product.sale_price != null ? String(product.sale_price) : "",
+      price_options: product.price_options ?? [],
       category_id: product.category_id ?? "",
       images: product.images ?? [],
       variations: product.variations ?? [],
@@ -123,7 +126,11 @@ function ProdutosPage() {
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold text-foreground">{product.name}</p>
               <p className="text-sm text-muted-foreground">
-                {product.sale_price ? (
+                {product.price_options && product.price_options.length > 0 ? (
+                  <span className="font-semibold text-primary">
+                    {product.price_options.map((o) => formatBRL(o.price)).join(" / ")}
+                  </span>
+                ) : product.sale_price ? (
                   <>
                     <span className="line-through">{formatBRL(Number(product.price))}</span>{" "}
                     <span className="font-semibold text-primary">
@@ -236,6 +243,7 @@ function ProductEditor({
       description: draft.description.trim() || null,
       price: Number(draft.price.replace(",", ".")) || 0,
       sale_price: draft.sale_price ? Number(draft.sale_price.replace(",", ".")) : null,
+      price_options: draft.price_options.filter((o) => o.label.trim() && o.price > 0),
       category_id: draft.category_id || null,
       images: draft.images,
       variations: draft.variations.filter((v) => v.name.trim() && v.options.length),
@@ -244,8 +252,8 @@ function ProductEditor({
       is_bestseller: draft.is_bestseller,
     };
     const { error } = draft.id
-      ? await supabase.from("products").update(payload).eq("id", draft.id)
-      : await supabase.from("products").insert({ ...payload, position: nextPosition });
+      ? await supabase.from("products").update(payload as any).eq("id", draft.id)
+      : await supabase.from("products").insert({ ...payload, position: nextPosition } as any);
     setSaving(false);
     if (error) {
       toast.error("Não foi possível salvar o produto.");
@@ -316,6 +324,65 @@ function ProductEditor({
               onChange={(e) => set("sale_price", e.target.value)}
               className="input-base"
             />
+          </div>
+
+          <div className="rounded-2xl border border-border p-4">
+            <p className="text-sm font-semibold text-foreground">Valores do produto</p>
+            <p className="text-xs text-muted-foreground">
+              Adicione opções de preço (ex.: Mini R$25, Médio R$35, Grande R$50)
+            </p>
+            <div className="mt-3 space-y-2">
+              {draft.price_options.map((opt, index) => (
+                <div key={opt.id} className="flex items-center gap-2">
+                  <input
+                    placeholder="Nome (ex.: Mini)"
+                    value={opt.label}
+                    onChange={(e) => {
+                      const next = draft.price_options.map((o, i) =>
+                        i === index ? { ...o, label: e.target.value } : o,
+                      );
+                      set("price_options", next);
+                    }}
+                    className="input-base min-w-0 flex-1 py-2 text-sm"
+                  />
+                  <input
+                    inputMode="decimal"
+                    placeholder="Preço"
+                    value={opt.price === 0 ? "" : String(opt.price)}
+                    onChange={(e) => {
+                      const val = Number(e.target.value.replace(",", ".")) || 0;
+                      const next = draft.price_options.map((o, i) =>
+                        i === index ? { ...o, price: val } : o,
+                      );
+                      set("price_options", next);
+                    }}
+                    className="input-base w-24 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Remover valor"
+                    onClick={() =>
+                      set("price_options", draft.price_options.filter((_, i) => i !== index))
+                    }
+                    className="grid size-9 shrink-0 place-items-center rounded-xl border border-border text-destructive"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                set("price_options", [
+                  ...draft.price_options,
+                  { id: crypto.randomUUID(), label: "", price: 0 },
+                ])
+              }
+              className="mt-3 w-full rounded-xl border border-dashed border-border py-2.5 text-sm font-semibold text-muted-foreground"
+            >
+              + Adicionar valor
+            </button>
           </div>
 
           <select

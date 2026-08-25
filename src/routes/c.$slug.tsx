@@ -389,7 +389,13 @@ function PublicCatalog() {
               <div className="p-2">
                 <p className="line-clamp-2 text-xs font-semibold text-foreground">{product.name}</p>
                 <p className="mt-0.5 text-xs">
-                  {product.sale_price ? (
+                  {product.price_options && product.price_options.length > 0 ? (
+                    <span className="font-bold" style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}>
+                      {product.price_options.length === 1
+                        ? formatBRL(product.price_options[0]!.price)
+                        : `${formatBRL(Math.min(...product.price_options.map((o) => o.price)))} – ${formatBRL(Math.max(...product.price_options.map((o) => o.price)))}`}
+                    </span>
+                  ) : product.sale_price ? (
                     <>
                       <span className="text-xs text-muted-foreground line-through">
                         {formatBRL(Number(product.price))}
@@ -576,11 +582,17 @@ function ProductSheet({
 }) {
   const [quantity, setQuantity] = useState(1);
   const [choices, setChoices] = useState<Record<string, string>>({});
+  const [selectedPriceOption, setSelectedPriceOption] = useState<string | null>(null);
   const [imgIdx, setImgIdx] = useState(0);
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const price = finalPrice(product);
   const images = product.images ?? [];
+  const hasPriceOptions = (product.price_options?.length ?? 0) > 0;
+
+  const activePriceOption = hasPriceOptions
+    ? product.price_options.find((o) => o.id === selectedPriceOption) ?? null
+    : null;
+  const price = activePriceOption ? activePriceOption.price : finalPrice(product);
 
   function handleImgScroll() {
     const el = scrollRef.current;
@@ -590,13 +602,20 @@ function ProductSheet({
   }
 
   function handleAdd() {
+    if (hasPriceOptions && !activePriceOption) {
+      toast.error("Escolha uma opção de valor");
+      return;
+    }
     const missing = (product.variations ?? []).find((g) => g.options.length && !choices[g.name]);
     if (missing) {
       toast.error(`Escolha: ${missing.name}`);
       return;
     }
-    const variation = Object.entries(choices)
-      .map(([k, v]) => `${k}: ${v}`)
+    const variation = [
+      activePriceOption ? `Valor: ${activePriceOption.label}` : "",
+      ...Object.entries(choices).map(([k, v]) => `${k}: ${v}`),
+    ]
+      .filter(Boolean)
       .join(" | ");
     onAdd({
       key: `${product.id}-${variation}`,
@@ -662,7 +681,7 @@ function ProductSheet({
           <h2 className="text-xl font-bold text-foreground">{product.name}</h2>
           <p className="mt-1 text-lg font-bold" style={{ color: primary }}>
             {formatBRL(price)}
-            {product.sale_price != null && product.sale_price > 0 && (
+            {!activePriceOption && product.sale_price != null && product.sale_price > 0 && (
               <span className="ml-2 text-sm font-normal text-muted-foreground line-through">
                 {formatBRL(Number(product.price))}
               </span>
@@ -672,6 +691,31 @@ function ProductSheet({
             <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
               {product.description}
             </p>
+          )}
+
+          {hasPriceOptions && (
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-foreground">Escolha o valor</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {product.price_options.map((opt) => {
+                  const active = selectedPriceOption === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setSelectedPriceOption(opt.id)}
+                      className="rounded-full border px-4 py-2 text-sm font-medium"
+                      style={
+                        active
+                          ? { background: primary, color: "#fff", borderColor: primary }
+                          : { borderColor: "var(--color-border)" }
+                      }
+                    >
+                      {opt.label} — {formatBRL(opt.price)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
           {(product.variations ?? []).map((group) => (
