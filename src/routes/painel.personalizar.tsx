@@ -109,6 +109,7 @@ function PersonalizarPage() {
         image_url: url,
         href: null,
         position: prev.length,
+        object_position: "center",
       },
     ]);
   }
@@ -132,6 +133,10 @@ function PersonalizarPage() {
 
   function updateBannerHref(idx: number, href: string) {
     setBanners((prev) => prev.map((b, i) => (i === idx ? { ...b, href: href || null } : b)));
+  }
+
+  function updateBannerPosition(idx: number, objectPosition: string) {
+    setBanners((prev) => prev.map((b, i) => (i === idx ? { ...b, object_position: objectPosition } : b)));
   }
 
   async function save(e: React.FormEvent) {
@@ -204,7 +209,8 @@ function PersonalizarPage() {
           image_url: b.image_url,
           href: b.href || null,
           position: b.position,
-        })),
+          object_position: b.object_position ?? "center",
+        })) as any[],
         { onConflict: "id" },
       );
       if (bannerError) {
@@ -590,6 +596,29 @@ function PersonalizarPage() {
                     placeholder="Link opcional (https://...)"
                     className="input-base text-xs"
                   />
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-1">Posição da imagem</p>
+                    <div className="flex gap-1">
+                      {[
+                        { value: "top", label: "Topo" },
+                        { value: "center", label: "Centro" },
+                        { value: "bottom", label: "Baixo" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => updateBannerPosition(idx, opt.value)}
+                          className={`flex-1 rounded-lg border px-2 py-1 text-[10px] font-medium transition-colors ${
+                            (b.object_position ?? "center") === opt.value
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-border text-muted-foreground"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}

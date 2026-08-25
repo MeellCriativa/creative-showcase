@@ -294,7 +294,7 @@ function PublicCatalog() {
             style={{ justifyContent: logoJustify }}
           >
             <div
-              className={`${logoSizeClass} shrink-0 overflow-hidden rounded-2xl border-4 border-background bg-muted`}
+              className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
               style={{ backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}
             >
               {loadedCatalog.logo_url && (
@@ -364,7 +364,7 @@ function PublicCatalog() {
         })}
       </nav>
 
-      <section className="mt-5 grid grid-cols-2 gap-2.5 px-5">
+      <section className="mt-5 grid grid-cols-3 gap-2 px-5">
         {products.length === 0 && (
           <p className="col-span-2 rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             Nenhum produto nesta seção.
@@ -386,9 +386,9 @@ function PublicCatalog() {
                   />
                 )}
               </div>
-              <div className="p-2.5">
-                <p className="line-clamp-2 text-sm font-semibold text-foreground">{product.name}</p>
-                <p className="mt-1 text-sm">
+              <div className="p-2">
+                <p className="line-clamp-2 text-xs font-semibold text-foreground">{product.name}</p>
+                <p className="mt-0.5 text-xs">
                   {product.sale_price ? (
                     <>
                       <span className="text-xs text-muted-foreground line-through">
@@ -406,11 +406,11 @@ function PublicCatalog() {
                 </p>
               </div>
             </button>
-            <div className="px-2.5 pb-2.5">
+            <div className="px-2 pb-2">
               <button
                 disabled={!product.available}
                 onClick={() => setSelected(product)}
-                className="btn-shimmer btn-elevated w-full rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
+                className="btn-shimmer btn-elevated w-full rounded-lg py-1.5 text-xs font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
                 style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
               >
                 {product.available ? "+ Adicionar" : "Esgotado"}
@@ -462,7 +462,7 @@ function PublicCatalog() {
           href={whatsappLink(loadedCatalog.whatsapp, `Olá! Vim pelo catálogo ${loadedCatalog.store_name}`)}
           target="_blank"
           rel="noopener noreferrer"
-          className="whatsapp-float fixed bottom-6 left-6 z-40 grid size-14 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
+          className="whatsapp-float fixed bottom-6 right-6 z-40 grid size-14 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
           style={{ background: loadedCatalog.whatsapp_button_color ?? "#8b5cf6" }}
           aria-label="Falar no WhatsApp"
         >
@@ -531,6 +531,7 @@ function BannerCarousel({
                   src={b.image_url}
                   alt=""
                   className="h-48 w-full rounded-2xl object-cover"
+                  style={{ objectPosition: b.object_position ?? "center" }}
                 />
               </a>
             ) : (
@@ -538,6 +539,7 @@ function BannerCarousel({
                 src={b.image_url}
                 alt=""
                 className="h-48 w-full rounded-2xl object-cover"
+                style={{ objectPosition: b.object_position ?? "center" }}
               />
             )}
           </div>
@@ -979,9 +981,20 @@ function WelcomePage({
         </div>
       </header>
 
+      {/* ── Entrar button (primeiro) ── */}
+      <div className="mt-6 px-5">
+        <button
+          onClick={onEnter}
+          className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
+          style={{ background: primary }}
+        >
+          Entrar para olhar o catálogo
+        </button>
+      </div>
+
       {/* ── Instagram button ── */}
       {catalog.instagram_url && (
-        <div className="px-5 mt-4">
+        <div className="px-5 mt-3">
           <a
             href={catalog.instagram_url}
             target="_blank"
@@ -1144,17 +1157,6 @@ function WelcomePage({
           </div>
         </section>
       )}
-
-      {/* ── Entrar button ── */}
-      <div className="mt-8 px-5">
-        <button
-          onClick={onEnter}
-          className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
-          style={{ background: primary }}
-        >
-          Entrar para olhar o catálogo
-        </button>
-      </div>
 
       {/* ── WhatsApp floating (always on welcome) ── */}
       {catalog.whatsapp && (

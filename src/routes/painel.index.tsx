@@ -123,7 +123,15 @@ function PainelHome() {
 
   return (
     <div className="px-5 pb-10 pt-10">
-      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+      <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+        {catalog.logo_url && (
+          <img
+            src={catalog.logo_url}
+            alt={catalog.store_name}
+            className="size-12 shrink-0 rounded-full border-2 object-cover"
+            style={{ borderColor: catalog.primary_color ?? "#8b5cf6" }}
+          />
+        )}
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Painel da loja
@@ -140,10 +148,21 @@ function PainelHome() {
       </header>
 
       <section className="mt-6 rounded-3xl border border-border bg-card p-5">
-        <p className="text-sm font-semibold text-foreground">Link da minha loja</p>
-        <p className="mt-1 truncate rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
-          {link}
-        </p>
+        <div className="flex items-center gap-3">
+          {(catalog.cover_url || catalog.logo_url) && (
+            <img
+              src={catalog.cover_url || catalog.logo_url!}
+              alt={catalog.store_name}
+              className="size-14 shrink-0 rounded-xl object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">Link da minha loja</p>
+            <p className="mt-1 truncate rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+              {link}
+            </p>
+          </div>
+        </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             onClick={copyLink}

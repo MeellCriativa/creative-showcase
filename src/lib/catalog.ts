@@ -66,6 +66,7 @@ export type Banner = {
   image_url: string;
   href: string | null;
   position: number;
+  object_position?: string;
 };
 
 export type Order = {
