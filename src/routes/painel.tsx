@@ -22,7 +22,7 @@ const tabs = [
   { to: "/painel/categorias", label: "Categorias", icon: Store, exact: false },
   { to: "/painel/pedidos", label: "Pedidos", icon: ClipboardList, exact: false },
   { to: "/painel/personalizar", label: "Vitrine", icon: Palette, exact: false },
-  { to: "/painel/estatisticas", label: "Stats", icon: BarChart3, exact: false },
+  { to: "/painel/estatisticas", label: "Estatísticas", icon: BarChart3, exact: false },
 ] as const;
 
 function PainelLayout() {

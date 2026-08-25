@@ -262,7 +262,7 @@ function PublicCatalog() {
   } as React.CSSProperties;
 
   return (
-    <div className="app-shell pb-28" style={theme}>
+    <div className="app-shell pb-28" style={{ ...theme, backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}>
       <header className="relative">
         <div
           className="h-36 w-full bg-cover bg-center"
@@ -450,7 +450,7 @@ function PublicCatalog() {
           target="_blank"
           rel="noopener noreferrer"
           className="whatsapp-float fixed bottom-6 left-6 z-40 grid size-14 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
-          style={{ background: loadedCatalog.whatsapp_button_color ?? "#25d366" }}
+          style={{ background: loadedCatalog.whatsapp_button_color ?? "#8b5cf6" }}
           aria-label="Falar no WhatsApp"
         >
           <svg viewBox="0 0 24 24" fill="currentColor" className="size-7">

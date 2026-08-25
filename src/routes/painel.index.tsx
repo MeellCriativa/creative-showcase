@@ -140,7 +140,7 @@ function PainelHome() {
       </header>
 
       <section className="mt-6 rounded-3xl border border-border bg-card p-5">
-        <p className="text-sm font-semibold text-foreground">Link do seu catálogo</p>
+        <p className="text-sm font-semibold text-foreground">Link da minha loja</p>
         <p className="mt-1 truncate rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
           {link}
         </p>

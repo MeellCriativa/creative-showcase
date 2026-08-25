@@ -43,7 +43,7 @@ function PersonalizarPage() {
   const [logoSize, setLogoSize] = useState("medio");
   const [logoPosition, setLogoPosition] = useState("esquerda");
   const [cartStyle, setCartStyle] = useState("carrinho");
-  const [whatsappButtonColor, setWhatsappButtonColor] = useState("#25d366");
+  const [whatsappButtonColor, setWhatsappButtonColor] = useState("#8b5cf6");
   const [banners, setBanners] = useState<Banner[]>([]);
   const [bannerEnabled, setBannerEnabled] = useState(false);
   const [bannerAutoplay, setBannerAutoplay] = useState(true);
@@ -64,7 +64,7 @@ function PersonalizarPage() {
     setLogoSize(catalog.logo_size ?? "medio");
     setLogoPosition(catalog.logo_position ?? "esquerda");
     setCartStyle(catalog.cart_style ?? "carrinho");
-    setWhatsappButtonColor(catalog.whatsapp_button_color ?? "#25d366");
+    setWhatsappButtonColor(catalog.whatsapp_button_color ?? "#8b5cf6");
     setBannerEnabled(catalog.banner_enabled ?? false);
     setBannerAutoplay(catalog.banner_autoplay ?? true);
     setBannerInterval(catalog.banner_interval ?? 4);
@@ -457,9 +457,9 @@ function PersonalizarPage() {
       >
         <div className="flex items-center gap-3">
           {[
+            { color: "#8b5cf6", label: "Lilás" },
             { color: "#25d366", label: "Verde" },
             { color: "#128C7E", label: "Verde escuro" },
-            { color: "#8b5cf6", label: "Lilás" },
             { color: "#d1477a", label: "Rosa" },
             { color: "#1f2937", label: "Grafite" },
           ].map((opt) => (

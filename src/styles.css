@@ -257,12 +257,12 @@
 
 /* ── Floating WhatsApp button pulse ── */
 @utility whatsapp-float {
-  animation: whatsapp-pulse 2s ease-in-out infinite;
+  animation: whatsapp-float-bob 2.4s ease-in-out infinite;
 }
 
-@keyframes whatsapp-pulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 4px 14px rgba(37, 211, 102, 0.35); }
-  50%      { transform: scale(1.07); box-shadow: 0 6px 24px rgba(37, 211, 102, 0.5); }
+@keyframes whatsapp-float-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
 }
 
 /* ── Glassmorphism cover overlay ── */
