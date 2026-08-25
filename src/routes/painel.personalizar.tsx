@@ -175,21 +175,37 @@ function PersonalizarPage() {
       return;
     }
 
-    const { error: deleteError } = await supabase.from("banners").delete().eq("catalog_id", catalog!.id);
-    if (deleteError) {
-      setSaving(false);
-      toast.error("Erro ao atualizar banners.");
-      return;
+    const { data: currentBanners } = await supabase
+      .from("banners")
+      .select("id")
+      .eq("catalog_id", catalog!.id);
+
+    const currentIds = new Set((currentBanners ?? []).map((b) => b.id));
+    const keptIds = new Set(banners.filter((b) => !b.id.startsWith("new-")).map((b) => b.id));
+    const toDelete = [...currentIds].filter((id) => !keptIds.has(id));
+
+    if (toDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from("banners")
+        .delete()
+        .in("id", toDelete);
+      if (deleteError) {
+        setSaving(false);
+        toast.error("Erro ao atualizar banners.");
+        return;
+      }
     }
 
     if (banners.length > 0) {
-      const { error: bannerError } = await supabase.from("banners").insert(
+      const { error: bannerError } = await supabase.from("banners").upsert(
         banners.map((b) => ({
+          ...(b.id.startsWith("new-") ? {} : { id: b.id }),
           catalog_id: catalog!.id,
           image_url: b.image_url,
           href: b.href || null,
           position: b.position,
         })),
+        { onConflict: "id" },
       );
       if (bannerError) {
         setSaving(false);
