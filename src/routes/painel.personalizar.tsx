@@ -174,8 +174,9 @@ function PersonalizarPage() {
 
     if (catalogError) {
       setSaving(false);
+      console.error("Catalog save error:", catalogError);
       toast.error(
-        catalogError.code === "23505" ? "Esse endereço de link já está em uso." : "Erro ao salvar.",
+        catalogError.code === "23505" ? "Esse endereço de link já está em uso." : `Erro ao salvar: ${catalogError.message ?? "tente novamente"}`,
       );
       return;
     }
@@ -209,7 +210,6 @@ function PersonalizarPage() {
           image_url: b.image_url,
           href: b.href || null,
           position: b.position,
-          object_position: b.object_position ?? "50%",
         })) as any[],
         { onConflict: "id" },
       );
@@ -217,6 +217,24 @@ function PersonalizarPage() {
         setSaving(false);
         toast.error("Erro ao salvar banners.");
         return;
+      }
+
+      const { data: savedBanners } = await supabase
+        .from("banners")
+        .select("id")
+        .eq("catalog_id", catalog!.id);
+
+      if (savedBanners) {
+        const patch = banners
+          .filter((b) => !b.id.startsWith("new-") && b.object_position && b.object_position !== "50%")
+          .map((b) => {
+            const match = savedBanners.find((sb) => sb.id === b.id);
+            return match ? { id: match.id, object_position: b.object_position } : null;
+          })
+          .filter(Boolean);
+        if (patch.length > 0) {
+          await supabase.from("banners").upsert(patch as any[], { onConflict: "id" });
+        }
       }
     }
 
