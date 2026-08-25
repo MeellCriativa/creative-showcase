@@ -57,8 +57,8 @@ function PersonalizarPage() {
     setWhatsapp(catalog.whatsapp ?? "");
     setLogo(catalog.logo_url ? [catalog.logo_url] : []);
     setCover(catalog.cover_url ? [catalog.cover_url] : []);
-    setPrimary(catalog.primary_color);
-    setAccent(catalog.accent_color);
+    setPrimary(catalog.primary_color ?? "#8b5cf6");
+    setAccent(catalog.accent_color ?? "#f3eefc");
     setStoreFont(catalog.store_font ?? "moderna");
     setLogoSize(catalog.logo_size ?? "medio");
     setLogoPosition(catalog.logo_position ?? "esquerda");
@@ -146,7 +146,12 @@ function PersonalizarPage() {
       return;
     }
 
-    await supabase.from("banners").delete().eq("catalog_id", catalog!.id);
+    const { error: deleteError } = await supabase.from("banners").delete().eq("catalog_id", catalog!.id);
+    if (deleteError) {
+      setSaving(false);
+      toast.error("Erro ao atualizar banners.");
+      return;
+    }
 
     if (banners.length > 0) {
       const { error: bannerError } = await supabase.from("banners").insert(
@@ -178,15 +183,15 @@ function PersonalizarPage() {
 
       {/* ── Pré-visualização ── */}
       <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="relative h-20 w-full overflow-hidden" style={{ background: accent }}>
+        <div className="relative h-20 w-full overflow-hidden" style={{ background: accent ?? "#f3eefc" }}>
           {cover[0] ? (
             <img src={cover[0]} alt="Capa" className="h-full w-full object-cover" />
           ) : (
-            <div className="h-full w-full" style={{ background: primary, opacity: 0.15 }} />
+            <div className="h-full w-full" style={{ background: primary ?? "#8b5cf6", opacity: 0.15 }} />
           )}
           <div
             className="absolute inset-x-0 bottom-0 h-8"
-            style={{ background: `linear-gradient(to top, ${accent}, transparent)` }}
+            style={{ background: `linear-gradient(to top, ${accent ?? "#f3eefc"}, transparent)` }}
           />
         </div>
 
@@ -199,12 +204,12 @@ function PersonalizarPage() {
               src={logo[0]}
               alt="Logo"
               className={`${logoSizePx} shrink-0 rounded-full border-2 object-cover shadow-md`}
-              style={{ borderColor: primary }}
+              style={{ borderColor: primary ?? "#8b5cf6" }}
             />
           ) : (
             <div
               className={`${logoSizePx} shrink-0 rounded-full border-2 border-dashed flex items-center justify-center text-[10px] text-muted-foreground`}
-              style={{ borderColor: primary }}
+              style={{ borderColor: primary ?? "#8b5cf6" }}
             >
               Logo
             </div>
@@ -214,12 +219,12 @@ function PersonalizarPage() {
         <div className="px-4 pb-4">
           <p
             className="text-lg font-bold leading-tight text-foreground"
-            style={{ fontFamily: getFontFamily(storeFont), color: primary }}
+            style={{ fontFamily: getFontFamily(storeFont), color: primary ?? "#8b5cf6" }}
           >
             {storeName || "Nome da loja"}
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <CartIcon style={cartStyle} className="size-5" color={primary} />
+            <CartIcon style={cartStyle} className="size-5" color={primary ?? "#8b5cf6"} />
             <span className="text-xs text-muted-foreground">Carrinho</span>
           </div>
         </div>
@@ -433,7 +438,7 @@ function PersonalizarPage() {
                 cartStyle === c.key ? "border-primary bg-primary/5" : "border-border"
               }`}
             >
-              <CartIcon style={c.key} className="size-8" color={primary} />
+              <CartIcon style={c.key} className="size-8" color={primary ?? "#8b5cf6"} />
               <span className="text-[11px] font-medium leading-tight text-muted-foreground">
                 {c.label}
               </span>

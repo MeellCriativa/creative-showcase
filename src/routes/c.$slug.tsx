@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, Loader2, Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, getSupabaseError } from "@/integrations/supabase/client";
 import { CartIcon } from "@/components/CartIcons";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -64,9 +64,12 @@ function PublicCatalog() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartBump, setCartBump] = useState(0);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error: queryError } = useQuery({
     queryKey: ["public-catalog", slug],
     queryFn: async () => {
+      const connError = getSupabaseError();
+      if (connError) throw new Error("Não foi possível conectar ao servidor. Verifique a configuração do Supabase.");
+
       const { data: catalog, error } = await supabase
         .from("catalogs")
         .select("*")
@@ -95,6 +98,8 @@ function PublicCatalog() {
         banners: (banners ?? []) as Banner[],
       };
     },
+    retry: 1,
+    staleTime: 30_000,
   });
 
   const catalog = data?.catalog;
@@ -224,6 +229,16 @@ function PublicCatalog() {
     );
   }
 
+  if (queryError) {
+    return (
+      <div className="app-shell grid place-items-center px-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          Não foi possível carregar o catálogo. Tente novamente mais tarde.
+        </p>
+      </div>
+    );
+  }
+
   if (!data) {
     return (
       <div className="app-shell grid place-items-center px-6 text-center">
@@ -233,7 +248,7 @@ function PublicCatalog() {
   }
 
   const { catalog: loadedCatalog, categories, banners } = data;
-  const logoSizeClass = LOGO_SIZES[loadedCatalog.logo_size] ?? "size-16";
+  const logoSizeClass = LOGO_SIZES[loadedCatalog.logo_size ?? "medio"] ?? "size-16";
   const logoJustify =
     loadedCatalog.logo_position === "esquerda"
       ? "flex-start"
@@ -242,8 +257,8 @@ function PublicCatalog() {
         : "center";
 
   const theme = {
-    "--shop-primary": loadedCatalog.primary_color,
-    "--shop-accent": loadedCatalog.accent_color,
+    "--shop-primary": loadedCatalog.primary_color ?? "#8b5cf6",
+    "--shop-accent": loadedCatalog.accent_color ?? "#f3eefc",
   } as React.CSSProperties;
 
   return (
@@ -252,7 +267,7 @@ function PublicCatalog() {
         <div
           className="h-32 w-full bg-cover bg-center"
           style={{
-            backgroundColor: loadedCatalog.accent_color,
+            backgroundColor: loadedCatalog.accent_color ?? "#f3eefc",
             backgroundImage: loadedCatalog.cover_url
               ? `url(${loadedCatalog.cover_url})`
               : undefined,
@@ -265,7 +280,7 @@ function PublicCatalog() {
           >
             <div
               className={`${logoSizeClass} shrink-0 overflow-hidden rounded-2xl border-4 border-background bg-muted`}
-              style={{ backgroundColor: loadedCatalog.accent_color }}
+              style={{ backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}
             >
               {loadedCatalog.logo_url && (
                 <img
@@ -278,7 +293,7 @@ function PublicCatalog() {
           </div>
           <h1
             className="mt-3 text-2xl font-bold text-foreground"
-            style={{ fontFamily: getFontFamily(loadedCatalog.store_font) }}
+            style={{ fontFamily: getFontFamily(loadedCatalog.store_font ?? "moderna") }}
           >
             {loadedCatalog.store_name}
           </h1>
@@ -289,9 +304,9 @@ function PublicCatalog() {
       {loadedCatalog.banner_enabled && banners.length > 0 && (
         <BannerCarousel
           banners={banners}
-          autoplay={loadedCatalog.banner_autoplay}
-          interval={loadedCatalog.banner_interval}
-          indicators={loadedCatalog.banner_indicators}
+          autoplay={loadedCatalog.banner_autoplay ?? true}
+          interval={loadedCatalog.banner_interval ?? 4}
+          indicators={loadedCatalog.banner_indicators ?? true}
         />
       )}
 
@@ -307,9 +322,9 @@ function PublicCatalog() {
               style={
                 active
                   ? {
-                      background: loadedCatalog.primary_color,
+                      background: loadedCatalog.primary_color ?? "#8b5cf6",
                       color: "#fff",
-                      borderColor: loadedCatalog.primary_color,
+                      borderColor: loadedCatalog.primary_color ?? "#8b5cf6",
                     }
                   : {
                       borderColor: "var(--color-border)",
@@ -353,7 +368,7 @@ function PublicCatalog() {
                       <span className="text-xs text-muted-foreground line-through">
                         {formatBRL(Number(product.price))}
                       </span>{" "}
-                      <span className="font-bold" style={{ color: loadedCatalog.primary_color }}>
+                      <span className="font-bold" style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}>
                         {formatBRL(Number(product.sale_price))}
                       </span>
                     </>
@@ -370,7 +385,7 @@ function PublicCatalog() {
                 disabled={!product.available}
                 onClick={() => setSelected(product)}
                 className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                style={{ background: loadedCatalog.primary_color }}
+                style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
               >
                 {product.available ? "+ Adicionar" : "Esgotado"}
               </button>
@@ -384,9 +399,9 @@ function PublicCatalog() {
           key={cartBump}
           onClick={() => setCartOpen(true)}
           className="cart-bump fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full px-5 py-4 text-white shadow-xl"
-          style={{ background: loadedCatalog.primary_color }}
+          style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
         >
-          <CartIcon style={loadedCatalog.cart_style} className="size-5" />
+          <CartIcon style={loadedCatalog.cart_style ?? "carrinho"} className="size-5" />
           <span className="text-sm font-semibold">
             {count} {count === 1 ? "item" : "itens"}
           </span>
@@ -397,7 +412,7 @@ function PublicCatalog() {
       {selected && (
         <ProductSheet
           product={selected}
-          primary={loadedCatalog.primary_color}
+          primary={loadedCatalog.primary_color ?? "#8b5cf6"}
           onClose={() => setSelected(null)}
           onAdd={addToCart}
         />
@@ -407,7 +422,7 @@ function PublicCatalog() {
         <CartSheet
           items={cart}
           total={total}
-          primary={loadedCatalog.primary_color}
+          primary={loadedCatalog.primary_color ?? "#8b5cf6"}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
           onRemove={removeItem}
