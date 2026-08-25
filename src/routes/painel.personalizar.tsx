@@ -109,7 +109,7 @@ function PersonalizarPage() {
         image_url: url,
         href: null,
         position: prev.length,
-        object_position: "center",
+        object_position: "50%",
       },
     ]);
   }
@@ -209,7 +209,7 @@ function PersonalizarPage() {
           image_url: b.image_url,
           href: b.href || null,
           position: b.position,
-          object_position: b.object_position ?? "center",
+          object_position: b.object_position ?? "50%",
         })) as any[],
         { onConflict: "id" },
       );
@@ -597,26 +597,20 @@ function PersonalizarPage() {
                     className="input-base text-xs"
                   />
                   <div>
-                    <p className="text-[10px] text-muted-foreground mb-1">Posição da imagem</p>
-                    <div className="flex gap-1">
-                      {[
-                        { value: "top", label: "Topo" },
-                        { value: "center", label: "Centro" },
-                        { value: "bottom", label: "Baixo" },
-                      ].map((opt) => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => updateBannerPosition(idx, opt.value)}
-                          className={`flex-1 rounded-lg border px-2 py-1 text-[10px] font-medium transition-colors ${
-                            (b.object_position ?? "center") === opt.value
-                              ? "border-primary bg-primary/5 text-primary"
-                              : "border-border text-muted-foreground"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                    <p className="text-[10px] text-muted-foreground mb-1">
+                      Posição da imagem ({b.object_position ?? "50%"})
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-muted-foreground">▲</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Number((b.object_position ?? "50").replace("%", ""))}
+                        onChange={(e) => updateBannerPosition(idx, `${e.target.value}%`)}
+                        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-border accent-primary"
+                      />
+                      <span className="text-[9px] text-muted-foreground">▼</span>
                     </div>
                   </div>
                 </div>

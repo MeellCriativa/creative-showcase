@@ -134,6 +134,29 @@ function PublicCatalog() {
       });
   }, [catalog, user]);
 
+  useEffect(() => {
+    if (!catalog) return;
+    const ogImage = catalog.logo_url || catalog.cover_url;
+    const setMeta = (property: string, content: string) => {
+      let el = document.querySelector<HTMLMetaElement>(`meta[property="${property}"]`);
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute("property", property);
+        document.head.appendChild(el);
+      }
+      el.setAttribute("content", content);
+    };
+    setMeta("og:title", catalog.store_name);
+    setMeta("og:description", catalog.store_description || `Catálogo ${catalog.store_name} — Vitrine Criativa`);
+    if (ogImage) setMeta("og:image", ogImage);
+    document.title = `${catalog.store_name} — Vitrine Criativa`;
+    return () => {
+      setMeta("og:title", "Catálogo digital — Vitrine Criativa");
+      setMeta("og:description", "Escolha seus produtos e finalize o pedido direto pelo WhatsApp.");
+      document.title = "Vitrine Criativa";
+    };
+  }, [catalog]);
+
   const products = useMemo(() => {
     const all = data?.products ?? [];
     if (filter === "Todos") return all;
@@ -1032,7 +1055,7 @@ function WelcomePage({
           className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
           style={{ background: primary }}
         >
-          Entrar para olhar o catálogo
+          ENTRAR PARA VER CATÁLOGO
         </button>
       </div>
 
