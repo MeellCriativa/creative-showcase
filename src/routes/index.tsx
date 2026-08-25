@@ -32,7 +32,7 @@ function Home() {
   const { session } = useAuth();
 
   return (
-    <main className="app-shell relative overflow-hidden px-5 pb-14 pt-12">
+    <main className="app-shell theme-lilac relative overflow-hidden px-5 pb-14 pt-12">
       <div className="pointer-events-none absolute -left-24 -top-24 size-64 rounded-full bg-accent blur-3xl" />
 
       <div className="relative">

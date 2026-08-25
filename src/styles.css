@@ -132,6 +132,15 @@
   --sidebar-ring: oklch(0.551 0.027 264.364);
 }
 
+/* Variante de tema aplicada somente à tela inicial (home). */
+.theme-lilac {
+  --primary: oklch(0.58 0.16 305);
+  --primary-foreground: oklch(0.99 0.005 305);
+  --accent: oklch(0.95 0.04 305);
+  --accent-foreground: oklch(0.42 0.11 305);
+  --ring: oklch(0.58 0.16 305);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
