@@ -135,21 +135,22 @@ export function buildWhatsappMessage(opts: {
   total: number;
   note?: string | undefined;
 }) {
-  const lines: string[] = ["Olá! Quero fazer este pedido:", ""];
+  const lines: string[] = ["Olá! Gostaria de fazer este pedido pelo seu catálogo:", ""];
   for (const item of opts.items) {
     lines.push(`Produto: ${item.name}`);
     if (item.variation) lines.push(`Variação: ${item.variation}`);
     lines.push(`Quantidade: ${item.quantity}`);
-    lines.push(`Valor: ${formatBRL(item.unitPrice * item.quantity)}`);
+    lines.push(`Valor unitário: ${formatBRL(item.unitPrice)}`);
+    lines.push(`Subtotal: ${formatBRL(item.unitPrice * item.quantity)}`);
     lines.push("");
   }
-  lines.push(`Total: ${formatBRL(opts.total)}`);
-  if (opts.note?.trim()) {
-    lines.push("");
-    lines.push(`Observação: ${opts.note.trim()}`);
-  }
+  lines.push(`Total do pedido: ${formatBRL(opts.total)}`);
   lines.push("");
-  lines.push(`Pedido feito pelo catálogo ${opts.storeName}`);
+  if (opts.note?.trim()) {
+    lines.push(`${opts.note.trim()}`);
+    lines.push("");
+  }
+  lines.push("Gostaria de finalizar meu pedido. \u{1F49C}");
   return lines.join("\n");
 }
 

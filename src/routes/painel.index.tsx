@@ -98,7 +98,7 @@ function PainelHome() {
 
   const link =
     typeof window !== "undefined" ? `${window.location.origin}/c/${catalog.slug}` : `/c/${catalog.slug}`;
-  const message = `Olha meu catálogo: ${link}`;
+  const message = `\u{1F49C} Venha ver meu catálogo\n${link}`;
 
   async function copyLink() {
     try {
