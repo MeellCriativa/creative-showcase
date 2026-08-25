@@ -279,7 +279,7 @@ function ProductEditor({
                 userId={userId}
                 value={draft.images}
                 onChange={(v) => set("images", v)}
-                max={6}
+                max={30}
                 label="Foto"
               />
             </div>

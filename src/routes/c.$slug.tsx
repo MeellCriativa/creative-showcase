@@ -364,7 +364,7 @@ function PublicCatalog() {
         })}
       </nav>
 
-      <section className="mt-5 grid grid-cols-2 gap-3 px-5">
+      <section className="mt-5 grid grid-cols-2 gap-2.5 px-5">
         {products.length === 0 && (
           <p className="col-span-2 rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
             Nenhum produto nesta seção.
@@ -386,7 +386,7 @@ function PublicCatalog() {
                   />
                 )}
               </div>
-              <div className="p-3">
+              <div className="p-2.5">
                 <p className="line-clamp-2 text-sm font-semibold text-foreground">{product.name}</p>
                 <p className="mt-1 text-sm">
                   {product.sale_price ? (
@@ -406,11 +406,11 @@ function PublicCatalog() {
                 </p>
               </div>
             </button>
-            <div className="px-3 pb-3">
+            <div className="px-2.5 pb-2.5">
               <button
                 disabled={!product.available}
                 onClick={() => setSelected(product)}
-                className="btn-shimmer btn-elevated w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
+                className="btn-shimmer btn-elevated w-full rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
                 style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
               >
                 {product.available ? "+ Adicionar" : "Esgotado"}
@@ -574,7 +574,18 @@ function ProductSheet({
 }) {
   const [quantity, setQuantity] = useState(1);
   const [choices, setChoices] = useState<Record<string, string>>({});
+  const [imgIdx, setImgIdx] = useState(0);
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const price = finalPrice(product);
+  const images = product.images ?? [];
+
+  function handleImgScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setImgIdx(idx);
+  }
 
   function handleAdd() {
     const missing = (product.variations ?? []).find((g) => g.options.length && !choices[g.name]);
@@ -592,19 +603,50 @@ function ProductSheet({
       unitPrice: price,
       quantity,
       variation: variation || undefined,
-      image: product.images?.[0],
+      image: images[0],
     });
   }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-center bg-foreground/40">
       <div className="mt-8 flex w-full max-w-[30rem] flex-col overflow-hidden rounded-t-3xl bg-background">
+        {/* ── Image Carousel ── */}
         <div className="relative">
-          <div className="aspect-square max-h-[45vh] w-full bg-muted">
-            {product.images?.[0] && (
-              <img src={product.images[0]} alt={product.name} className="h-full w-full object-cover" />
+          <div
+            ref={scrollRef}
+            onScroll={handleImgScroll}
+            className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto"
+          >
+            {images.map((url, i) => (
+              <button
+                key={url}
+                type="button"
+                onClick={() => setZoomUrl(url)}
+                className="w-full shrink-0 snap-center"
+              >
+                <div className="aspect-square max-h-[45vh] w-full bg-muted">
+                  <img
+                    src={url}
+                    alt={`${product.name} ${i + 1}`}
+                    loading={Math.abs(i - imgIdx) <= 1 ? "eager" : "lazy"}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              </button>
+            ))}
+            {images.length === 0 && (
+              <div className="aspect-square max-h-[45vh] w-full bg-muted" />
             )}
           </div>
+
+          {/* Position indicator */}
+          {images.length > 1 && (
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-foreground/60 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+              {imgIdx + 1} / {images.length}
+            </div>
+          )}
+
+          {/* Back button */}
           <button
             onClick={onClose}
             aria-label="Voltar"
@@ -615,19 +657,6 @@ function ProductSheet({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-5">
-          {product.images.length > 1 && (
-            <div className="no-scrollbar mb-4 flex gap-2 overflow-x-auto">
-              {product.images.slice(1).map((url) => (
-                <img
-                  key={url}
-                  src={url}
-                  alt={product.name}
-                  className="size-16 shrink-0 rounded-xl object-cover"
-                />
-              ))}
-            </div>
-          )}
-
           <h2 className="text-xl font-bold text-foreground">{product.name}</h2>
           <p className="mt-1 text-lg font-bold" style={{ color: primary }}>
             {formatBRL(price)}
@@ -695,6 +724,27 @@ function ProductSheet({
           </button>
         </div>
       </div>
+
+      {/* ── Fullscreen Zoom Viewer ── */}
+      {zoomUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95"
+          onClick={() => setZoomUrl(null)}
+        >
+          <button
+            onClick={() => setZoomUrl(null)}
+            aria-label="Fechar"
+            className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/20 text-white backdrop-blur-sm"
+          >
+            <X className="size-5" />
+          </button>
+          <img
+            src={zoomUrl}
+            alt={product.name}
+            className="max-h-[90vh] max-w-[95vw] object-contain"
+          />
+        </div>
+      )}
     </div>
   );
 }
