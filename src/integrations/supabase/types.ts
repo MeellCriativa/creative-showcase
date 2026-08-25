@@ -14,156 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
-      banners: {
-        Row: {
-          catalog_id: string
-          created_at: string
-          href: string | null
-          id: string
-          image_url: string
-          position: number
-        }
-        Insert: {
-          catalog_id: string
-          created_at?: string
-          href?: string | null
-          id?: string
-          image_url: string
-          position?: number
-        }
-        Update: {
-          catalog_id?: string
-          created_at?: string
-          href?: string | null
-          id?: string
-          image_url?: string
-          position?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "banners_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "catalogs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       catalogs: {
         Row: {
           accent_color: string
-          banner_autoplay: boolean
-          banner_enabled: boolean
-          banner_indicators: boolean
-          banner_interval: number
-          cart_style: string
           cover_url: string | null
           created_at: string
           id: string
-          instagram_url: string | null
-          logo_position: string
-          logo_size: string
           logo_url: string | null
-          owner_bio: string | null
-          owner_hours: string | null
-          owner_name: string | null
-          owner_photo_url: string | null
-          payment_methods: unknown
           primary_color: string
           slug: string
-          store_description: string | null
-          store_font: string
           store_name: string
           updated_at: string
           user_id: string
           whatsapp: string | null
-          whatsapp_button_color: string | null
         }
         Insert: {
           accent_color?: string
-          banner_autoplay?: boolean
-          banner_enabled?: boolean
-          banner_indicators?: boolean
-          banner_interval?: number
-          cart_style?: string
           cover_url?: string | null
           created_at?: string
           id?: string
-          instagram_url?: string | null
-          logo_position?: string
-          logo_size?: string
           logo_url?: string | null
-          owner_bio?: string | null
-          owner_hours?: string | null
-          owner_name?: string | null
-          owner_photo_url?: string | null
-          payment_methods?: unknown
           primary_color?: string
           slug: string
-          store_description?: string | null
-          store_font?: string
           store_name: string
           updated_at?: string
           user_id: string
           whatsapp?: string | null
-          whatsapp_button_color?: string | null
         }
         Update: {
           accent_color?: string
-          banner_autoplay?: boolean
-          banner_enabled?: boolean
-          banner_indicators?: boolean
-          banner_interval?: number
-          cart_style?: string
           cover_url?: string | null
           created_at?: string
           id?: string
-          instagram_url?: string | null
-          logo_position?: string
-          logo_size?: string
           logo_url?: string | null
-          owner_bio?: string | null
-          owner_hours?: string | null
-          owner_name?: string | null
-          owner_photo_url?: string | null
-          payment_methods?: unknown
           primary_color?: string
           slug?: string
-          store_description?: string | null
-          store_font?: string
           store_name?: string
           updated_at?: string
           user_id?: string
           whatsapp?: string | null
-          whatsapp_button_color?: string | null
         }
         Relationships: []
-      }
-      catalog_visits: {
-        Row: {
-          catalog_id: string
-          id: number
-          visited_at: string
-        }
-        Insert: {
-          catalog_id: string
-          id?: never
-          visited_at?: string
-        }
-        Update: {
-          catalog_id?: string
-          id?: never
-          visited_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "catalog_visits_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "catalogs"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       categories: {
         Row: {
@@ -190,50 +81,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "categories_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "catalogs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      orders: {
-        Row: {
-          catalog_id: string
-          created_at: string
-          customer_name: string
-          customer_phone: string | null
-          id: string
-          items: Json
-          note: string | null
-          status: string
-          total: number
-        }
-        Insert: {
-          catalog_id: string
-          created_at?: string
-          customer_name: string
-          customer_phone?: string | null
-          id?: string
-          items?: Json
-          note?: string | null
-          status?: string
-          total?: number
-        }
-        Update: {
-          catalog_id?: string
-          created_at?: string
-          customer_name?: string
-          customer_phone?: string | null
-          id?: string
-          items?: Json
-          note?: string | null
-          status?: string
-          total?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "orders_catalog_id_fkey"
             columns: ["catalog_id"]
             isOneToOne: false
             referencedRelation: "catalogs"
