@@ -139,6 +139,44 @@
   --accent: oklch(0.95 0.04 305);
   --accent-foreground: oklch(0.42 0.11 305);
   --ring: oklch(0.58 0.16 305);
+  --primary-glow: oklch(0.58 0.16 305 / 0.32);
+}
+
+/* Botão principal flutuante da tela inicial. */
+@utility btn-float {
+  border-radius: 9999px;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.05),
+    0 10px 24px -8px var(--primary-glow),
+    0 22px 48px -16px var(--primary-glow);
+  transition:
+    transform 160ms ease,
+    box-shadow 200ms ease;
+  animation: btn-float-breathe 3.2s ease-in-out infinite;
+
+  &:active {
+    transform: scale(0.96);
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.05),
+      0 4px 14px -4px var(--primary-glow);
+    animation: none;
+  }
+}
+
+@keyframes btn-float-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-float {
+    animation: none;
+  }
 }
 
 @layer base {

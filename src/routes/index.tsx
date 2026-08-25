@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, MessageCircle, Palette, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowRight, Heart, MessageCircle, Palette, ShoppingBag, Sparkles } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 
@@ -53,7 +53,7 @@ function Home() {
 
         <Link
           to={session ? "/painel" : "/auth"}
-          className="mt-7 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition active:scale-[0.98]"
+          className="btn-float mt-7 flex w-full items-center justify-center gap-2 bg-primary px-5 py-4 text-base font-semibold text-primary-foreground"
         >
           {session ? "Ir para o meu painel" : "Começar agora"}
           <ArrowRight className="size-5" />
@@ -69,7 +69,13 @@ function Home() {
                 <f.icon className="size-5" />
               </span>
               <div className="min-w-0">
-                <p className="font-semibold text-foreground">{f.title}</p>
+                <p className="font-semibold text-foreground">
+                  {f.title}
+                  <Heart
+                    aria-hidden
+                    className="ml-1 inline size-3 translate-y-px fill-primary/45 text-primary/45"
+                  />
+                </p>
                 <p className="text-sm text-muted-foreground">{f.text}</p>
               </div>
             </div>
