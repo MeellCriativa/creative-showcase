@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+
+const REMEMBER_KEY = "vc_remember_email";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -24,8 +26,14 @@ function AuthPage() {
   const navigate = useNavigate();
   const { session, loading } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => {
+    try { return localStorage.getItem(REMEMBER_KEY) ?? ""; } catch { return ""; }
+  });
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(() => {
+    try { return localStorage.getItem(REMEMBER_KEY) !== null; } catch { return false; }
+  });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -49,6 +57,13 @@ function AuthPage() {
         if (error) throw error;
         toast.success("Login realizado!");
       }
+      try {
+        if (remember) {
+          localStorage.setItem(REMEMBER_KEY, email);
+        } else {
+          localStorage.removeItem(REMEMBER_KEY);
+        }
+      } catch { /* ignore */ }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao entrar";
       toast.error(
@@ -105,17 +120,40 @@ function AuthPage() {
           <label htmlFor="password" className="text-sm font-medium text-foreground">
             Senha
           </label>
-          <input
-            id="password"
-            type="password"
-            required
-            minLength={6}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-2xl border border-input bg-card px-4 py-3.5 text-base outline-none focus:border-primary"
-            placeholder="mínimo 6 caracteres"
-          />
+          <div className="relative mt-1.5">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-2xl border border-input bg-card px-4 py-3.5 pr-12 text-base outline-none focus:border-primary"
+              placeholder="mínimo 6 caracteres"
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground"
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+            >
+              {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+            </button>
+          </div>
         </div>
+
+        {mode === "login" && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              className="size-4 rounded border-border"
+            />
+            Lembrar meu e-mail
+          </label>
+        )}
 
         <button
           type="submit"
