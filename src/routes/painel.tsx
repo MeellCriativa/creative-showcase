@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Loader2, LayoutGrid, Package, Palette, Store } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutGrid, Loader2, Package, Palette, Store } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,7 @@ export const Route = createFileRoute("/painel")({
   head: () => ({
     meta: [
       { title: "Painel da loja — Vitrine Criativa" },
-      { name: "description", content: "Gerencie seu catálogo, produtos, categorias e personalização." },
+      { name: "description", content: "Gerencie seu catálogo, produtos, pedidos e personalização." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -20,7 +20,9 @@ const tabs = [
   { to: "/painel", label: "Início", icon: LayoutGrid, exact: true },
   { to: "/painel/produtos", label: "Produtos", icon: Package, exact: false },
   { to: "/painel/categorias", label: "Categorias", icon: Store, exact: false },
+  { to: "/painel/pedidos", label: "Pedidos", icon: ClipboardList, exact: false },
   { to: "/painel/personalizar", label: "Vitrine", icon: Palette, exact: false },
+  { to: "/painel/estatisticas", label: "Stats", icon: BarChart3, exact: false },
 ] as const;
 
 function PainelLayout() {
@@ -45,7 +47,7 @@ function PainelLayout() {
       <Outlet />
 
       <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur">
-        <ul className="grid grid-cols-4">
+        <ul className="grid grid-cols-6">
           {tabs.map((tab) => {
             const active = tab.exact ? pathname === tab.to : pathname.startsWith(tab.to);
             return (
@@ -53,7 +55,7 @@ function PainelLayout() {
                 <Link
                   to={tab.to}
                   className={cn(
-                    "flex flex-col items-center gap-1 py-3 text-[11px] font-medium",
+                    "flex flex-col items-center gap-0.5 py-3 text-[10px] font-medium",
                     active ? "text-primary" : "text-muted-foreground",
                   )}
                 >

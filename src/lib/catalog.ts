@@ -12,6 +12,14 @@ export type Catalog = {
   whatsapp: string | null;
   primary_color: string;
   accent_color: string;
+  store_font: string;
+  logo_size: string;
+  logo_position: string;
+  cart_style: string;
+  banner_enabled: boolean;
+  banner_autoplay: boolean;
+  banner_interval: number;
+  banner_indicators: boolean;
 };
 
 export type Category = {
@@ -36,6 +44,48 @@ export type Product = {
   is_bestseller: boolean;
   position: number;
 };
+
+export type Banner = {
+  id: string;
+  catalog_id: string;
+  image_url: string;
+  href: string | null;
+  position: number;
+};
+
+export type Order = {
+  id: string;
+  catalog_id: string;
+  customer_name: string;
+  customer_phone: string | null;
+  items: OrderItem[];
+  note: string | null;
+  total: number;
+  status: string;
+  created_at: string;
+};
+
+export type OrderItem = {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  variation?: string;
+};
+
+export const FONT_OPTIONS = [
+  { key: "moderna", label: "Moderna", family: "Plus Jakarta Sans" },
+  { key: "manuscrita", label: "Manuscrita", family: "Caveat" },
+  { key: "delicada", label: "Delicada", family: "Quicksand" },
+  { key: "elegante", label: "Elegante", family: "Playfair Display" },
+  { key: "minimalista", label: "Minimalista", family: "Inter" },
+  { key: "arredondada", label: "Arredondada", family: "Baloo 2" },
+  { key: "serifada", label: "Serifada", family: "Lora" },
+  { key: "divertida", label: "Divertida", family: "Fredoka" },
+] as const;
+
+export function getFontFamily(key: string) {
+  return FONT_OPTIONS.find((f) => f.key === key)?.family ?? "Plus Jakarta Sans";
+}
 
 export function formatBRL(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(

@@ -1,15 +1,19 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, Loader2, Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { CartIcon } from "@/components/CartIcons";
+import { useAuth } from "@/hooks/useAuth";
 import {
   buildWhatsappMessage,
   finalPrice,
   formatBRL,
+  getFontFamily,
   whatsappLink,
+  type Banner,
   type Catalog,
   type Category,
   type Product,
@@ -45,12 +49,20 @@ type CartItem = {
 
 const filters = ["Todos", "Novidades", "Mais vendidos", "Promoções"] as const;
 
+const LOGO_SIZES: Record<string, string> = {
+  sm: "size-12",
+  md: "size-16",
+  lg: "size-24",
+};
+
 function PublicCatalog() {
   const { slug } = Route.useParams();
+  const { user } = useAuth();
   const [filter, setFilter] = useState<string>("Todos");
   const [selected, setSelected] = useState<Product | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartBump, setCartBump] = useState(0);
 
   const { data, isLoading } = useQuery({
     queryKey: ["public-catalog", slug],
@@ -62,7 +74,7 @@ function PublicCatalog() {
         .maybeSingle();
       if (error) throw error;
       if (!catalog) return null;
-      const [{ data: categories }, { data: products }] = await Promise.all([
+      const [{ data: categories }, { data: products }, { data: banners }] = await Promise.all([
         supabase.from("categories").select("*").eq("catalog_id", catalog.id).order("position"),
         supabase
           .from("products")
@@ -70,14 +82,50 @@ function PublicCatalog() {
           .eq("catalog_id", catalog.id)
           .order("position")
           .order("created_at"),
+        supabase
+          .from("banners")
+          .select("*")
+          .eq("catalog_id", catalog.id)
+          .order("position"),
       ]);
       return {
         catalog: catalog as Catalog,
         categories: (categories ?? []) as Category[],
         products: (products ?? []) as unknown as Product[],
+        banners: (banners ?? []) as Banner[],
       };
     },
   });
+
+  const catalog = data?.catalog;
+
+  useEffect(() => {
+    if (!catalog) return;
+    if (user && user.id === catalog.user_id) return;
+    const visitKey = `vc_visit_${catalog.id}`;
+    try {
+      const stored = localStorage.getItem(visitKey);
+      if (stored) {
+        const ts = Number(stored);
+        if (Date.now() - ts < 30 * 60 * 1000) return;
+      }
+    } catch {
+      /* ignore */
+    }
+    supabase
+      .from("catalog_visits")
+      .insert({ catalog_id: catalog.id })
+      .then(() => {
+        try {
+          localStorage.setItem(visitKey, String(Date.now()));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {
+        /* silent */
+      });
+  }, [catalog, user]);
 
   const products = useMemo(() => {
     const all = data?.products ?? [];
@@ -91,7 +139,7 @@ function PublicCatalog() {
   const total = cart.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  function addToCart(item: CartItem) {
+  const addToCart = useCallback((item: CartItem) => {
     setCart((prev) => {
       const existing = prev.find((i) => i.key === item.key);
       if (existing) {
@@ -101,17 +149,70 @@ function PublicCatalog() {
       }
       return [...prev, item];
     });
+    setCartBump((b) => b + 1);
     setSelected(null);
     toast.success("Adicionado ao carrinho");
-  }
+  }, []);
 
-  function changeQty(key: string, delta: number) {
+  const changeQty = useCallback((key: string, delta: number) => {
     setCart((prev) =>
       prev
         .map((i) => (i.key === key ? { ...i, quantity: i.quantity + delta } : i))
         .filter((i) => i.quantity > 0),
     );
-  }
+  }, []);
+
+  const removeItem = useCallback((key: string) => {
+    setCart((prev) => prev.filter((i) => i.key !== key));
+  }, []);
+
+  const finishOrder = useCallback(
+    (customerName: string, customerPhone: string, note: string) => {
+      if (!catalog) return;
+      if (!catalog.whatsapp) {
+        toast.error("Esta loja ainda não cadastrou o WhatsApp.");
+        return;
+      }
+
+      if (customerName.trim()) {
+        supabase
+          .from("orders")
+          .insert({
+            catalog_id: catalog.id,
+            customer_name: customerName.trim(),
+            customer_phone: customerPhone.trim() || null,
+            items: cart.map((i) => ({
+              name: i.name,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              variation: i.variation,
+            })),
+            note: note.trim() || null,
+            total,
+            status: "pending",
+          })
+          .then(() => {})
+          .catch(() => {});
+      }
+
+      const message = buildWhatsappMessage({
+        storeName: catalog.store_name,
+        items: cart.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          variation: i.variation,
+        })),
+        total,
+        note: customerName.trim() ? `Cliente: ${customerName.trim()}` : undefined,
+      });
+
+      window.open(whatsappLink(catalog.whatsapp, message), "_blank");
+      setCart([]);
+      setCartOpen(false);
+    },
+    [catalog, cart, total],
+  );
 
   if (isLoading) {
     return (
@@ -129,29 +230,19 @@ function PublicCatalog() {
     );
   }
 
-  const { catalog, categories } = data;
-  const theme = {
-    "--shop-primary": catalog.primary_color,
-    "--shop-accent": catalog.accent_color,
-  } as React.CSSProperties;
+  const { catalog: loadedCatalog, categories, banners } = data;
+  const logoSizeClass = LOGO_SIZES[loadedCatalog.logo_size] ?? "size-16";
+  const logoJustify =
+    loadedCatalog.logo_position === "left"
+      ? "flex-start"
+      : loadedCatalog.logo_position === "right"
+        ? "flex-end"
+        : "center";
 
-  function finishOrder() {
-    if (!catalog.whatsapp) {
-      toast.error("Esta loja ainda não cadastrou o WhatsApp.");
-      return;
-    }
-    const message = buildWhatsappMessage({
-      storeName: catalog.store_name,
-      items: cart.map((i) => ({
-        name: i.name,
-        quantity: i.quantity,
-        unitPrice: i.unitPrice,
-        variation: i.variation,
-      })),
-      total,
-    });
-    window.open(whatsappLink(catalog.whatsapp, message), "_blank");
-  }
+  const theme = {
+    "--shop-primary": loadedCatalog.primary_color,
+    "--shop-accent": loadedCatalog.accent_color,
+  } as React.CSSProperties;
 
   return (
     <div className="app-shell pb-28" style={theme}>
@@ -159,25 +250,48 @@ function PublicCatalog() {
         <div
           className="h-32 w-full bg-cover bg-center"
           style={{
-            backgroundColor: catalog.accent_color,
-            backgroundImage: catalog.cover_url ? `url(${catalog.cover_url})` : undefined,
+            backgroundColor: loadedCatalog.accent_color,
+            backgroundImage: loadedCatalog.cover_url
+              ? `url(${loadedCatalog.cover_url})`
+              : undefined,
           }}
         />
         <div className="px-5">
-          <div className="-mt-8 flex items-end gap-3">
+          <div
+            className="-mt-8 flex items-end gap-3"
+            style={{ justifyContent: logoJustify }}
+          >
             <div
-              className="size-16 shrink-0 overflow-hidden rounded-2xl border-4 border-background bg-muted"
-              style={{ backgroundColor: catalog.accent_color }}
+              className={`${logoSizeClass} shrink-0 overflow-hidden rounded-2xl border-4 border-background bg-muted`}
+              style={{ backgroundColor: loadedCatalog.accent_color }}
             >
-              {catalog.logo_url && (
-                <img src={catalog.logo_url} alt={catalog.store_name} className="h-full w-full object-cover" />
+              {loadedCatalog.logo_url && (
+                <img
+                  src={loadedCatalog.logo_url}
+                  alt={loadedCatalog.store_name}
+                  className="h-full w-full object-cover"
+                />
               )}
             </div>
           </div>
-          <h1 className="mt-3 text-2xl font-bold text-foreground">{catalog.store_name}</h1>
+          <h1
+            className="mt-3 text-2xl font-bold text-foreground"
+            style={{ fontFamily: getFontFamily(loadedCatalog.store_font) }}
+          >
+            {loadedCatalog.store_name}
+          </h1>
           <p className="text-sm text-muted-foreground">Peça pelo WhatsApp, sem criar conta.</p>
         </div>
       </header>
+
+      {loadedCatalog.banner_enabled && banners.length > 0 && (
+        <BannerCarousel
+          banners={banners}
+          autoplay={loadedCatalog.banner_autoplay}
+          interval={loadedCatalog.banner_interval}
+          indicators={loadedCatalog.banner_indicators}
+        />
+      )}
 
       <nav className="no-scrollbar mt-5 flex gap-2 overflow-x-auto px-5">
         {[...filters, ...categories.map((c) => c.name)].map((label, i) => {
@@ -190,8 +304,15 @@ function PublicCatalog() {
               className="shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition"
               style={
                 active
-                  ? { background: catalog.primary_color, color: "#fff", borderColor: catalog.primary_color }
-                  : { borderColor: "var(--color-border)", color: "var(--color-muted-foreground)" }
+                  ? {
+                      background: loadedCatalog.primary_color,
+                      color: "#fff",
+                      borderColor: loadedCatalog.primary_color,
+                    }
+                  : {
+                      borderColor: "var(--color-border)",
+                      color: "var(--color-muted-foreground)",
+                    }
               }
             >
               {label}
@@ -230,7 +351,7 @@ function PublicCatalog() {
                       <span className="text-xs text-muted-foreground line-through">
                         {formatBRL(Number(product.price))}
                       </span>{" "}
-                      <span className="font-bold" style={{ color: catalog.primary_color }}>
+                      <span className="font-bold" style={{ color: loadedCatalog.primary_color }}>
                         {formatBRL(Number(product.sale_price))}
                       </span>
                     </>
@@ -247,7 +368,7 @@ function PublicCatalog() {
                 disabled={!product.available}
                 onClick={() => setSelected(product)}
                 className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                style={{ background: catalog.primary_color }}
+                style={{ background: loadedCatalog.primary_color }}
               >
                 {product.available ? "+ Adicionar" : "Esgotado"}
               </button>
@@ -258,12 +379,14 @@ function PublicCatalog() {
 
       {count > 0 && (
         <button
+          key={cartBump}
           onClick={() => setCartOpen(true)}
-          className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100%-2.5rem)] max-w-[27.5rem] -translate-x-1/2 items-center justify-between rounded-2xl px-5 py-4 text-white shadow-xl"
-          style={{ background: catalog.primary_color }}
+          className="cart-bump fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full px-5 py-4 text-white shadow-xl"
+          style={{ background: loadedCatalog.primary_color }}
         >
-          <span className="flex items-center gap-2 text-sm font-semibold">
-            <ShoppingBag className="size-5" /> {count} {count === 1 ? "item" : "itens"}
+          <CartIcon style={loadedCatalog.cart_style} className="size-5" />
+          <span className="text-sm font-semibold">
+            {count} {count === 1 ? "item" : "itens"}
           </span>
           <span className="font-bold">{formatBRL(total)}</span>
         </button>
@@ -272,7 +395,7 @@ function PublicCatalog() {
       {selected && (
         <ProductSheet
           product={selected}
-          primary={catalog.primary_color}
+          primary={loadedCatalog.primary_color}
           onClose={() => setSelected(null)}
           onAdd={addToCart}
         />
@@ -282,12 +405,98 @@ function PublicCatalog() {
         <CartSheet
           items={cart}
           total={total}
-          primary={catalog.primary_color}
+          primary={loadedCatalog.primary_color}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
-          onRemove={(key) => setCart((prev) => prev.filter((i) => i.key !== key))}
+          onRemove={removeItem}
           onFinish={finishOrder}
         />
+      )}
+    </div>
+  );
+}
+
+function BannerCarousel({
+  banners,
+  autoplay,
+  interval,
+  indicators,
+}: {
+  banners: Banner[];
+  autoplay: boolean;
+  interval: number;
+  indicators: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [paused, setPaused] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  useEffect(() => {
+    if (!autoplay || paused || banners.length <= 1) return;
+    const ms = Math.max(2, interval) * 1000;
+    const id = window.setInterval(() => {
+      const el = ref.current;
+      if (!el) return;
+      const next = (activeIdx + 1) % banners.length;
+      el.scrollTo({ left: el.clientWidth * next, behavior: "smooth" });
+      setActiveIdx(next);
+    }, ms);
+    return () => clearInterval(id);
+  }, [autoplay, paused, interval, activeIdx, banners.length]);
+
+  function onScroll() {
+    const el = ref.current;
+    if (!el) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    setActiveIdx(idx);
+  }
+
+  return (
+    <div
+      className="px-5"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={() => setPaused(true)}
+      onTouchEnd={() => setTimeout(() => setPaused(false), 200)}
+    >
+      <div
+        ref={ref}
+        onScroll={onScroll}
+        className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto rounded-2xl"
+      >
+        {banners.map((b) => (
+          <div key={b.id} className="w-full shrink-0 snap-center">
+            {b.href ? (
+              <a href={b.href} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={b.image_url}
+                  alt=""
+                  className="h-48 w-full rounded-2xl object-cover"
+                />
+              </a>
+            ) : (
+              <img
+                src={b.image_url}
+                alt=""
+                className="h-48 w-full rounded-2xl object-cover"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      {indicators && banners.length > 1 && (
+        <div className="mt-3 flex justify-center gap-2">
+          {banners.map((b, i) => (
+            <span
+              key={b.id}
+              className="inline-block size-2 rounded-full transition-colors"
+              style={{
+                backgroundColor:
+                  i === activeIdx ? "var(--shop-primary)" : "var(--color-border)",
+              }}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
@@ -446,8 +655,20 @@ function CartSheet({
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
-  onFinish: () => void;
+  onFinish: (name: string, phone: string, note: string) => void;
 }) {
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [observation, setObservation] = useState("");
+
+  function handleFinish() {
+    if (!customerName.trim()) {
+      toast.error("Informe seu nome para continuar.");
+      return;
+    }
+    onFinish(customerName, customerPhone, observation);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-center bg-foreground/40">
       <div className="mt-16 flex w-full max-w-[30rem] flex-col rounded-t-3xl bg-background">
@@ -469,7 +690,9 @@ function CartSheet({
           {items.map((item) => (
             <div key={item.key} className="flex gap-3 rounded-2xl border border-border bg-card p-3">
               <div className="size-16 shrink-0 overflow-hidden rounded-xl bg-muted">
-                {item.image && <img src={item.image} alt={item.name} className="h-full w-full object-cover" />}
+                {item.image && (
+                  <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-foreground">{item.name}</p>
@@ -511,8 +734,52 @@ function CartSheet({
             <span>Total</span>
             <span>{formatBRL(total)}</span>
           </div>
+
+          {items.length > 0 && (
+            <div className="space-y-3 rounded-2xl border border-border p-4">
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-foreground">
+                  Seu nome <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Ex: Maria"
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-foreground">
+                  WhatsApp (opcional)
+                </label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  placeholder="DDD + número"
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-foreground">
+                  Observação (opcional)
+                </label>
+                <textarea
+                  value={observation}
+                  onChange={(e) => setObservation(e.target.value)}
+                  placeholder="Alguma preferência ou informação extra..."
+                  rows={2}
+                  className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                />
+              </div>
+            </div>
+          )}
+
           <button
-            onClick={onFinish}
+            onClick={handleFinish}
             disabled={items.length === 0}
             className="w-full rounded-2xl py-4 font-semibold text-white disabled:opacity-50"
             style={{ background: primary }}

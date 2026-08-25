@@ -15,6 +15,8 @@ import { Route as PainelRouteImport } from './routes/painel'
 import { Route as CSlugRouteImport } from './routes/c.$slug'
 import { Route as PainelIndexRouteImport } from './routes/painel.index'
 import { Route as PainelCategoriasRouteImport } from './routes/painel.categorias'
+import { Route as PainelEstatisticasRouteImport } from './routes/painel.estatisticas'
+import { Route as PainelPedidosRouteImport } from './routes/painel.pedidos'
 import { Route as PainelPersonalizarRouteImport } from './routes/painel.personalizar'
 import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
 
@@ -48,6 +50,16 @@ const PainelCategoriasRoute = PainelCategoriasRouteImport.update({
   path: '/categorias',
   getParentRoute: () => PainelRoute,
 } as any)
+const PainelEstatisticasRoute = PainelEstatisticasRouteImport.update({
+  id: '/estatisticas',
+  path: '/estatisticas',
+  getParentRoute: () => PainelRoute,
+} as any)
+const PainelPedidosRoute = PainelPedidosRouteImport.update({
+  id: '/pedidos',
+  path: '/pedidos',
+  getParentRoute: () => PainelRoute,
+} as any)
 const PainelPersonalizarRoute = PainelPersonalizarRouteImport.update({
   id: '/personalizar',
   path: '/personalizar',
@@ -65,6 +77,8 @@ export interface FileRoutesByFullPath {
   '/painel': typeof PainelRouteWithChildren
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
   '/painel/': typeof PainelIndexRoute
@@ -74,6 +88,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
   '/painel': typeof PainelIndexRoute
@@ -85,6 +101,8 @@ export interface FileRoutesById {
   '/painel': typeof PainelRouteWithChildren
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
   '/painel/': typeof PainelIndexRoute
@@ -97,6 +115,8 @@ export interface FileRouteTypes {
     | '/painel'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/estatisticas'
+    | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
     | '/painel/'
@@ -106,6 +126,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/estatisticas'
+    | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
     | '/painel'
@@ -116,6 +138,8 @@ export interface FileRouteTypes {
     | '/painel'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/estatisticas'
+    | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
     | '/painel/'
@@ -172,6 +196,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelCategoriasRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/painel/estatisticas': {
+      id: '/painel/estatisticas'
+      path: '/estatisticas'
+      fullPath: '/painel/estatisticas'
+      preLoaderRoute: typeof PainelEstatisticasRouteImport
+      parentRoute: typeof PainelRoute
+    }
+    '/painel/pedidos': {
+      id: '/painel/pedidos'
+      path: '/pedidos'
+      fullPath: '/painel/pedidos'
+      preLoaderRoute: typeof PainelPedidosRouteImport
+      parentRoute: typeof PainelRoute
+    }
     '/painel/personalizar': {
       id: '/painel/personalizar'
       path: '/personalizar'
@@ -191,6 +229,8 @@ declare module '@tanstack/react-router' {
 
 interface PainelRouteChildren {
   PainelCategoriasRoute: typeof PainelCategoriasRoute
+  PainelEstatisticasRoute: typeof PainelEstatisticasRoute
+  PainelPedidosRoute: typeof PainelPedidosRoute
   PainelPersonalizarRoute: typeof PainelPersonalizarRoute
   PainelProdutosRoute: typeof PainelProdutosRoute
   PainelIndexRoute: typeof PainelIndexRoute
@@ -198,6 +238,8 @@ interface PainelRouteChildren {
 
 const PainelRouteChildren: PainelRouteChildren = {
   PainelCategoriasRoute: PainelCategoriasRoute,
+  PainelEstatisticasRoute: PainelEstatisticasRoute,
+  PainelPedidosRoute: PainelPedidosRoute,
   PainelPersonalizarRoute: PainelPersonalizarRoute,
   PainelProdutosRoute: PainelProdutosRoute,
   PainelIndexRoute: PainelIndexRoute,

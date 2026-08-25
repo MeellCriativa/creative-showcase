@@ -2,6 +2,8 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  BarChart3,
+  ClipboardList,
   Copy,
   ExternalLink,
   Eye,
@@ -206,12 +208,14 @@ function PainelHome() {
       <nav className="mt-4 space-y-3">
         <ShortcutLink to="/painel/produtos" icon={Package} title="Produtos" text="Adicionar, editar e ordenar" />
         <ShortcutLink to="/painel/categorias" icon={Store} title="Categorias" text="Organize sua vitrine" />
+        <ShortcutLink to="/painel/pedidos" icon={ClipboardList} title="Pedidos" text="Acompanhe os pedidos" />
         <ShortcutLink
           to="/painel/personalizar"
           icon={Palette}
           title="Personalizar"
-          text="Logo, capa, cores e WhatsApp"
+          text="Logo, fonte, cores, carrinho e banners"
         />
+        <ShortcutLink to="/painel/estatisticas" icon={BarChart3} title="Estatísticas" text="Visitas ao catálogo" />
       </nav>
     </div>
   );
