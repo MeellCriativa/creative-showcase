@@ -43,12 +43,12 @@ function AuthPage() {
           options: { emailRedirectTo: window.location.origin },
         });
         if (error) throw error;
-        toast.success("Conta criada! Bem-vinda ao Vitrine Criativa.");
+        toast.success("Conta criada! Verifique seu e-mail para confirmar.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        toast.success("Login realizado!");
       }
-      navigate({ to: "/painel" });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao entrar";
       toast.error(
