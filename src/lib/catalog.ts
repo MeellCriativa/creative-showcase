@@ -21,7 +21,21 @@ export type Catalog = {
   banner_autoplay: boolean;
   banner_interval: number;
   banner_indicators: boolean;
+  store_description: string | null;
+  instagram_url: string | null;
+  payment_methods: string[] | null;
+  owner_photo_url: string | null;
+  owner_name: string | null;
+  owner_bio: string | null;
+  owner_hours: string | null;
 };
+
+export const PAYMENT_METHODS = [
+  { key: "pix", label: "Pix", icon: "💳" },
+  { key: "credit_card", label: "Cartão de crédito", icon: "💳" },
+  { key: "debit_card", label: "Cartão de débito", icon: "💳" },
+  { key: "cash", label: "Dinheiro", icon: "💵" },
+] as const;
 
 export type Category = {
   id: string;

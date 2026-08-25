@@ -13,6 +13,7 @@ import {
   formatBRL,
   getFontFamily,
   whatsappLink,
+  PAYMENT_METHODS,
   type Banner,
   type Catalog,
   type Category,
@@ -63,6 +64,7 @@ function PublicCatalog() {
   const [cartOpen, setCartOpen] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartBump, setCartBump] = useState(0);
+  const [entered, setEntered] = useState(false);
 
   const { data, isLoading, error: queryError } = useQuery({
     queryKey: ["public-catalog", slug],
@@ -127,7 +129,7 @@ function PublicCatalog() {
           /* ignore */
         }
       })
-      .catch(() => {
+      .then(() => {}, () => {
         /* silent */
       });
   }, [catalog, user]);
@@ -196,8 +198,7 @@ function PublicCatalog() {
             total,
             status: "novo",
           })
-          .then(() => {})
-          .catch(() => {});
+          .then(() => {}, () => {});
       }
 
       const message = buildWhatsappMessage({
@@ -260,6 +261,18 @@ function PublicCatalog() {
     "--shop-primary": loadedCatalog.primary_color ?? "#8b5cf6",
     "--shop-accent": loadedCatalog.accent_color ?? "#f3eefc",
   } as React.CSSProperties;
+
+  if (!entered) {
+    return (
+      <WelcomePage
+        catalog={loadedCatalog}
+        theme={theme}
+        logoSizeClass={logoSizeClass}
+        logoJustify={logoJustify}
+        onEnter={() => setEntered(true)}
+      />
+    );
+  }
 
   return (
     <div className="app-shell pb-28" style={{ ...theme, backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}>
@@ -834,6 +847,280 @@ function CartSheet({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── Welcome Page ──────────────────────────────────────────────── */
+
+function WelcomePage({
+  catalog,
+  theme,
+  logoSizeClass,
+  logoJustify,
+  onEnter,
+}: {
+  catalog: Catalog;
+  theme: React.CSSProperties;
+  logoSizeClass: string;
+  logoJustify: string;
+  onEnter: () => void;
+}) {
+  const primary = catalog.primary_color ?? "#8b5cf6";
+  const accent = catalog.accent_color ?? "#f3eefc";
+  const activePayments = Array.isArray(catalog.payment_methods)
+    ? PAYMENT_METHODS.filter((m) => (catalog.payment_methods as string[]).includes(m.key))
+    : [];
+  const hasOwnerInfo = catalog.owner_photo_url || catalog.owner_name || catalog.owner_bio || catalog.owner_hours;
+
+  return (
+    <div className="app-shell pb-10" style={{ ...theme, backgroundColor: accent }}>
+      {/* ── Cover + Logo + Name ── */}
+      <header className="relative">
+        <div
+          className="h-40 w-full bg-cover bg-center"
+          style={{
+            backgroundColor: accent,
+            backgroundImage: catalog.cover_url ? `url(${catalog.cover_url})` : undefined,
+          }}
+        >
+          <div className="cover-glass h-full w-full" />
+        </div>
+        <div className="px-5">
+          <div
+            className="-mt-12 flex items-end gap-3"
+            style={{ justifyContent: logoJustify }}
+          >
+            <div
+              className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
+              style={{ backgroundColor: accent }}
+            >
+              {catalog.logo_url && (
+                <img
+                  src={catalog.logo_url}
+                  alt={catalog.store_name}
+                  className="h-full w-full object-cover"
+                />
+              )}
+            </div>
+          </div>
+          <h1
+            className="mt-3 text-2xl font-bold"
+            style={{
+              fontFamily: getFontFamily(catalog.store_font ?? "moderna"),
+              color: primary,
+            }}
+          >
+            {catalog.store_name}
+          </h1>
+          {catalog.store_description && (
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              {catalog.store_description}
+            </p>
+          )}
+          <div className="mt-3 flex items-center gap-2">
+            <CartIcon
+              style={catalog.cart_style ?? "carrinho"}
+              className="size-5"
+              color={primary}
+            />
+            <span className="text-sm text-muted-foreground">Carrinho</span>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Instagram button ── */}
+      {catalog.instagram_url && (
+        <div className="px-5 mt-4">
+          <a
+            href={catalog.instagram_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-shimmer btn-elevated flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#f09433] via-[#e6683c] to-[#bc1888] py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
+              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+            </svg>
+            Siga no Instagram
+          </a>
+        </div>
+      )}
+
+      {/* ── WhatsApp button ── */}
+      {catalog.whatsapp && (
+        <div className="px-5 mt-3">
+          <a
+            href={whatsappLink(catalog.whatsapp, `Olá! Vim pelo catálogo ${catalog.store_name}`)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-shimmer btn-elevated flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
+            style={{ background: catalog.whatsapp_button_color ?? "#8b5cf6" }}
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+            </svg>
+            Falar no WhatsApp
+          </a>
+        </div>
+      )}
+
+      {/* ── Como Funciona ── */}
+      <section className="mt-8 px-5">
+        <h2
+          className="text-lg font-bold"
+          style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
+        >
+          Como funciona
+        </h2>
+        <div className="mt-4 space-y-3">
+          <div
+            className="flex items-start gap-4 rounded-2xl border p-4"
+            style={{
+              borderColor: `${primary}30`,
+              backgroundColor: `${accent}`,
+            }}
+          >
+            <div
+              className="flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+              style={{ background: primary }}
+            >
+              1
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Escolha seu pedido</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Entre no catálogo e escolha os produtos que deseja comprar.
+              </p>
+            </div>
+          </div>
+          <div
+            className="flex items-start gap-4 rounded-2xl border p-4"
+            style={{
+              borderColor: `${primary}30`,
+              backgroundColor: `${accent}`,
+            }}
+          >
+            <div
+              className="flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+              style={{ background: primary }}
+            >
+              2
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Envie pelo WhatsApp</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Abra o carrinho e selecione a opção para enviar o pedido diretamente pelo WhatsApp da loja.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Formas de pagamento ── */}
+      {activePayments.length > 0 && (
+        <section className="mt-8 px-5">
+          <h2
+            className="text-lg font-bold"
+            style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
+          >
+            Formas de pagamento
+          </h2>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {activePayments.map((m) => (
+              <div
+                key={m.key}
+                className="flex items-center gap-3 rounded-2xl border p-4"
+                style={{ borderColor: `${primary}30`, backgroundColor: accent }}
+              >
+                <div
+                  className="flex size-9 items-center justify-center rounded-full text-base"
+                  style={{ background: `${primary}18` }}
+                >
+                  {m.key === "pix" && "⚡"}
+                  {m.key === "credit_card" && "💳"}
+                  {m.key === "debit_card" && "💳"}
+                  {m.key === "cash" && "💵"}
+                </div>
+                <span className="text-sm font-medium text-foreground">{m.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Apresentação da dona ── */}
+      {hasOwnerInfo && (
+        <section className="mt-8 px-5">
+          <h2
+            className="text-lg font-bold"
+            style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
+          >
+            Sobre a loja
+          </h2>
+          <div
+            className="mt-4 flex flex-col items-center gap-4 rounded-2xl border p-5 text-center"
+            style={{ borderColor: `${primary}30`, backgroundColor: accent }}
+          >
+            {catalog.owner_photo_url && (
+              <img
+                src={catalog.owner_photo_url}
+                alt={catalog.owner_name ?? "Dona da loja"}
+                className="size-20 rounded-full border-3 object-cover"
+                style={{ borderColor: primary }}
+              />
+            )}
+            {catalog.owner_name && (
+              <p className="text-base font-bold" style={{ color: primary }}>
+                {catalog.owner_name}
+              </p>
+            )}
+            {catalog.owner_bio && (
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {catalog.owner_bio}
+              </p>
+            )}
+            {catalog.owner_hours && (
+              <div
+                className="mt-1 flex items-center gap-2 rounded-xl px-4 py-2 text-sm text-muted-foreground"
+                style={{ background: `${primary}10` }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4 shrink-0">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                {catalog.owner_hours}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Entrar button ── */}
+      <div className="mt-8 px-5">
+        <button
+          onClick={onEnter}
+          className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
+          style={{ background: primary }}
+        >
+          Entrar para olhar o catálogo
+        </button>
+      </div>
+
+      {/* ── WhatsApp floating (always on welcome) ── */}
+      {catalog.whatsapp && (
+        <a
+          href={whatsappLink(catalog.whatsapp, `Olá! Vim pelo catálogo ${catalog.store_name}`)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="whatsapp-float fixed bottom-6 right-6 z-40 grid size-14 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
+          style={{ background: catalog.whatsapp_button_color ?? "#8b5cf6" }}
+          aria-label="Falar no WhatsApp"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" className="size-7">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+          </svg>
+        </a>
+      )}
     </div>
   );
 }

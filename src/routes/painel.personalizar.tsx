@@ -9,7 +9,7 @@ import { ImageUploader } from "@/components/ImageUploader";
 import { CartIcon, CART_STYLES } from "@/components/CartIcons";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
-import { slugify, FONT_OPTIONS, getFontFamily } from "@/lib/catalog";
+import { slugify, FONT_OPTIONS, getFontFamily, PAYMENT_METHODS } from "@/lib/catalog";
 import type { Banner } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -50,6 +50,13 @@ function PersonalizarPage() {
   const [bannerInterval, setBannerInterval] = useState(4);
   const [bannerIndicators, setBannerIndicators] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [storeDescription, setStoreDescription] = useState("");
+  const [instagramUrl, setInstagramUrl] = useState("");
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [ownerPhotoUrl, setOwnerPhotoUrl] = useState<string[]>([]);
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerBio, setOwnerBio] = useState("");
+  const [ownerHours, setOwnerHours] = useState("");
 
   useEffect(() => {
     if (!catalog) return;
@@ -69,6 +76,15 @@ function PersonalizarPage() {
     setBannerAutoplay(catalog.banner_autoplay ?? true);
     setBannerInterval(catalog.banner_interval ?? 4);
     setBannerIndicators(catalog.banner_indicators ?? true);
+    setStoreDescription(catalog.store_description ?? "");
+    setInstagramUrl(catalog.instagram_url ?? "");
+    setPaymentMethods(
+      Array.isArray(catalog.payment_methods) ? (catalog.payment_methods as string[]) : []
+    );
+    setOwnerPhotoUrl(catalog.owner_photo_url ? [catalog.owner_photo_url] : []);
+    setOwnerName(catalog.owner_name ?? "");
+    setOwnerBio(catalog.owner_bio ?? "");
+    setOwnerHours(catalog.owner_hours ?? "");
 
     (async () => {
       const { data } = await supabase
@@ -106,8 +122,11 @@ function PersonalizarPage() {
       const next = [...prev];
       const target = idx + dir;
       if (target < 0 || target >= next.length) return prev;
-      [next[idx], next[target]] = [next[target], next[idx]];
-      return next.map((b, i) => ({ ...b, position: i }));
+      const a = next[idx];
+      const b = next[target];
+      if (!a || !b) return prev;
+      [next[idx], next[target]] = [b, a];
+      return next.map((item, i) => ({ ...item, position: i }));
     });
   }
 
@@ -138,6 +157,13 @@ function PersonalizarPage() {
         banner_autoplay: bannerAutoplay,
         banner_interval: bannerInterval,
         banner_indicators: bannerIndicators,
+        store_description: storeDescription.trim() || null,
+        instagram_url: instagramUrl.trim() || null,
+        payment_methods: paymentMethods,
+        owner_photo_url: ownerPhotoUrl[0] ?? null,
+        owner_name: ownerName.trim() || null,
+        owner_bio: ownerBio.trim() || null,
+        owner_hours: ownerHours.trim() || null,
       })
       .eq("id", catalog!.id);
 
@@ -606,6 +632,107 @@ function PersonalizarPage() {
             </div>
           </div>
         )}
+      </Field>
+
+      {/* ── Descrição da Loja ── */}
+      <Field label="Descrição da loja" hint="Texto que aparece na página de boas-vindas do catálogo">
+        <textarea
+          value={storeDescription}
+          onChange={(e) => setStoreDescription(e.target.value)}
+          placeholder="Ex: Papelaria personalizada com muito carinho..."
+          rows={3}
+          className="input-base resize-none"
+        />
+      </Field>
+
+      {/* ── Link do Instagram ── */}
+      <Field label="Link do Instagram" hint="URL do perfil da loja no Instagram">
+        <input
+          value={instagramUrl}
+          onChange={(e) => setInstagramUrl(e.target.value)}
+          placeholder="https://instagram.com/sualoja"
+          className="input-base"
+        />
+      </Field>
+
+      {/* ── Formas de pagamento ── */}
+      <Field label="Formas de pagamento" hint="Selecione as formas aceitas pela loja">
+        <div className="space-y-2">
+          {PAYMENT_METHODS.map((m) => {
+            const active = paymentMethods.includes(m.key);
+            return (
+              <label
+                key={m.key}
+                className={`flex items-center gap-3 rounded-xl border p-3 transition-colors cursor-pointer ${
+                  active ? "border-primary bg-primary/5" : "border-border"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setPaymentMethods((prev) => [...prev, m.key]);
+                    } else {
+                      setPaymentMethods((prev) => prev.filter((k) => k !== m.key));
+                    }
+                  }}
+                  className="size-4 rounded border-border"
+                />
+                <span className="text-sm font-medium text-foreground">{m.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </Field>
+
+      {/* ── Apresentação da Dona ── */}
+      <Field label="Apresentação da loja" hint="Seção de apresentação que aparece no catálogo público">
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Foto pessoal</p>
+            <ImageUploader
+              userId={user.id}
+              value={ownerPhotoUrl}
+              onChange={setOwnerPhotoUrl}
+              max={1}
+              shape="circle"
+              label="Foto"
+            />
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Nome ou título</p>
+            <input
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+              placeholder="Ex: Ana"
+              className="input-base"
+            />
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Texto de apresentação</p>
+            <textarea
+              value={ownerBio}
+              onChange={(e) => setOwnerBio(e.target.value)}
+              placeholder="Ex: Olá! Eu sou a Ana, criadora da loja. Trabalho com papelaria personalizada e preparo cada pedido com muito carinho."
+              rows={3}
+              className="input-base resize-none"
+            />
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Horários de atendimento</p>
+            <textarea
+              value={ownerHours}
+              onChange={(e) => setOwnerHours(e.target.value)}
+              placeholder="Ex: Segunda a sexta, das 8h às 18h."
+              rows={2}
+              className="input-base resize-none"
+            />
+          </div>
+        </div>
       </Field>
 
       {/* ── Botão Salvar ── */}
