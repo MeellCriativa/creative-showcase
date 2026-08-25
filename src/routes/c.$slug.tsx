@@ -52,7 +52,7 @@ const filters = ["Todos", "Novidades", "Mais vendidos", "Promoções"] as const;
 const LOGO_SIZES: Record<string, string> = {
   pequena: "size-12",
   medio: "size-16",
-  grande: "size-24",
+  grande: "size-36",
 };
 
 function PublicCatalog() {
@@ -265,17 +265,19 @@ function PublicCatalog() {
     <div className="app-shell pb-28" style={theme}>
       <header className="relative">
         <div
-          className="h-32 w-full bg-cover bg-center"
+          className="h-36 w-full bg-cover bg-center"
           style={{
             backgroundColor: loadedCatalog.accent_color ?? "#f3eefc",
             backgroundImage: loadedCatalog.cover_url
               ? `url(${loadedCatalog.cover_url})`
               : undefined,
           }}
-        />
+        >
+          <div className="cover-glass h-full w-full" />
+        </div>
         <div className="px-5">
           <div
-            className="-mt-8 flex items-end gap-3"
+            className="-mt-10 flex items-end gap-3"
             style={{ justifyContent: logoJustify }}
           >
             <div
@@ -293,11 +295,22 @@ function PublicCatalog() {
           </div>
           <h1
             className="mt-3 text-2xl font-bold text-foreground"
-            style={{ fontFamily: getFontFamily(loadedCatalog.store_font ?? "moderna") }}
+            style={{
+              fontFamily: getFontFamily(loadedCatalog.store_font ?? "moderna"),
+              color: loadedCatalog.primary_color ?? "#8b5cf6",
+            }}
           >
             {loadedCatalog.store_name}
           </h1>
-          <p className="text-sm text-muted-foreground">Peça pelo WhatsApp, sem criar conta.</p>
+          <div className="mt-2 flex items-center gap-2">
+            <CartIcon
+              style={loadedCatalog.cart_style ?? "carrinho"}
+              className="size-5"
+              color={loadedCatalog.primary_color ?? "#8b5cf6"}
+            />
+            <span className="text-sm text-muted-foreground">Carrinho</span>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">Peça pelo WhatsApp, sem criar conta.</p>
         </div>
       </header>
 
@@ -384,7 +397,7 @@ function PublicCatalog() {
               <button
                 disabled={!product.available}
                 onClick={() => setSelected(product)}
-                className="w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                className="btn-shimmer btn-elevated w-full rounded-xl py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
                 style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
               >
                 {product.available ? "+ Adicionar" : "Esgotado"}
@@ -398,7 +411,7 @@ function PublicCatalog() {
         <button
           key={cartBump}
           onClick={() => setCartOpen(true)}
-          className="cart-bump fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full px-5 py-4 text-white shadow-xl"
+          className="cart-bump btn-elevated fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-full px-5 py-4 text-white shadow-xl"
           style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
         >
           <CartIcon style={loadedCatalog.cart_style ?? "carrinho"} className="size-5" />
@@ -436,7 +449,8 @@ function PublicCatalog() {
           href={whatsappLink(loadedCatalog.whatsapp, `Olá! Vim pelo catálogo ${loadedCatalog.store_name}`)}
           target="_blank"
           rel="noopener noreferrer"
-          className="fixed bottom-6 left-6 z-40 grid size-14 place-items-center rounded-full bg-[#25d366] text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
+          className="whatsapp-float fixed bottom-6 left-6 z-40 grid size-14 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
+          style={{ background: loadedCatalog.whatsapp_button_color ?? "#25d366" }}
           aria-label="Falar no WhatsApp"
         >
           <svg viewBox="0 0 24 24" fill="currentColor" className="size-7">
@@ -659,7 +673,7 @@ function ProductSheet({
           <button
             onClick={handleAdd}
             disabled={!product.available}
-            className="w-full rounded-2xl py-4 font-semibold text-white disabled:opacity-50"
+            className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
             style={{ background: primary }}
           >
             {product.available
@@ -813,7 +827,7 @@ function CartSheet({
           <button
             onClick={handleFinish}
             disabled={items.length === 0}
-            className="w-full rounded-2xl py-4 font-semibold text-white disabled:opacity-50"
+            className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
             style={{ background: primary }}
           >
             Finalizar pedido pelo WhatsApp

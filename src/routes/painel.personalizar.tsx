@@ -43,6 +43,7 @@ function PersonalizarPage() {
   const [logoSize, setLogoSize] = useState("medio");
   const [logoPosition, setLogoPosition] = useState("esquerda");
   const [cartStyle, setCartStyle] = useState("carrinho");
+  const [whatsappButtonColor, setWhatsappButtonColor] = useState("#25d366");
   const [banners, setBanners] = useState<Banner[]>([]);
   const [bannerEnabled, setBannerEnabled] = useState(false);
   const [bannerAutoplay, setBannerAutoplay] = useState(true);
@@ -63,6 +64,7 @@ function PersonalizarPage() {
     setLogoSize(catalog.logo_size ?? "medio");
     setLogoPosition(catalog.logo_position ?? "esquerda");
     setCartStyle(catalog.cart_style ?? "carrinho");
+    setWhatsappButtonColor(catalog.whatsapp_button_color ?? "#25d366");
     setBannerEnabled(catalog.banner_enabled ?? false);
     setBannerAutoplay(catalog.banner_autoplay ?? true);
     setBannerInterval(catalog.banner_interval ?? 4);
@@ -80,7 +82,7 @@ function PersonalizarPage() {
 
   if (!catalog || !user) return <EmptyCatalog />;
 
-  const logoSizePx = logoSize === "pequena" ? "size-12" : logoSize === "grande" ? "size-24" : "size-16";
+  const logoSizePx = logoSize === "pequena" ? "size-12" : logoSize === "grande" ? "size-36" : "size-16";
 
   function addBanner(url: string) {
     setBanners((prev) => [
@@ -131,6 +133,7 @@ function PersonalizarPage() {
         logo_size: logoSize,
         logo_position: logoPosition,
         cart_style: cartStyle,
+        whatsapp_button_color: whatsappButtonColor,
         banner_enabled: bannerEnabled,
         banner_autoplay: bannerAutoplay,
         banner_interval: bannerInterval,
@@ -368,7 +371,7 @@ function PersonalizarPage() {
           {([
             { key: "pequena", label: "Pequena", cls: "size-12" },
             { key: "medio", label: "Média", cls: "size-16" },
-            { key: "grande", label: "Grande", cls: "size-24" },
+            { key: "grande", label: "Grande", cls: "size-36" },
           ] as const).map((opt) => (
             <button
               type="button"
@@ -444,6 +447,46 @@ function PersonalizarPage() {
               </span>
             </button>
           ))}
+        </div>
+      </Field>
+
+      {/* ── Cor do botão flutuante WhatsApp ── */}
+      <Field
+        label="Cor do botão WhatsApp"
+        hint="Cor do botão flutuante que aparece no catálogo público"
+      >
+        <div className="flex items-center gap-3">
+          {[
+            { color: "#25d366", label: "Verde" },
+            { color: "#128C7E", label: "Verde escuro" },
+            { color: "#8b5cf6", label: "Lilás" },
+            { color: "#d1477a", label: "Rosa" },
+            { color: "#1f2937", label: "Grafite" },
+          ].map((opt) => (
+            <button
+              type="button"
+              key={opt.color}
+              onClick={() => setWhatsappButtonColor(opt.color)}
+              className={`flex flex-col items-center gap-1 rounded-xl border p-2 transition-colors ${
+                whatsappButtonColor === opt.color ? "border-primary bg-primary/5" : "border-border"
+              }`}
+            >
+              <span
+                className="size-7 rounded-full border border-white/30 shadow-sm"
+                style={{ background: opt.color }}
+              />
+              <span className="text-[10px] font-medium text-muted-foreground">{opt.label}</span>
+            </button>
+          ))}
+          <label className="flex flex-col items-center gap-1">
+            <input
+              type="color"
+              value={whatsappButtonColor}
+              onChange={(e) => setWhatsappButtonColor(e.target.value)}
+              className="size-7 rounded-full border border-border bg-card cursor-pointer"
+            />
+            <span className="text-[10px] font-medium text-muted-foreground">Custom</span>
+          </label>
         </div>
       </Field>
 

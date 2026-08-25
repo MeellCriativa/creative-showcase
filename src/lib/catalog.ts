@@ -16,6 +16,7 @@ export type Catalog = {
   logo_size: string;
   logo_position: string;
   cart_style: string;
+  whatsapp_button_color: string | null;
   banner_enabled: boolean;
   banner_autoplay: boolean;
   banner_interval: number;

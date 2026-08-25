@@ -70,6 +70,7 @@ export type Database = {
           updated_at: string
           user_id: string
           whatsapp: string | null
+          whatsapp_button_color: string | null
         }
         Insert: {
           accent_color?: string
@@ -91,6 +92,7 @@ export type Database = {
           updated_at?: string
           user_id: string
           whatsapp?: string | null
+          whatsapp_button_color?: string | null
         }
         Update: {
           accent_color?: string
@@ -112,6 +114,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
           whatsapp?: string | null
+          whatsapp_button_color?: string | null
         }
         Relationships: []
       }
