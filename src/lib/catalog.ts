@@ -2,6 +2,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type VariationGroup = { name: string; options: string[] };
 
+export const LILAS = "#8b5cf6";
+export const LILAS_LIGHT = "#f3eefc";
+export const WHITE = "#FFFFFF";
+
 export type Catalog = {
   id: string;
   user_id: string;
@@ -12,6 +16,7 @@ export type Catalog = {
   whatsapp: string | null;
   primary_color: string;
   accent_color: string;
+  background_color: string | null;
   store_font: string;
   logo_size: string;
   logo_position: string;

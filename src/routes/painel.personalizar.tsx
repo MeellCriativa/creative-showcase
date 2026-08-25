@@ -39,6 +39,7 @@ function PersonalizarPage() {
   const [cover, setCover] = useState<string[]>([]);
   const [primary, setPrimary] = useState("#8b5cf6");
   const [accent, setAccent] = useState("#f3eefc");
+  const [backgroundColor, setBackgroundColor] = useState("#FFFFFF");
   const [storeFont, setStoreFont] = useState("moderna");
   const [logoSize, setLogoSize] = useState("medio");
   const [logoPosition, setLogoPosition] = useState("esquerda");
@@ -67,6 +68,7 @@ function PersonalizarPage() {
     setCover(catalog.cover_url ? [catalog.cover_url] : []);
     setPrimary(catalog.primary_color ?? "#8b5cf6");
     setAccent(catalog.accent_color ?? "#f3eefc");
+    setBackgroundColor(catalog.background_color ?? "#FFFFFF");
     setStoreFont(catalog.store_font ?? "moderna");
     setLogoSize(catalog.logo_size ?? "medio");
     setLogoPosition(catalog.logo_position ?? "esquerda");
@@ -153,6 +155,7 @@ function PersonalizarPage() {
         cover_url: cover[0] ?? null,
         primary_color: primary,
         accent_color: accent,
+        background_color: backgroundColor,
         store_font: storeFont,
         logo_size: logoSize,
         logo_position: logoPosition,
@@ -396,11 +399,20 @@ function PersonalizarPage() {
             />
           </label>
           <label className="flex items-center gap-2">
-            Fundo
+            Destaque
             <input
               type="color"
               value={accent}
               onChange={(e) => setAccent(e.target.value)}
+              className="size-8 rounded-lg border border-border bg-card"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            Fundo
+            <input
+              type="color"
+              value={backgroundColor}
+              onChange={(e) => setBackgroundColor(e.target.value)}
               className="size-8 rounded-lg border border-border bg-card"
             />
           </label>
