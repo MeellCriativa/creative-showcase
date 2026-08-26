@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Trash2, ChevronUp, ChevronDown, Plus } from "lucide-react";
@@ -616,23 +616,11 @@ function PersonalizarPage() {
                     placeholder="Link opcional (https://...)"
                     className="input-base text-xs"
                   />
-                  <div>
-                    <p className="text-[10px] text-muted-foreground mb-1">
-                      Posição da imagem ({b.object_position ?? "50%"})
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] text-muted-foreground">▲</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={Number((b.object_position ?? "50").replace("%", ""))}
-                        onChange={(e) => updateBannerPosition(idx, `${e.target.value}%`)}
-                        className="h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-border accent-primary"
-                      />
-                      <span className="text-[9px] text-muted-foreground">▼</span>
-                    </div>
-                  </div>
+                  <BannerPositionEditor
+                    imageUrl={b.image_url}
+                    position={b.object_position ?? "50%"}
+                    onChange={(pos) => updateBannerPosition(idx, pos)}
+                  />
                 </div>
               </div>
             ))}
@@ -821,6 +809,98 @@ function Field({
       <p className="text-sm font-semibold text-foreground">{label}</p>
       {hint && <p className="mb-2 text-xs text-muted-foreground">{hint}</p>}
       <div className={hint ? "" : "mt-2"}>{children}</div>
+    </div>
+  );
+}
+
+function BannerPositionEditor({
+  imageUrl,
+  position,
+  onChange,
+}: {
+  imageUrl: string;
+  position: string;
+  onChange: (pos: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const pct = Number((position ?? "50").replace("%", "")) || 50;
+
+  function startY(e: React.MouseEvent | React.TouchEvent) {
+    e.preventDefault();
+    setDragging(true);
+    updateFromEvent(e);
+  }
+
+  function onMove(e: MouseEvent | TouchEvent) {
+    if (!dragging) return;
+    updateFromEvent(e);
+  }
+
+  function stopDrag() {
+    setDragging(false);
+  }
+
+  function updateFromEvent(e: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent) {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    let clientY: number;
+    if ("touches" in e) {
+      clientY = e.touches[0]?.clientY ?? (e as TouchEvent).changedTouches[0]?.clientY ?? 0;
+    } else {
+      clientY = (e as MouseEvent).clientY;
+    }
+    const y = clientY - rect.top;
+    const newPct = Math.round(Math.max(0, Math.min(100, (y / rect.height) * 100)));
+    onChange(`${newPct}%`);
+  }
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onM = (e: MouseEvent | TouchEvent) => onMove(e);
+    const onU = () => stopDrag();
+    window.addEventListener("mousemove", onM);
+    window.addEventListener("mouseup", onU);
+    window.addEventListener("touchmove", onM, { passive: false });
+    window.addEventListener("touchend", onU);
+    return () => {
+      window.removeEventListener("mousemove", onM);
+      window.removeEventListener("mouseup", onU);
+      window.removeEventListener("touchmove", onM);
+      window.removeEventListener("touchend", onU);
+    };
+  }, [dragging]);
+
+  return (
+    <div>
+      <p className="text-[10px] text-muted-foreground mb-1">
+        Arraste pra reposicionar ({pct}%)
+      </p>
+      <div
+        ref={containerRef}
+        onMouseDown={startY}
+        onTouchStart={startY}
+        className="relative h-24 w-full cursor-grab overflow-hidden rounded-lg border border-border active:cursor-grabbing"
+        style={{ touchAction: "none" }}
+      >
+        <img
+          src={imageUrl}
+          alt="Banner"
+          className="absolute left-0 w-full object-cover"
+          style={{
+            height: "200%",
+            top: `${-pct}%`,
+            pointerEvents: "none",
+          }}
+          draggable={false}
+        />
+        <div
+          className="pointer-events-none absolute left-0 h-px w-full bg-white/70"
+          style={{ top: "50%", boxShadow: "0 0 6px 2px rgba(255,255,255,0.3)" }}
+        />
+      </div>
     </div>
   );
 }
