@@ -35,6 +35,24 @@ function AuthPage() {
     try { return localStorage.getItem(REMEMBER_KEY) !== null; } catch { return false; }
   });
   const [busy, setBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  async function handleForgotPassword() {
+    if (!email) {
+      toast.error("Digite seu e-mail acima primeiro.");
+      return;
+    }
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+      });
+      if (error) throw error;
+      setResetSent(true);
+      toast.success("E-mail de recuperação enviado!");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar e-mail.");
+    }
+  }
 
   useEffect(() => {
     if (!loading && session) navigate({ to: "/painel" });
@@ -144,15 +162,30 @@ function AuthPage() {
         </div>
 
         {mode === "login" && (
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              className="size-4 rounded border-border"
-            />
-            Lembrar meu e-mail
-          </label>
+          <>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="size-4 rounded border-border"
+              />
+              Lembrar meu e-mail
+            </label>
+            {resetSent ? (
+              <p className="text-sm text-green-600">
+                Verifique sua caixa de entrada e clique no link para redefinir sua senha.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                className="text-sm text-primary font-medium hover:underline"
+              >
+                Esqueci minha senha
+              </button>
+            )}
+          </>
         )}
 
         <button
