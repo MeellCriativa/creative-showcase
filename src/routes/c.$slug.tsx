@@ -21,20 +21,41 @@ import {
 } from "@/lib/catalog";
 
 export const Route = createFileRoute("/c/$slug")({
-  head: ({ params }) => ({
-    meta: [
-      { title: `Catálogo ${params.slug} — Vitrine Criativa` },
-      {
-        name: "description",
-        content: "Escolha seus produtos e finalize o pedido direto pelo WhatsApp.",
-      },
-      { property: "og:title", content: "Catálogo digital — Vitrine Criativa" },
-      {
-        property: "og:description",
-        content: "Escolha seus produtos e finalize o pedido direto pelo WhatsApp.",
-      },
-    ],
-  }),
+  loader: async ({ params }) => {
+    try {
+      const { data: catalog } = await supabase
+        .from("catalogs_public")
+        .select("store_name, store_description, logo_url, cover_url")
+        .eq("slug", params.slug)
+        .maybeSingle();
+      return { catalog };
+    } catch {
+      return { catalog: null };
+    }
+  },
+  head: ({ params, loaderData }) => {
+    const catalog = loaderData?.catalog;
+    const title = catalog?.store_name
+      ? `${catalog.store_name} — Vitrine Criativa`
+      : `Catálogo ${params.slug} — Vitrine Criativa`;
+    const description =
+      catalog?.store_description ||
+      "Escolha seus produtos e finalize o pedido direto pelo WhatsApp.";
+    const ogImage = catalog?.cover_url || catalog?.logo_url;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: catalog?.store_name || title },
+        { property: "og:description", content: description },
+        { property: "og:type", content: "website" },
+        ...(ogImage
+          ? [{ property: "og:image", content: ogImage }]
+          : []),
+        { name: "twitter:card", content: ogImage ? "summary_large_image" : "summary" },
+      ],
+    };
+  },
   component: PublicCatalog,
 });
 
