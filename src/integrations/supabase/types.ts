@@ -321,7 +321,33 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      catalogs_public: {
+        Row: {
+          accent_color: string
+          background_color: string
+          banner_autoplay: boolean
+          banner_enabled: boolean
+          banner_indicators: boolean
+          banner_interval: number
+          cover_url: string | null
+          created_at: string
+          cart_style: string
+          id: string
+          logo_position: string
+          logo_size: string
+          logo_url: string | null
+          payment_methods: Json | null
+          primary_color: string
+          slug: string
+          store_font: string
+          store_name: string
+          updated_at: string
+          user_id: string
+          whatsapp: string | null
+          whatsapp_button_color: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

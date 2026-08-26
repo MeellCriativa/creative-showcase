@@ -73,7 +73,7 @@ function PublicCatalog() {
       if (connError) throw new Error("Não foi possível conectar ao servidor. Verifique a configuração do Supabase.");
 
       const { data: catalog, error } = await supabase
-        .from("catalogs")
+        .from("catalogs_public")
         .select("*")
         .eq("slug", slug)
         .maybeSingle();
@@ -94,7 +94,7 @@ function PublicCatalog() {
           .order("position"),
       ]);
       return {
-        catalog: catalog as Catalog,
+        catalog: catalog as unknown as Catalog,
         categories: (categories ?? []) as Category[],
         products: (products ?? []) as unknown as Product[],
         banners: (banners ?? []) as Banner[],
