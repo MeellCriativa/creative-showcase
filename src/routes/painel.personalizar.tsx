@@ -293,16 +293,7 @@ function PersonalizarPage() {
 
         {bannerEnabled && banners.length > 0 && (
           <div className="border-t border-border px-4 py-2">
-            <div className="flex gap-2 overflow-x-auto">
-              {banners.map((b) => (
-                <img
-                  key={b.id}
-                  src={b.image_url}
-                  alt="Banner"
-                  className="h-12 w-20 shrink-0 rounded-lg object-cover"
-                />
-              ))}
-            </div>
+            <BannerPreviewCarousel banners={banners} color={primary} />
           </div>
         )}
       </div>
@@ -890,8 +881,8 @@ function BannerPositionEditor({
           alt="Banner"
           className="absolute left-0 w-full object-cover"
           style={{
-            height: "200%",
-            top: `${-pct}%`,
+            height: "400%",
+            top: `${-pct * 3}%`,
             pointerEvents: "none",
           }}
           draggable={false}
@@ -901,6 +892,61 @@ function BannerPositionEditor({
           style={{ top: "50%", boxShadow: "0 0 6px 2px rgba(255,255,255,0.3)" }}
         />
       </div>
+    </div>
+  );
+}
+
+function BannerPreviewCarousel({ banners, color }: { banners: { id: string; image_url: string; object_position?: string }[]; color?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (banners.length <= 1) return;
+    const id = window.setInterval(() => {
+      const el = ref.current;
+      if (!el) return;
+      const next = (idx + 1) % banners.length;
+      el.scrollTo({ left: el.clientWidth * next, behavior: "smooth" });
+      setIdx(next);
+    }, 3000);
+    return () => clearInterval(id);
+  }, [idx, banners.length]);
+
+  function onScroll() {
+    const el = ref.current;
+    if (!el) return;
+    setIdx(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  return (
+    <div>
+      <div
+        ref={ref}
+        onScroll={onScroll}
+        className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-xl"
+      >
+        {banners.map((b) => (
+          <div key={b.id} className="w-full shrink-0 snap-center">
+            <img
+              src={b.image_url}
+              alt="Banner"
+              className="h-24 w-full rounded-xl object-cover"
+              style={{ objectPosition: b.object_position ?? "center" }}
+            />
+          </div>
+        ))}
+      </div>
+      {banners.length > 1 && (
+        <div className="mt-2 flex justify-center gap-1.5">
+          {banners.map((b, i) => (
+            <span
+              key={b.id}
+              className="inline-block size-1.5 rounded-full transition-colors"
+              style={{ backgroundColor: i === idx ? (color ?? "#8b5cf6") : "#d1d5db" }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
