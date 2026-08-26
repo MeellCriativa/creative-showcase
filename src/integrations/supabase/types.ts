@@ -14,17 +14,81 @@ export type Database = {
   }
   public: {
     Tables: {
+      banners: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          href: string | null
+          id: string
+          image_url: string
+          object_position: string
+          position: number
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          href?: string | null
+          id?: string
+          image_url: string
+          object_position?: string
+          position?: number
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          href?: string | null
+          id?: string
+          image_url?: string
+          object_position?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "banners_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      catalog_visits: {
+        Row: {
+          catalog_id: string
+          id: number
+          visited_at: string
+        }
+        Insert: {
+          catalog_id: string
+          id?: never
+          visited_at?: string
+        }
+        Update: {
+          catalog_id?: string
+          id?: never
+          visited_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_visits_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       catalogs: {
         Row: {
           accent_color: string
-          background_color: string
+          background_color: string | null
           banner_autoplay: boolean
           banner_enabled: boolean
           banner_indicators: boolean
           banner_interval: number
+          cart_style: string
           cover_url: string | null
           created_at: string
-          cart_style: string
           id: string
           instagram_url: string | null
           logo_position: string
@@ -47,14 +111,14 @@ export type Database = {
         }
         Insert: {
           accent_color?: string
-          background_color?: string
+          background_color?: string | null
           banner_autoplay?: boolean
           banner_enabled?: boolean
           banner_indicators?: boolean
           banner_interval?: number
+          cart_style?: string
           cover_url?: string | null
           created_at?: string
-          cart_style?: string
           id?: string
           instagram_url?: string | null
           logo_position?: string
@@ -77,14 +141,14 @@ export type Database = {
         }
         Update: {
           accent_color?: string
-          background_color?: string
+          background_color?: string | null
           banner_autoplay?: boolean
           banner_enabled?: boolean
           banner_indicators?: boolean
           banner_interval?: number
+          cart_style?: string
           cover_url?: string | null
           created_at?: string
-          cart_style?: string
           id?: string
           instagram_url?: string | null
           logo_position?: string
@@ -132,6 +196,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "categories_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          customer_name: string
+          customer_phone: string | null
+          id: string
+          items: Json
+          note: string | null
+          status: string
+          total: number
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          customer_name: string
+          customer_phone?: string | null
+          id?: string
+          items?: Json
+          note?: string | null
+          status?: string
+          total?: number
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          customer_name?: string
+          customer_phone?: string | null
+          id?: string
+          items?: Json
+          note?: string | null
+          status?: string
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_catalog_id_fkey"
             columns: ["catalog_id"]
             isOneToOne: false
             referencedRelation: "catalogs"
@@ -207,114 +315,6 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      banners: {
-        Row: {
-          catalog_id: string
-          created_at: string
-          href: string | null
-          id: string
-          image_url: string
-          object_position: string | null
-          position: number
-        }
-        Insert: {
-          catalog_id: string
-          created_at?: string
-          href?: string | null
-          id?: string
-          image_url: string
-          object_position?: string | null
-          position?: number
-        }
-        Update: {
-          catalog_id?: string
-          created_at?: string
-          href?: string | null
-          id?: string
-          image_url?: string
-          object_position?: string | null
-          position?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "banners_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "catalogs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      orders: {
-        Row: {
-          catalog_id: string
-          created_at: string
-          customer_name: string
-          customer_phone: string | null
-          id: string
-          items: Json
-          note: string | null
-          status: string
-          total: number
-        }
-        Insert: {
-          catalog_id: string
-          created_at?: string
-          customer_name: string
-          customer_phone?: string | null
-          id?: string
-          items?: Json
-          note?: string | null
-          status?: string
-          total?: number
-        }
-        Update: {
-          catalog_id?: string
-          created_at?: string
-          customer_name?: string
-          customer_phone?: string | null
-          id?: string
-          items?: Json
-          note?: string | null
-          status?: string
-          total?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "orders_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "catalogs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      catalog_visits: {
-        Row: {
-          catalog_id: string
-          id: number
-          visited_at: string
-        }
-        Insert: {
-          catalog_id: string
-          id?: number
-          visited_at?: string
-        }
-        Update: {
-          catalog_id?: string
-          id?: number
-          visited_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "catalog_visits_catalog_id_fkey"
-            columns: ["catalog_id"]
-            isOneToOne: false
-            referencedRelation: "catalogs"
             referencedColumns: ["id"]
           },
         ]
