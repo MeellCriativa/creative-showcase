@@ -211,22 +211,43 @@ function PersonalizarPage() {
       }
     }
 
-    if (banners.length > 0) {
-      const { error: bannerError } = await supabase.from("banners").upsert(
-        banners.map((b) => ({
-          ...(b.id.startsWith("new-") ? {} : { id: b.id }),
+    const newBanners = banners.filter((b) => b.id.startsWith("new-"));
+    const existingBanners = banners.filter((b) => !b.id.startsWith("new-"));
+
+    if (newBanners.length > 0) {
+      const { error: insertError } = await supabase.from("banners").insert(
+        newBanners.map((b) => ({
           catalog_id: catalog!.id,
           image_url: b.image_url,
           href: b.href || null,
           position: b.position,
           object_position: b.object_position || "center",
-        })) as any[],
+        })),
+      );
+      if (insertError) {
+        setSaving(false);
+        console.error("[Vitrine Criativa] Banner insert error:", insertError);
+        toast.error("Erro ao salvar banners.");
+        return;
+      }
+    }
+
+    if (existingBanners.length > 0) {
+      const { error: updateError } = await supabase.from("banners").upsert(
+        existingBanners.map((b) => ({
+          id: b.id,
+          catalog_id: catalog!.id,
+          image_url: b.image_url,
+          href: b.href || null,
+          position: b.position,
+          object_position: b.object_position || "center",
+        })),
         { onConflict: "id" },
       );
-      if (bannerError) {
+      if (updateError) {
         setSaving(false);
-        console.error("[Vitrine Criativa] Banner save error:", bannerError);
-        toast.error("Erro ao salvar banners.");
+        console.error("[Vitrine Criativa] Banner update error:", updateError);
+        toast.error("Erro ao atualizar banners.");
         return;
       }
     }
