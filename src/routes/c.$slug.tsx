@@ -91,15 +91,24 @@ function PublicCatalog() {
     queryKey: ["public-catalog", slug],
     queryFn: async () => {
       const connError = getSupabaseError();
-      if (connError) throw new Error("Não foi possível conectar ao servidor. Verifique a configuração do Supabase.");
+      if (connError) {
+        console.error("[catalog] supabase init error:", connError);
+        throw new Error("Não foi possível conectar ao servidor. Verifique a configuração do Supabase.");
+      }
 
       const { data: catalog, error } = await supabase
         .from("catalogs_public")
         .select("*")
         .eq("slug", slug)
         .maybeSingle();
-      if (error) throw error;
-      if (!catalog) return null;
+      if (error) {
+        console.error("[catalog] query error:", JSON.stringify(error));
+        throw error;
+      }
+      if (!catalog) {
+        console.warn("[catalog] no catalog found for slug:", slug);
+        return null;
+      }
       const [{ data: categories }, { data: products }, { data: banners }] = await Promise.all([
         supabase.from("categories").select("*").eq("catalog_id", catalog.id).order("position"),
         supabase
@@ -279,6 +288,9 @@ function PublicCatalog() {
       <div className="app-shell grid place-items-center px-6 text-center">
         <p className="text-sm text-muted-foreground">
           Não foi possível carregar o catálogo. Tente novamente mais tarde.
+        </p>
+        <p className="mt-4 w-full max-w-md break-all rounded-xl bg-muted p-3 text-xs text-muted-foreground">
+          {queryError.message}
         </p>
       </div>
     );
