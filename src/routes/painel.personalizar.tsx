@@ -145,42 +145,48 @@ function PersonalizarPage() {
     e.preventDefault();
     setSaving(true);
 
+    const payload = {
+      store_name: storeName.trim() || catalog!.store_name,
+      slug: slugify(slug) || catalog!.slug,
+      whatsapp: whatsapp.trim() || null,
+      logo_url: logo[0] || null,
+      cover_url: cover[0] || null,
+      primary_color: primary || "#8b5cf6",
+      accent_color: accent || "#f3eefc",
+      background_color: backgroundColor || "#FFFFFF",
+      store_font: storeFont || "moderna",
+      logo_size: logoSize || "medio",
+      logo_position: logoPosition || "esquerda",
+      cart_style: cartStyle || "carrinho",
+      whatsapp_button_color: whatsappButtonColor || "#8b5cf6",
+      banner_enabled: bannerEnabled,
+      banner_autoplay: bannerAutoplay,
+      banner_interval: bannerInterval,
+      banner_indicators: bannerIndicators,
+      store_description: storeDescription.trim() || null,
+      instagram_url: instagramUrl.trim() || null,
+      payment_methods: paymentMethods.length > 0 ? paymentMethods : [],
+      owner_photo_url: ownerPhotoUrl[0] || null,
+      owner_name: ownerName.trim() || null,
+      owner_bio: ownerBio.trim() || null,
+      owner_hours: ownerHours.trim() || null,
+    };
+
     const { error: catalogError } = await supabase
       .from("catalogs")
-      .update({
-        store_name: storeName.trim(),
-        slug: slugify(slug) || catalog!.slug,
-        whatsapp: whatsapp.trim() || null,
-        logo_url: logo[0] ?? null,
-        cover_url: cover[0] ?? null,
-        primary_color: primary,
-        accent_color: accent,
-        background_color: backgroundColor,
-        store_font: storeFont,
-        logo_size: logoSize,
-        logo_position: logoPosition,
-        cart_style: cartStyle,
-        whatsapp_button_color: whatsappButtonColor,
-        banner_enabled: bannerEnabled,
-        banner_autoplay: bannerAutoplay,
-        banner_interval: bannerInterval,
-        banner_indicators: bannerIndicators,
-        store_description: storeDescription.trim() || null,
-        instagram_url: instagramUrl.trim() || null,
-        payment_methods: paymentMethods,
-        owner_photo_url: ownerPhotoUrl[0] ?? null,
-        owner_name: ownerName.trim() || null,
-        owner_bio: ownerBio.trim() || null,
-        owner_hours: ownerHours.trim() || null,
-      })
+      .update(payload)
       .eq("id", catalog!.id);
 
     if (catalogError) {
       setSaving(false);
-      console.error("Catalog save error:", catalogError);
-      toast.error(
-        catalogError.code === "23505" ? "Esse endereço de link já está em uso." : `Erro ao salvar: ${catalogError.message ?? "tente novamente"}`,
-      );
+      console.error("[Vitrine Criativa] Catalog save error:", catalogError);
+      if (catalogError.code === "23505") {
+        toast.error("Esse endereço de link já está em uso.");
+      } else if (catalogError.message?.includes("column")) {
+        toast.error("Erro de configuração do banco. Execute a migration SQL no Supabase.");
+      } else {
+        toast.error(`Erro ao salvar: ${catalogError.message ?? "tente novamente"}`);
+      }
       return;
     }
 
@@ -213,31 +219,15 @@ function PersonalizarPage() {
           image_url: b.image_url,
           href: b.href || null,
           position: b.position,
+          object_position: b.object_position || "center",
         })) as any[],
         { onConflict: "id" },
       );
       if (bannerError) {
         setSaving(false);
+        console.error("[Vitrine Criativa] Banner save error:", bannerError);
         toast.error("Erro ao salvar banners.");
         return;
-      }
-
-      const { data: savedBanners } = await supabase
-        .from("banners")
-        .select("id")
-        .eq("catalog_id", catalog!.id);
-
-      if (savedBanners) {
-        const patch = banners
-          .filter((b) => !b.id.startsWith("new-") && b.object_position && b.object_position !== "50%")
-          .map((b) => {
-            const match = savedBanners.find((sb) => sb.id === b.id);
-            return match ? { id: match.id, object_position: b.object_position } : null;
-          })
-          .filter(Boolean);
-        if (patch.length > 0) {
-          await supabase.from("banners").upsert(patch as any[], { onConflict: "id" });
-        }
       }
     }
 

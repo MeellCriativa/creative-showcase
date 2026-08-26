@@ -94,7 +94,7 @@ function PublicCatalog() {
           .order("position"),
       ]);
       return {
-        catalog: catalog as unknown as Catalog,
+        catalog: catalog as Catalog,
         categories: (categories ?? []) as Category[],
         products: (products ?? []) as unknown as Product[],
         banners: (banners ?? []) as Banner[],
@@ -1110,12 +1110,12 @@ function WelcomePage({
         >
           Como funciona
         </h2>
-        <div className="mt-4 space-y-3">
+          <div className="mt-4 space-y-3">
           <div
             className="flex items-start gap-4 rounded-2xl border p-4"
             style={{
-              borderColor: `${primary}30`,
-              backgroundColor: `${accent}`,
+              borderColor: `${primary}20`,
+              backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent,
             }}
           >
             <div
@@ -1134,8 +1134,8 @@ function WelcomePage({
           <div
             className="flex items-start gap-4 rounded-2xl border p-4"
             style={{
-              borderColor: `${primary}30`,
-              backgroundColor: `${accent}`,
+              borderColor: `${primary}20`,
+              backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent,
             }}
           >
             <div
@@ -1168,11 +1168,11 @@ function WelcomePage({
               <div
                 key={m.key}
                 className="flex items-center gap-3 rounded-2xl border p-4"
-                style={{ borderColor: `${primary}30`, backgroundColor: accent }}
+                style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
               >
                 <div
                   className="flex size-9 items-center justify-center rounded-full text-base"
-                  style={{ background: `${primary}18` }}
+                  style={{ background: `${primary}15` }}
                 >
                   {m.key === "pix" && "⚡"}
                   {m.key === "credit_card" && "💳"}
@@ -1197,7 +1197,7 @@ function WelcomePage({
           </h2>
           <div
             className="mt-4 flex flex-col items-center gap-4 rounded-2xl border p-5 text-center"
-            style={{ borderColor: `${primary}30`, backgroundColor: accent }}
+            style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
           >
             {catalog.owner_photo_url && (
               <img
@@ -1220,7 +1220,7 @@ function WelcomePage({
             {catalog.owner_hours && (
               <div
                 className="mt-1 flex items-center gap-2 rounded-xl px-4 py-2 text-sm text-muted-foreground"
-                style={{ background: `${primary}10` }}
+                style={{ background: `${primary}0A` }}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4 shrink-0">
                   <circle cx="12" cy="12" r="10" />

@@ -333,12 +333,18 @@ export type Database = {
           created_at: string
           cart_style: string
           id: string
+          instagram_url: string | null
           logo_position: string
           logo_size: string
           logo_url: string | null
+          owner_bio: string | null
+          owner_hours: string | null
+          owner_name: string | null
+          owner_photo_url: string | null
           payment_methods: Json | null
           primary_color: string
           slug: string
+          store_description: string | null
           store_font: string
           store_name: string
           updated_at: string
