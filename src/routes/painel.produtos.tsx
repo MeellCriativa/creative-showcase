@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ImageUploader } from "@/components/ImageUploader";
 import { useAuth } from "@/hooks/useAuth";
 import { useCategories, useMyCatalog, useProducts } from "@/hooks/useCatalog";
+import { useMetaConnection, useMetaMappings } from "@/hooks/useMetaCatalog";
 import { formatBRL, type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -50,9 +51,14 @@ function ProdutosPage() {
   const { data: catalog } = useMyCatalog(user?.id);
   const { data: products, isLoading } = useProducts(catalog?.id);
   const { data: categories } = useCategories(catalog?.id);
+  const { data: metaConn } = useMetaConnection(catalog?.id);
+  const { data: metaMappings } = useMetaMappings(catalog?.id);
   const [draft, setDraft] = useState<Draft | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["products", catalog?.id] });
+
+  const metaConnected = metaConn?.sync_status === "connected" || metaConn?.sync_status === "syncing";
+  const mappingsByProduct = new Map((metaMappings ?? []).map((m) => [m.product_id, m.sync_state]));
 
   if (!catalog || !user) return <EmptyCatalog />;
 
@@ -124,7 +130,31 @@ function ProdutosPage() {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold text-foreground">{product.name}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="truncate font-semibold text-foreground">{product.name}</p>
+                {metaConnected && (
+                  <span
+                    className={`inline-block size-2 shrink-0 rounded-full ${
+                      mappingsByProduct.get(product.id) === "synced"
+                        ? "bg-green-500"
+                        : mappingsByProduct.get(product.id) === "error"
+                          ? "bg-red-500"
+                          : mappingsByProduct.get(product.id) === "deleted"
+                            ? "bg-orange-400"
+                            : "bg-gray-300"
+                    }`}
+                    title={
+                      mappingsByProduct.get(product.id) === "synced"
+                        ? "Sincronizado"
+                        : mappingsByProduct.get(product.id) === "error"
+                          ? "Erro na sincronização"
+                          : mappingsByProduct.get(product.id) === "deleted"
+                            ? "Marcado para remoção"
+                            : "Pendente"
+                    }
+                  />
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">
                 {product.price_options && product.price_options.length > 0 ? (
                   <span className="font-semibold text-primary">

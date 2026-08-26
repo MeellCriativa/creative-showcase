@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { BarChart3, ClipboardList, LayoutGrid, Loader2, Package, Palette, Store } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutGrid, Loader2, MessageCircle, Package, Palette, Store } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -17,12 +17,13 @@ export const Route = createFileRoute("/painel")({
 });
 
 const tabs = [
-  { to: "/painel", label: "Início", icon: LayoutGrid, exact: true },
+  { to: "/painel", label: "Inicio", icon: LayoutGrid, exact: true },
   { to: "/painel/produtos", label: "Produtos", icon: Package, exact: false },
   { to: "/painel/categorias", label: "Categorias", icon: Store, exact: false },
   { to: "/painel/pedidos", label: "Pedidos", icon: ClipboardList, exact: false },
   { to: "/painel/personalizar", label: "Vitrine", icon: Palette, exact: false },
-  { to: "/painel/estatisticas", label: "Estatísticas", icon: BarChart3, exact: false },
+  { to: "/painel/whatsapp", label: "WhatsApp", icon: MessageCircle, exact: false },
+  { to: "/painel/estatisticas", label: "Estatisticas", icon: BarChart3, exact: false },
 ] as const;
 
 function PainelLayout() {
@@ -47,7 +48,7 @@ function PainelLayout() {
       <Outlet />
 
       <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur">
-        <ul className="grid grid-cols-6">
+        <ul className="grid grid-cols-7">
           {tabs.map((tab) => {
             const active = tab.exact ? pathname === tab.to : pathname.startsWith(tab.to);
             return (

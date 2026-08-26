@@ -94,6 +94,7 @@ export type Database = {
           logo_position: string
           logo_size: string
           logo_url: string | null
+          meta_catalog_connected: boolean
           owner_bio: string | null
           owner_hours: string | null
           owner_name: string | null
@@ -124,6 +125,7 @@ export type Database = {
           logo_position?: string
           logo_size?: string
           logo_url?: string | null
+          meta_catalog_connected?: boolean
           owner_bio?: string | null
           owner_hours?: string | null
           owner_name?: string | null
@@ -154,6 +156,7 @@ export type Database = {
           logo_position?: string
           logo_size?: string
           logo_url?: string | null
+          meta_catalog_connected?: boolean
           owner_bio?: string | null
           owner_hours?: string | null
           owner_name?: string | null

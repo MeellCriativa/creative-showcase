@@ -33,6 +33,7 @@ export type Catalog = {
   owner_name: string | null;
   owner_bio: string | null;
   owner_hours: string | null;
+  meta_catalog_connected: boolean;
 };
 
 export const PAYMENT_METHODS = [
