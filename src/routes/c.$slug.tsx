@@ -557,16 +557,23 @@ function BannerCarousel({
   const ref = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const touchRef = useRef<{ x: number; y: number } | null>(null);
+
+  const scrollToIdx = (idx: number, smooth = true) => {
+    const el = ref.current;
+    if (!el) return;
+    const child = el.children[idx] as HTMLElement | undefined;
+    if (!child) return;
+    el.scrollTo({ left: child.offsetLeft, behavior: smooth ? "smooth" : "instant" });
+    setActiveIdx(idx);
+  };
 
   useEffect(() => {
     if (!autoplay || paused || banners.length <= 1) return;
     const ms = Math.max(2, interval) * 1000;
     const id = window.setInterval(() => {
-      const el = ref.current;
-      if (!el) return;
       const next = (activeIdx + 1) % banners.length;
-      el.scrollTo({ left: el.clientWidth * next, behavior: "smooth" });
-      setActiveIdx(next);
+      scrollToIdx(next);
     }, ms);
     return () => clearInterval(id);
   }, [autoplay, paused, interval, activeIdx, banners.length]);
@@ -574,55 +581,115 @@ function BannerCarousel({
   function onScroll() {
     const el = ref.current;
     if (!el) return;
-    const idx = Math.round(el.scrollLeft / el.clientWidth);
-    setActiveIdx(idx);
+    let closest = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < el.children.length; i++) {
+      const child = el.children[i] as HTMLElement;
+      const dist = Math.abs(el.scrollLeft - child.offsetLeft);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = i;
+      }
+    }
+    setActiveIdx(closest);
   }
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchRef.current = { x: e.touches[0]!.clientX, y: e.touches[0]!.clientY };
+    setPaused(true);
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (!touchRef.current) { setPaused(false); return; }
+    const dx = e.changedTouches[0]!.clientX - touchRef.current.x;
+    const dy = e.changedTouches[0]!.clientY - touchRef.current.y;
+    touchRef.current = null;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 30) {
+      if (dx < 0 && activeIdx < banners.length - 1) {
+        scrollToIdx(activeIdx + 1);
+      } else if (dx > 0 && activeIdx > 0) {
+        scrollToIdx(activeIdx - 1);
+      } else if (dx < 0 && activeIdx === banners.length - 1) {
+        scrollToIdx(0);
+      } else if (dx > 0 && activeIdx === 0) {
+        scrollToIdx(banners.length - 1);
+      }
+    }
+    setTimeout(() => setPaused(false), 200);
+  }
+
+  if (banners.length === 0) return null;
 
   return (
     <div
-      className="px-5"
+      className="relative px-5 mt-4"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      onTouchStart={() => setPaused(true)}
-      onTouchEnd={() => setTimeout(() => setPaused(false), 200)}
     >
-      <div
-        ref={ref}
-        onScroll={onScroll}
-        className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto rounded-2xl"
-      >
-        {banners.map((b) => (
-          <div key={b.id} className="w-full shrink-0 snap-center">
-            {b.href ? (
-              <a href={b.href} target="_blank" rel="noopener noreferrer">
+      <div className="relative overflow-hidden rounded-2xl">
+        <div
+          ref={ref}
+          onScroll={onScroll}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto"
+          style={{ scrollSnapStop: "always" }}
+        >
+          {banners.map((b) => (
+            <div key={b.id} className="w-full shrink-0 snap-center px-1.5 first:pl-0 last:pr-0">
+              {b.href ? (
+                <a href={b.href} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={b.image_url}
+                    alt=""
+                    className="h-48 w-full rounded-2xl object-cover"
+                    style={{ objectPosition: b.object_position ?? "center" }}
+                  />
+                </a>
+              ) : (
                 <img
                   src={b.image_url}
                   alt=""
                   className="h-48 w-full rounded-2xl object-cover"
                   style={{ objectPosition: b.object_position ?? "center" }}
                 />
-              </a>
-            ) : (
-              <img
-                src={b.image_url}
-                alt=""
-                className="h-48 w-full rounded-2xl object-cover"
-                style={{ objectPosition: b.object_position ?? "center" }}
-              />
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          ))}
+        </div>
+
+        {banners.length > 1 && (
+          <>
+            <button
+              onClick={() => scrollToIdx(activeIdx > 0 ? activeIdx - 1 : banners.length - 1)}
+              className="absolute left-2 top-1/2 -translate-y-1/2 grid size-8 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
+              aria-label="Banner anterior"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <button
+              onClick={() => scrollToIdx(activeIdx < banners.length - 1 ? activeIdx + 1 : 0)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 grid size-8 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
+              aria-label="Próximo banner"
+            >
+              <ChevronLeft className="size-4 rotate-180" />
+            </button>
+          </>
+        )}
       </div>
+
       {indicators && banners.length > 1 && (
         <div className="mt-3 flex justify-center gap-2">
           {banners.map((b, i) => (
-            <span
+            <button
               key={b.id}
+              onClick={() => scrollToIdx(i)}
               className="inline-block size-2 rounded-full transition-colors"
               style={{
                 backgroundColor:
                   i === activeIdx ? "var(--shop-primary)" : "var(--color-border)",
               }}
+              aria-label={`Banner ${i + 1}`}
             />
           ))}
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2, ChevronUp, ChevronDown, Plus } from "lucide-react";
+import { Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -899,15 +899,22 @@ function BannerPositionEditor({
 function BannerPreviewCarousel({ banners, color }: { banners: { id: string; image_url: string; object_position?: string }[]; color?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [idx, setIdx] = useState(0);
+  const touchRef = useRef<{ x: number } | null>(null);
+
+  const scrollToIdx = (i: number, smooth = true) => {
+    const el = ref.current;
+    if (!el) return;
+    const child = el.children[i] as HTMLElement | undefined;
+    if (!child) return;
+    el.scrollTo({ left: child.offsetLeft, behavior: smooth ? "smooth" : "instant" });
+    setIdx(i);
+  };
 
   useEffect(() => {
     if (banners.length <= 1) return;
     const id = window.setInterval(() => {
-      const el = ref.current;
-      if (!el) return;
       const next = (idx + 1) % banners.length;
-      el.scrollTo({ left: el.clientWidth * next, behavior: "smooth" });
-      setIdx(next);
+      scrollToIdx(next);
     }, 3000);
     return () => clearInterval(id);
   }, [idx, banners.length]);
@@ -915,34 +922,86 @@ function BannerPreviewCarousel({ banners, color }: { banners: { id: string; imag
   function onScroll() {
     const el = ref.current;
     if (!el) return;
-    setIdx(Math.round(el.scrollLeft / el.clientWidth));
+    let closest = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < el.children.length; i++) {
+      const child = el.children[i] as HTMLElement;
+      const dist = Math.abs(el.scrollLeft - child.offsetLeft);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = i;
+      }
+    }
+    setIdx(closest);
   }
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchRef.current = { x: e.touches[0]!.clientX };
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (!touchRef.current) return;
+    const dx = e.changedTouches[0]!.clientX - touchRef.current.x;
+    touchRef.current = null;
+    if (Math.abs(dx) > 20) {
+      if (dx < 0 && idx < banners.length - 1) scrollToIdx(idx + 1);
+      else if (dx > 0 && idx > 0) scrollToIdx(idx - 1);
+      else if (dx < 0 && idx === banners.length - 1) scrollToIdx(0);
+      else if (dx > 0 && idx === 0) scrollToIdx(banners.length - 1);
+    }
+  }
+
+  if (banners.length === 0) return null;
 
   return (
     <div>
-      <div
-        ref={ref}
-        onScroll={onScroll}
-        className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-xl"
-      >
-        {banners.map((b) => (
-          <div key={b.id} className="w-full shrink-0 snap-center">
-            <img
-              src={b.image_url}
-              alt="Banner"
-              className="h-24 w-full rounded-xl object-cover"
-              style={{ objectPosition: b.object_position ?? "center" }}
-            />
-          </div>
-        ))}
+      <div className="relative overflow-hidden rounded-xl">
+        <div
+          ref={ref}
+          onScroll={onScroll}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto"
+        >
+          {banners.map((b) => (
+            <div key={b.id} className="w-full shrink-0 snap-center px-1 first:pl-0 last:pr-0">
+              <img
+                src={b.image_url}
+                alt="Banner"
+                className="h-24 w-full rounded-xl object-cover"
+                style={{ objectPosition: b.object_position ?? "center" }}
+              />
+            </div>
+          ))}
+        </div>
+        {banners.length > 1 && (
+          <>
+            <button
+              onClick={() => scrollToIdx(idx > 0 ? idx - 1 : banners.length - 1)}
+              className="absolute left-1 top-1/2 -translate-y-1/2 grid size-6 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
+              aria-label="Anterior"
+            >
+              <ChevronLeft className="size-3" />
+            </button>
+            <button
+              onClick={() => scrollToIdx(idx < banners.length - 1 ? idx + 1 : 0)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 grid size-6 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
+              aria-label="Próximo"
+            >
+              <ChevronLeft className="size-3 rotate-180" />
+            </button>
+          </>
+        )}
       </div>
       {banners.length > 1 && (
         <div className="mt-2 flex justify-center gap-1.5">
           {banners.map((b, i) => (
-            <span
+            <button
               key={b.id}
+              onClick={() => scrollToIdx(i)}
               className="inline-block size-1.5 rounded-full transition-colors"
               style={{ backgroundColor: i === idx ? (color ?? "#8b5cf6") : "#d1d5db" }}
+              aria-label={`Banner ${i + 1}`}
             />
           ))}
         </div>
