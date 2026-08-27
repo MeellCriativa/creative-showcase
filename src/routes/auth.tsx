@@ -3,11 +3,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 const REMEMBER_KEY = "vc_remember_email";
+const WHATSAPP_NUMBER = "5551985165608";
+const WHATSAPP_MSG = "Oii Meell, quero gerar meu login de acesso!";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -22,10 +23,14 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
+function whatsappLink(phone: string, message: string) {
+  const digits = phone.replace(/\D/g, "");
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+}
+
 function AuthPage() {
   const navigate = useNavigate();
   const { session, loading } = useAuth();
-  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState(() => {
     try { return localStorage.getItem(REMEMBER_KEY) ?? ""; } catch { return ""; }
   });
@@ -62,19 +67,9 @@ function AuthPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: window.location.origin },
-        });
-        if (error) throw error;
-        toast.success("Conta criada! Verifique seu e-mail para confirmar.");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        toast.success("Login realizado!");
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      toast.success("Login realizado!");
       try {
         if (remember) {
           localStorage.setItem(REMEMBER_KEY, email);
@@ -87,36 +82,18 @@ function AuthPage() {
       toast.error(
         message.includes("Invalid login")
           ? "E-mail ou senha incorretos."
-          : message.includes("already registered")
-            ? "Este e-mail já tem conta. Faça login."
-            : message,
+          : message,
       );
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleGoogle() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
-    if (error) {
-      toast.error("Não foi possível entrar com o Google.");
-    }
-  }
-
   return (
     <main className="app-shell flex flex-col justify-center px-6 py-12">
-      <h1 className="text-3xl font-bold text-foreground">
-        {mode === "login" ? "Entrar" : "Criar conta"}
-      </h1>
+      <h1 className="text-3xl font-bold text-foreground">Entrar</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        {mode === "login"
-          ? "Acesse o painel da sua vitrine."
-          : "Comece a montar seu catálogo em minutos."}
+        Acesse o painel da sua vitrine.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-4">
@@ -161,31 +138,28 @@ function AuthPage() {
           </div>
         </div>
 
-        {mode === "login" && (
-          <>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-                className="size-4 rounded border-border"
-              />
-              Lembrar meu e-mail
-            </label>
-            {resetSent ? (
-              <p className="text-sm text-green-600">
-                Verifique sua caixa de entrada e clique no link para redefinir sua senha.
-              </p>
-            ) : (
-              <button
-                type="button"
-                onClick={handleForgotPassword}
-                className="text-sm text-primary font-medium hover:underline"
-              >
-                Esqueci minha senha
-              </button>
-            )}
-          </>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="size-4 rounded border-border"
+          />
+          Lembrar meu e-mail
+        </label>
+
+        {resetSent ? (
+          <p className="text-sm text-green-600">
+            Verifique sua caixa de entrada e clique no link para redefinir sua senha.
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            className="text-sm text-primary font-medium hover:underline"
+          >
+            Esqueci minha senha
+          </button>
         )}
 
         <button
@@ -194,37 +168,26 @@ function AuthPage() {
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition active:scale-[0.98] disabled:opacity-60"
         >
           {busy && <Loader2 className="size-4 animate-spin" />}
-          {mode === "login" ? "Entrar" : "Criar minha conta"}
+          Entrar
         </button>
       </form>
 
-      <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="h-px flex-1 bg-border" /> ou <span className="h-px flex-1 bg-border" />
+      <div className="mt-8 text-center">
+        <p className="text-sm text-muted-foreground mb-3">
+          Não tem login? Peça para gerar o seu!
+        </p>
+        <a
+          href={whatsappLink(WHATSAPP_NUMBER, WHATSAPP_MSG)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#25d366] px-5 py-4 font-semibold text-white shadow-lg shadow-[#25d366]/25 transition active:scale-[0.98]"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+          </svg>
+          Pedir acesso pelo WhatsApp
+        </a>
       </div>
-
-      <button
-        type="button"
-        onClick={handleGoogle}
-        className="w-full rounded-2xl border border-border bg-card px-5 py-3.5 font-semibold text-foreground transition active:scale-[0.98]"
-      >
-        Continuar com Google
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setMode(mode === "login" ? "signup" : "login")}
-        className="mt-8 text-center text-sm text-muted-foreground"
-      >
-        {mode === "login" ? (
-          <>
-            Ainda não tem conta? <span className="font-semibold text-primary">Criar conta</span>
-          </>
-        ) : (
-          <>
-            Já tem conta? <span className="font-semibold text-primary">Entrar</span>
-          </>
-        )}
-      </button>
     </main>
   );
 }
