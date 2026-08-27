@@ -382,7 +382,7 @@ function PublicCatalog() {
             </div>
           </div>
           <h1
-            className="mt-3 text-2xl font-bold text-foreground"
+            className="mt-3 text-2xl font-bold text-foreground text-center"
             style={{
               fontFamily: getFontFamily(loadedCatalog.store_font ?? "moderna"),
               color: loadedCatalog.primary_color ?? "#8b5cf6",
@@ -390,7 +390,7 @@ function PublicCatalog() {
           >
             {loadedCatalog.store_name}
           </h1>
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex items-center justify-center gap-2">
             <CartIcon
               style={loadedCatalog.cart_style ?? "carrinho"}
               className="size-5"
@@ -398,7 +398,7 @@ function PublicCatalog() {
             />
             <span className="text-sm text-muted-foreground">Carrinho</span>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">Peça pelo WhatsApp, sem criar conta.</p>
+          <p className="mt-1 text-center text-sm text-muted-foreground">Peça pelo WhatsApp, sem criar conta.</p>
         </div>
       </header>
 
@@ -1169,7 +1169,7 @@ function WelcomePage({
             </div>
           </div>
           <h1
-            className="mt-3 text-2xl font-bold"
+            className="mt-3 text-2xl font-bold text-center"
             style={{
               fontFamily: getFontFamily(catalog.store_font ?? "moderna"),
               color: primary,
@@ -1178,11 +1178,11 @@ function WelcomePage({
             {catalog.store_name}
           </h1>
           {catalog.store_description && (
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-center text-sm leading-relaxed text-muted-foreground">
               {catalog.store_description}
             </p>
           )}
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex items-center justify-center gap-2">
             <CartIcon
               style={catalog.cart_style ?? "carrinho"}
               className="size-5"
@@ -1242,7 +1242,7 @@ function WelcomePage({
       {/* ── Como Funciona ── */}
       <section className="mt-8 px-5">
         <h2
-          className="text-lg font-bold"
+          className="text-lg font-bold text-center"
           style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
         >
           Como funciona
@@ -1295,7 +1295,7 @@ function WelcomePage({
       {activePayments.length > 0 && (
         <section className="mt-8 px-5">
           <h2
-            className="text-lg font-bold"
+            className="text-lg font-bold text-center"
             style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
           >
             Formas de pagamento
@@ -1327,7 +1327,7 @@ function WelcomePage({
       {hasOwnerInfo && (
         <section className="mt-8 px-5">
           <h2
-            className="text-lg font-bold"
+            className="text-lg font-bold text-center"
             style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
           >
             Sobre a loja
