@@ -35,7 +35,15 @@ export function useMetaSyncLogs(catalogId: string | undefined) {
 }
 
 export function useStartOAuth() {
-  return useMutation({ mutationFn: startOAuth });
+  return useMutation({
+    mutationFn: ({
+      catalogId,
+      phoneNumber,
+    }: {
+      catalogId: string;
+      phoneNumber?: string;
+    }) => startOAuth(catalogId, phoneNumber),
+  });
 }
 
 export function useCompleteOAuth() {

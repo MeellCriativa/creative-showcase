@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Loader2,
   MessageCircle,
+  Phone,
   RefreshCw,
   Unplug,
   XCircle,
@@ -26,13 +27,32 @@ import {
 export const Route = createFileRoute("/painel/whatsapp")({
   head: () => ({
     meta: [
-      { title: "WhatsApp & Catálogo Meta — Vitrine Criativa" },
-      { name: "description", content: "Conecte sua loja ao catálogo Meta do WhatsApp Business." },
+      { title: "WhatsApp Business — Vitrine Criativa" },
+      { name: "description", content: "Conecte sua loja ao catálogo do WhatsApp Business." },
       { name: "robots", content: "noindex" },
     ],
   }),
   component: WhatsAppPage,
 });
+
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length >= 12) return `+${digits}`;
+  if (digits.length === 11 || digits.length === 10) return `+55${digits}`;
+  if (digits.length >= 12) return `+${digits}`;
+  return `+55${digits}`;
+}
+
+function formatPhoneDisplay(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length >= 12) {
+    const ddd = digits.slice(2, 4);
+    const num = digits.slice(4);
+    if (num.length === 9) return `(${ddd}) ${num.slice(0, 5)}-${num.slice(5)}`;
+    if (num.length === 8) return `(${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`;
+  }
+  return phone;
+}
 
 function WhatsAppPage() {
   const { user } = useAuth();
@@ -47,11 +67,19 @@ function WhatsAppPage() {
   const syncProducts = useSyncProducts(catalogId);
   const disconnectMeta = useDisconnectMeta(catalogId);
 
+  const [phoneInput, setPhoneInput] = useState("");
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
   const isConnected = connection?.sync_status === "connected";
   const isSyncing = connection?.sync_status === "syncing" || syncProducts.isPending;
   const hasError = connection?.sync_status === "error";
+  const isExpired = connection?.sync_status === "expired";
+
+  useEffect(() => {
+    if (connection?.phone_number) {
+      setPhoneInput(connection.phone_number);
+    }
+  }, [connection?.phone_number]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -62,11 +90,13 @@ function WhatsAppPage() {
         { code, state },
         {
           onSuccess: () => {
-            toast.success("Conta Meta conectada com sucesso!");
+            toast.success("WhatsApp Business conectado com sucesso!");
             window.history.replaceState({}, "", "/painel/whatsapp");
           },
           onError: (err: Error) => {
-            toast.error(err.message || "Erro ao conectar com Meta");
+            toast.error(
+              err.message || "Não foi possível conectar. Verifique sua conta Meta e tente novamente.",
+            );
             window.history.replaceState({}, "", "/painel/whatsapp");
           },
         },
@@ -76,12 +106,27 @@ function WhatsAppPage() {
 
   async function handleConnect() {
     if (!catalogId) return;
+    const normalized = normalizePhone(phoneInput);
+    if (!phoneInput.trim()) {
+      toast.error("Informe o número do WhatsApp Business.");
+      return;
+    }
+    if (!/^\+\d{12,15}$/.test(normalized)) {
+      toast.error("Número inválido. Use o formato: DDD + número (ex: 51999999999).");
+      return;
+    }
     try {
-      const url = await startOAuth.mutateAsync(catalogId);
+      const url = await startOAuth.mutateAsync({ catalogId, phoneNumber: normalized });
       window.location.href = url;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro ao iniciar conexão";
-      toast.error(msg);
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("não foi possível iniciar") || msg.includes("Meta App")) {
+        toast.error(
+          "A integração com a Meta ainda não está configurada. Entre em contato com o suporte.",
+        );
+      } else {
+        toast.error(msg || "Não foi possível iniciar a conexão. Tente novamente.");
+      }
     }
   }
 
@@ -94,7 +139,7 @@ function WhatsAppPage() {
         );
       },
       onError: (err: Error) => {
-        toast.error(err.message || "Erro na sincronização");
+        toast.error(err.message || "Erro na sincronização. Tente novamente.");
       },
     });
   }
@@ -103,11 +148,11 @@ function WhatsAppPage() {
     if (!catalogId) return;
     disconnectMeta.mutate(undefined, {
       onSuccess: () => {
-        toast.success("Desconectado. Produtos no catálogo Meta foram mantidos.");
+        toast.success("Desconectado. Produtos no catálogo do WhatsApp foram mantidos.");
         setShowDisconnectConfirm(false);
       },
       onError: (err: Error) => {
-        toast.error(err.message || "Erro ao desconectar");
+        toast.error(err.message || "Erro ao desconectar. Tente novamente.");
       },
     });
   }
@@ -115,28 +160,167 @@ function WhatsAppPage() {
   if (!catalog) {
     return (
       <div className="p-5 text-center text-muted-foreground">
-        <p>Crie sua loja primeiro para configurar a integração com Meta.</p>
+        <p>Crie sua loja primeiro para configurar o WhatsApp Business.</p>
+      </div>
+    );
+  }
+
+  if (completeOAuth.isPending) {
+    return (
+      <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
+        <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
+        <div className="rounded-2xl border border-border p-8 text-center space-y-4">
+          <Loader2 className="mx-auto size-8 animate-spin text-primary" />
+          <div>
+            <p className="font-semibold text-foreground">Conectando sua conta...</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Aguarde enquanto configuramos a integração.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isConnected && connection) {
+    const displayPhone =
+      connection.phone_number
+        ? formatPhoneDisplay(connection.phone_number)
+        : connection.business_name || "—";
+    const syncedCount = syncLogs?.find((l) => l.status === "completed")?.items_created ?? 0;
+    const lastSync = connection.last_synced_at
+      ? new Date(connection.last_synced_at).toLocaleString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null;
+
+    return (
+      <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
+        <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
+
+        <div className="rounded-2xl border border-border p-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="size-5 text-green-500" />
+            <div>
+              <p className="font-semibold text-green-600">Conectado</p>
+              <p className="text-xs text-muted-foreground">Integração ativa</p>
+            </div>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Número</span>
+              <span className="font-medium text-foreground">{displayPhone}</span>
+            </div>
+            {connection.catalog_name && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Catálogo</span>
+                <span className="font-medium text-foreground">{connection.catalog_name}</span>
+              </div>
+            )}
+            {syncedCount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Produtos sincronizados</span>
+                <span className="font-medium text-foreground">{syncedCount}</span>
+              </div>
+            )}
+            {lastSync && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Última sincronização</span>
+                <span className="font-medium text-foreground">{lastSync}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+          >
+            {isSyncing ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="size-4" />
+            )}
+            {isSyncing ? "Sincronizando..." : "Sincronizar agora"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowDisconnectConfirm(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-muted"
+          >
+            <Unplug className="size-4" />
+          </button>
+        </div>
+
+        {syncLogs && syncLogs.length > 0 && (
+          <div className="rounded-2xl border border-border p-5 space-y-3">
+            <p className="text-sm font-semibold text-foreground">Histórico</p>
+            <div className="space-y-2">
+              {syncLogs.slice(0, 5).map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-start gap-3 rounded-xl bg-muted/50 px-4 py-3 text-xs"
+                >
+                  {log.status === "completed" ? (
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-green-500" />
+                  ) : log.status === "failed" ? (
+                    <XCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
+                  ) : (
+                    <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
+                  )}
+                  <div className="flex-1">
+                    <p className="font-medium text-foreground">
+                      {log.operation === "incremental_sync"
+                        ? "Sincronização"
+                        : log.operation === "initial_sync"
+                          ? "Sync inicial"
+                          : log.operation === "disconnect"
+                            ? "Desconexão"
+                            : log.operation}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {new Date(log.started_at).toLocaleString("pt-BR")}
+                      {log.status === "completed" &&
+                        ` — ${log.items_created} criados, ${log.items_updated} atualizados`}
+                      {log.status === "failed" && (
+                        <span className="text-red-500">
+                          {" — "}
+                          {(log.error_details as any)?.[0]?.message || "Erro"}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
     <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
-      <h1 className="text-xl font-bold text-foreground">WhatsApp & Catálogo Meta</h1>
+      <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
 
       <p className="text-sm text-muted-foreground">
-        Conecte sua conta Meta para sincronizar seus produtos com o catálogo vinculado ao WhatsApp
-        Business.
+        Conecte seu WhatsApp Business para que os produtos do seu catálogo apareçam automaticamente
+        na vitrine do WhatsApp.
       </p>
 
-      {/* Connection Status Card */}
       <div className="rounded-2xl border border-border p-5 space-y-4">
         <div className="flex items-center gap-3">
           {connLoading ? (
             <Loader2 className="size-5 animate-spin text-primary" />
-          ) : isConnected ? (
-            <CheckCircle2 className="size-5 text-green-500" />
-          ) : hasError ? (
+          ) : hasError || isExpired ? (
             <XCircle className="size-5 text-red-500" />
           ) : (
             <MessageCircle className="size-5 text-muted-foreground" />
@@ -145,172 +329,82 @@ function WhatsAppPage() {
             <p className="font-semibold text-foreground">
               {connLoading
                 ? "Verificando..."
-                : isConnected
-                  ? "Conectado ao Meta"
+                : isExpired
+                  ? "Conexão expirada"
                   : hasError
                     ? "Erro na conexão"
                     : "Não conectado"}
             </p>
-            {isConnected && connection && (
-              <div className="text-xs text-muted-foreground space-y-0.5">
-                <p>
-                  Business: {connection.business_name || connection.business_id}
-                </p>
-                <p>
-                  Catálogo: {connection.catalog_name || connection.catalog_id_meta}
-                </p>
-                {connection.last_synced_at && (
-                  <p>
-                    Última sync:{" "}
-                    {new Date(connection.last_synced_at).toLocaleString("pt-BR")}
-                  </p>
-                )}
-              </div>
-            )}
-            {hasError && connection?.last_sync_error && (
-              <p className="text-xs text-red-500 mt-1">{connection.last_sync_error}</p>
+            {(hasError || isExpired) && (
+              <p className="text-xs text-muted-foreground">
+                {isExpired
+                  ? "Sua conexão expirou. Authorize novamente para continuar sincronizando."
+                  : "Ocorreu um erro. Tente reconectar."}
+              </p>
             )}
           </div>
         </div>
 
-        <div className="flex gap-3">
-          {!isConnected && !connLoading && (
-            <button
-              type="button"
-              onClick={handleConnect}
-              disabled={startOAuth.isPending}
-              className="flex items-center gap-2 rounded-xl bg-[#1877f2] px-5 py-3 text-sm font-semibold text-white hover:bg-[#166fe5] disabled:opacity-60"
-            >
-              {startOAuth.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <ExternalLink className="size-4" />
-              )}
-              Conectar conta Meta
-            </button>
-          )}
-
-          {isConnected && (
-            <>
-              <button
-                type="button"
-                onClick={handleSync}
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-foreground">
+              Número do WhatsApp Business
+            </label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="tel"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                placeholder="(51) 99999-9999"
+                className="w-full rounded-xl border border-border bg-card py-3 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 disabled={isSyncing}
-                className="flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
-              >
-                {isSyncing ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="size-4" />
-                )}
-                {isSyncing ? "Sincronizando..." : "Sincronizar agora"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowDisconnectConfirm(true)}
-                className="flex items-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-muted"
-              >
-                <Unplug className="size-4" />
-                Desconectar
-              </button>
-            </>
-          )}
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Informe o número do WhatsApp vinculado à sua conta Business.
+            </p>
+          </div>
 
-          {hasError && (
-            <button
-              type="button"
-              onClick={handleSync}
-              disabled={isSyncing}
-              className="flex items-center gap-2 rounded-xl bg-red-500 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60"
-            >
-              {isSyncing ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <RefreshCw className="size-4" />
-              )}
-              Tentar novamente
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleConnect}
+            disabled={startOAuth.isPending || !phoneInput.trim() || isSyncing}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1877f2] px-5 py-3.5 text-sm font-semibold text-white hover:bg-[#166fe5] disabled:opacity-60"
+          >
+            {startOAuth.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <ExternalLink className="size-4" />
+            )}
+            {startOAuth.isPending ? "Abrindo Meta..." : "Autorizar e conectar"}
+          </button>
         </div>
       </div>
 
-      {/* Sync Logs */}
-      {syncLogs && syncLogs.length > 0 && (
-        <div className="rounded-2xl border border-border p-5 space-y-3">
-          <p className="text-sm font-semibold text-foreground">Últimas operações</p>
-          <div className="space-y-2">
-            {syncLogs.map((log) => (
-              <div
-                key={log.id}
-                className="flex items-start gap-3 rounded-xl bg-muted/50 px-4 py-3 text-xs"
-              >
-                {log.status === "completed" ? (
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-green-500" />
-                ) : log.status === "failed" ? (
-                  <XCircle className="mt-0.5 size-4 shrink-0 text-red-500" />
-                ) : (
-                  <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-primary" />
-                )}
-                <div className="flex-1">
-                  <p className="font-medium text-foreground">
-                    {log.operation === "incremental_sync"
-                      ? "Sincronização"
-                      : log.operation === "initial_sync"
-                        ? "Sync inicial"
-                        : log.operation === "disconnect"
-                          ? "Desconexão"
-                          : log.operation}
-                  </p>
-                  <p className="text-muted-foreground">
-                    {new Date(log.started_at).toLocaleString("pt-BR")}
-                    {log.status === "completed" && (
-                      <>
-                        {" — "}
-                        {log.items_created} criados, {log.items_updated} atualizados
-                        {log.items_deleted > 0 && `, ${log.items_deleted} deletados`}
-                      </>
-                    )}
-                    {log.status === "failed" && (
-                      <span className="text-red-500">
-                        {" — "}
-                        {(log.error_details as any)?.[0]?.message || "Erro"}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Info Card */}
       <div className="rounded-2xl border border-border bg-muted/30 p-5 text-xs text-muted-foreground space-y-2">
-        <p className="font-semibold text-foreground text-sm">Sobre a integração</p>
-        <ul className="space-y-1 list-disc list-inside">
+        <p className="font-semibold text-foreground text-sm">Como funciona</p>
+        <ul className="space-y-1.5">
           <li>
-            Produtos criados/editados no Vitrine são sincronizados com o catálogo Meta do WhatsApp
-            Business.
+            Informe o número do seu WhatsApp Business e clique em{" "}
+            <strong>Autorizar e conectar</strong>.
           </li>
-          <li>A sincronização é manual — clique "Sincronizar agora" sempre que quiser atualizar.</li>
+          <li>Você será redirecionada para o Facebook para autorizar o acesso.</li>
+          <li>Depois de autorizar, seus produtos aparecerão automaticamente no WhatsApp.</li>
+          <li>Para sincronizar novos produtos, clique em <strong>Sincronizar agora</strong>.</li>
           <li>
-            Ao desconectar, os produtos já sincronizados no catálogo Meta são mantidos.
-          </li>
-          <li>
-            Não enviamos mensagens automáticas pelo WhatsApp. O carrinho continua funcionando da
-            mesma forma.
+            Ao desconectar, os produtos já sincronizados são mantidos no catálogo do WhatsApp.
           </li>
         </ul>
       </div>
 
-      {/* Disconnect Confirmation Modal */}
       {showDisconnectConfirm && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-5">
           <div className="w-full max-w-sm rounded-2xl bg-card p-6 space-y-4 shadow-xl">
-            <p className="font-semibold text-foreground">Desconectar conta Meta?</p>
+            <p className="font-semibold text-foreground">Desconectar WhatsApp Business?</p>
             <p className="text-sm text-muted-foreground">
-              A autorização será removida, mas os produtos já sincronizados no catálogo Meta serão
-              mantidos. Você pode reconectar a qualquer momento.
+              A autorização será removida, mas os produtos já sincronizados no catálogo do WhatsApp
+              serão mantidos. Você pode reconectar a qualquer momento.
             </p>
             <div className="flex gap-3">
               <button

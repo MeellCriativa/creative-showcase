@@ -5,6 +5,7 @@ export type MetaConnection = {
   catalog_id: string;
   user_id: string;
   facebook_user_id: string;
+  phone_number: string | null;
   business_id: string;
   business_name: string | null;
   catalog_id_meta: string;
@@ -88,14 +89,19 @@ export async function fetchMetaSyncLogs(
   return (data ?? []) as MetaSyncLog[];
 }
 
-export async function startOAuth(catalogId: string): Promise<string> {
+export async function startOAuth(
+  catalogId: string,
+  phoneNumber?: string,
+): Promise<string> {
   const headers = await authHeaders();
+  const params = new URLSearchParams({ catalog_id: catalogId });
+  if (phoneNumber) params.set("phone_number", phoneNumber);
   const res = await fetch(
-    `${META_FUNCTIONS_URL}/meta-oauth-start?catalog_id=${catalogId}`,
+    `${META_FUNCTIONS_URL}/meta-oauth-start?${params.toString()}`,
     { headers },
   );
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (!res.ok || data.error) throw new Error(data.error || "Não foi possível iniciar a conexão");
   return data.url;
 }
 
@@ -107,7 +113,7 @@ export async function completeOAuth(code: string, state: string) {
     body: JSON.stringify({ code, catalog_id: state }),
   });
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (!res.ok || data.error) throw new Error(data.error || "Erro ao conectar com Meta");
   return data;
 }
 
@@ -119,7 +125,7 @@ export async function syncProductsNow(catalogId: string) {
     body: JSON.stringify({ catalog_id: catalogId }),
   });
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (!res.ok || data.error) throw new Error(data.error || "Erro na sincronização");
   return data;
 }
 
@@ -131,7 +137,7 @@ export async function disconnectMeta(catalogId: string) {
     body: JSON.stringify({ catalog_id: catalogId }),
   });
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (!res.ok || data.error) throw new Error(data.error || "Erro ao desconectar");
   return data;
 }
 

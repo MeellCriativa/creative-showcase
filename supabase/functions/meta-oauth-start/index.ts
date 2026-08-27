@@ -18,6 +18,8 @@ serve(async (req) => {
 
     const url = new URL(req.url);
     const catalogId = url.searchParams.get("catalog_id");
+    const phoneNumber = url.searchParams.get("phone_number");
+
     if (!catalogId) {
       return new Response(JSON.stringify({ error: "catalog_id required" }), {
         status: 400,
@@ -39,19 +41,46 @@ serve(async (req) => {
       });
     }
 
-    const appId = Deno.env.get("META_APP_ID")!;
+    const appId = Deno.env.get("META_APP_ID");
+    if (!appId) {
+      return new Response(
+        JSON.stringify({ error: "A integração com a Meta ainda não está configurada." }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const vitrineUrl = Deno.env.get("VITRINE_URL") || "https://vitrine.meellcriativa.workers.dev";
     const redirectUri = `${vitrineUrl}/painel/whatsapp`;
     const state = catalogId;
 
     const scopes = "catalog_management,business_management";
+    const apiVersion = Deno.env.get("META_CATALOG_API_VERSION") || "v23.0";
     const oauthUrl =
-      `https://www.facebook.com/${Deno.env.get("META_CATALOG_API_VERSION") || "v23.0"}/dialog/oauth` +
+      `https://www.facebook.com/${apiVersion}/dialog/oauth` +
       `?client_id=${appId}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&state=${state}` +
       `&scope=${scopes}` +
       `&response_type=code`;
+
+    if (phoneNumber) {
+      await admin
+        .from("meta_catalog_connections")
+        .upsert(
+          {
+            catalog_id: catalogId,
+            user_id: user.id,
+            phone_number: phoneNumber,
+            facebook_user_id: "pending",
+            facebook_access_token: "",
+            sync_status: "pending",
+          },
+          { onConflict: "catalog_id" },
+        );
+    }
 
     return new Response(JSON.stringify({ url: oauthUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

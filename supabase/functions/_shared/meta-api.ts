@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const META_API_VERSION = "v23.0";
+const META_API_VERSION = Deno.env.get("META_CATALOG_API_VERSION") || "v23.0";
 const GRAPH_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
 export function getSupabaseAdmin() {

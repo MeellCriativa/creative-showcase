@@ -60,6 +60,16 @@ serve(async (req) => {
       );
     }
 
+    if (conn.sync_status === "expired") {
+      return new Response(
+        JSON.stringify({ error: "Sua conexão expirou. Reconecte para sincronizar." }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     await admin
       .from("meta_catalog_connections")
       .update({ sync_status: "syncing", last_sync_error: null })
@@ -112,10 +122,10 @@ serve(async (req) => {
       const allProducts = products ?? [];
       logEntry.items_total = allProducts.length;
 
-      const toUpsert: Array<{ method: string; data: Record<string, unknown> }> = [];
+      const toCreate: Array<{ method: string; data: Record<string, unknown> }> = [];
+      const toUpdate: Array<{ method: string; data: Record<string, unknown> }> = [];
 
       for (const product of allProducts) {
-        const retailerId = `vc-${product.id}`;
         const metaItem = mapProductToMeta(
           {
             id: product.id,
@@ -131,12 +141,12 @@ serve(async (req) => {
         );
 
         const existing = mappingByProductId.get(product.id);
-        toUpsert.push({ method: "UPDATE", data: metaItem });
-
-        if (!existing) {
-          logEntry.items_created++;
-        } else {
+        if (existing) {
+          toUpdate.push({ method: "UPDATE", data: metaItem });
           logEntry.items_updated++;
+        } else {
+          toCreate.push({ method: "CREATE", data: metaItem });
+          logEntry.items_created++;
         }
 
         await admin
@@ -145,15 +155,17 @@ serve(async (req) => {
             {
               catalog_id: catalogId,
               product_id: product.id,
-              meta_retailer_id: retailerId,
+              meta_retailer_id: `vc-${product.id}`,
               sync_state: "pending",
             },
             { onConflict: "catalog_id,product_id" },
           );
       }
 
-      if (toUpsert.length > 0) {
-        const batches = chunk(toUpsert, 5000);
+      const allRequests = [...toCreate, ...toUpdate];
+
+      if (allRequests.length > 0) {
+        const batches = chunk(allRequests, 5000);
         for (const batch of batches) {
           const result = await batchWithRetry(
             conn.catalog_id_meta,
@@ -167,7 +179,7 @@ serve(async (req) => {
       }
 
       const productIds = new Set(allProducts.map((p) => p.id));
-      for (const [productId, mapping] of mappingByProductId) {
+      for (const [productId] of mappingByProductId) {
         if (!productIds.has(productId)) {
           await admin
             .from("meta_product_mapping")

@@ -57,7 +57,7 @@ serve(async (req) => {
     const tokenData = await tokenRes.json();
     if (tokenData.error) {
       return new Response(
-        JSON.stringify({ error: tokenData.error.message }),
+        JSON.stringify({ error: "Não foi possível autorizar. Verifique sua conta Meta e tente novamente." }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -124,6 +124,14 @@ serve(async (req) => {
 
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
+    const { data: existingConn } = await admin
+      .from("meta_catalog_connections")
+      .select("phone_number")
+      .eq("catalog_id", catalogId)
+      .maybeSingle();
+
+    const phoneNumber = existingConn?.phone_number || null;
+
     await admin.from("meta_catalog_connections").upsert(
       {
         catalog_id: catalogId,
@@ -137,6 +145,7 @@ serve(async (req) => {
         catalog_id_meta: bestCatalogIdMeta,
         catalog_name: bestCatalogName,
         sync_status: "connected",
+        phone_number: phoneNumber,
       },
       { onConflict: "catalog_id" },
     );
@@ -149,9 +158,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        business_id: bestBusinessId,
         business_name: bestBusinessName,
-        catalog_id_meta: bestCatalogIdMeta,
         catalog_name: bestCatalogName,
         facebook_user_name: facebookUserName,
       }),
