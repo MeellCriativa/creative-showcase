@@ -318,6 +318,9 @@ function PublicCatalog() {
   const bgColor = loadedCatalog.background_color ?? "#FFFFFF";
   const whatsappColor = loadedCatalog.whatsapp_button_color ?? "#8b5cf6";
   const isOwner = user && user.id === loadedCatalog.user_id;
+  const activePayments = Array.isArray(loadedCatalog.payment_methods)
+    ? PAYMENT_METHODS.filter((m) => (loadedCatalog.payment_methods as string[]).includes(m.key))
+    : [];
 
   const theme = {
     "--shop-primary": primary,
@@ -489,6 +492,39 @@ function PublicCatalog() {
         ))}
       </section>
 
+      {/* ── Formas de pagamento (catalog view) ── */}
+      {activePayments.length > 0 && (
+        <section className="mt-8 px-5">
+          <h2
+            className="text-lg font-bold text-center"
+            style={{ fontFamily: getFontFamily(loadedCatalog.store_font ?? "moderna"), color: primary }}
+          >
+            Formas de pagamento
+          </h2>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {activePayments.map((m) => (
+              <div
+                key={m.key}
+                className="flex items-center gap-3 rounded-2xl border p-4"
+                style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
+              >
+                <div
+                  className="flex size-9 items-center justify-center rounded-full text-base"
+                  style={{ background: `${primary}15` }}
+                >
+                  {m.key === "pix" && "⚡"}
+                  {m.key === "credit_card" && "💳"}
+                  {m.key === "debit_card" && "💳"}
+                  {m.key === "pix_auto" && "🔄"}
+                  {m.key === "cash" && "💵"}
+                </div>
+                <span className="text-sm font-medium text-foreground">{m.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {count > 0 && (
         <button
           key={cartBump}
@@ -543,13 +579,13 @@ function PublicCatalog() {
 
       <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur">
         <div className="flex items-center justify-center py-3">
-          <Link
-            to="/painel"
+          <button
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <LayoutGrid className="size-4" />
-            Voltar ao menu
-          </Link>
+            Voltar ao início
+          </button>
         </div>
       </nav>
     </div>
@@ -1366,11 +1402,11 @@ function WelcomePage({
       <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur">
         <div className="flex items-center justify-center py-3">
           <Link
-            to="/painel"
+            to="/"
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <LayoutGrid className="size-4" />
-            Voltar ao menu
+            Voltar ao início
           </Link>
         </div>
       </nav>
