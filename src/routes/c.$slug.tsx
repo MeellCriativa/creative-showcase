@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ChevronLeft, ClipboardList, LayoutGrid, Loader2, MessageCircle, Minus, Package, Palette, Plus, ShoppingBag, Store, Trash2, X } from "lucide-react";
+import { ChevronLeft, LayoutGrid, Loader2, Minus, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase, getSupabaseError } from "@/integrations/supabase/client";
@@ -19,7 +19,6 @@ import {
   type Category,
   type Product,
 } from "@/lib/catalog";
-import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/c/$slug")({
   loader: async ({ params }) => {
@@ -319,17 +318,6 @@ function PublicCatalog() {
   const bgColor = loadedCatalog.background_color ?? "#FFFFFF";
   const whatsappColor = loadedCatalog.whatsapp_button_color ?? "#8b5cf6";
   const isOwner = user && user.id === loadedCatalog.user_id;
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-
-  const ownerTabs = [
-    { to: "/painel", label: "Inicio", icon: LayoutGrid, exact: true },
-    { to: "/painel/produtos", label: "Produtos", icon: Package, exact: false },
-    { to: "/painel/categorias", label: "Categorias", icon: Store, exact: false },
-    { to: "/painel/pedidos", label: "Pedidos", icon: ClipboardList, exact: false },
-    { to: "/painel/personalizar", label: "Vitrine", icon: Palette, exact: false },
-    { to: "/painel/whatsapp", label: "WhatsApp", icon: MessageCircle, exact: false },
-    { to: "/painel/estatisticas", label: "Estatisticas", icon: BarChart3, exact: false },
-  ] as const;
 
   const theme = {
     "--shop-primary": primary,
@@ -553,29 +541,17 @@ function PublicCatalog() {
         </a>
       )}
 
-      {isOwner && (
-        <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur">
-          <ul className="grid grid-cols-7">
-            {ownerTabs.map((tab) => {
-              const active = tab.exact ? pathname === tab.to : pathname.startsWith(tab.to);
-              return (
-                <li key={tab.to}>
-                  <Link
-                    to={tab.to}
-                    className={cn(
-                      "flex flex-col items-center gap-0.5 py-3 text-[10px] font-medium",
-                      active ? "text-primary" : "text-muted-foreground",
-                    )}
-                  >
-                    <tab.icon className="size-5" />
-                    {tab.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-      )}
+      <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur">
+        <div className="flex items-center justify-center py-3">
+          <Link
+            to="/painel"
+            className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+          >
+            <LayoutGrid className="size-4" />
+            Voltar ao menu
+          </Link>
+        </div>
+      </nav>
     </div>
   );
 }
@@ -1314,6 +1290,7 @@ function WelcomePage({
                   {m.key === "pix" && "⚡"}
                   {m.key === "credit_card" && "💳"}
                   {m.key === "debit_card" && "💳"}
+                  {m.key === "pix_auto" && "🔄"}
                   {m.key === "cash" && "💵"}
                 </div>
                 <span className="text-sm font-medium text-foreground">{m.label}</span>

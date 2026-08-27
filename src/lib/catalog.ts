@@ -40,6 +40,7 @@ export const PAYMENT_METHODS = [
   { key: "pix", label: "Pix", icon: "💳" },
   { key: "credit_card", label: "Cartão de crédito", icon: "💳" },
   { key: "debit_card", label: "Cartão de débito", icon: "💳" },
+  { key: "pix_auto", label: "Pix Automático", icon: "⚡" },
   { key: "cash", label: "Dinheiro", icon: "💵" },
 ] as const;
 
