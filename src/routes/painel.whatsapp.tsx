@@ -3,10 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   CheckCircle2,
-  ExternalLink,
   Loader2,
+  Lock,
   MessageCircle,
-  Phone,
   RefreshCw,
   Unplug,
   XCircle,
@@ -309,93 +308,56 @@ function WhatsAppPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
-      <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
+        <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary">
+          Em breve
+        </span>
+      </div>
 
       <p className="text-sm text-muted-foreground">
         Conecte seu WhatsApp Business para que os produtos do seu catálogo apareçam automaticamente
         na vitrine do WhatsApp.
       </p>
 
-      <div className="rounded-2xl border border-border p-5 space-y-4">
-        <div className="flex items-center gap-3">
-          {connLoading ? (
-            <Loader2 className="size-5 animate-spin text-primary" />
-          ) : hasError || isExpired ? (
-            <XCircle className="size-5 text-red-500" />
-          ) : (
-            <MessageCircle className="size-5 text-muted-foreground" />
-          )}
+      <div className="rounded-2xl border border-primary/25 bg-accent/40 p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl">🚀</span>
           <div>
-            <p className="font-semibold text-foreground">
-              {connLoading
-                ? "Verificando..."
-                : isExpired
-                  ? "Conexão expirada"
-                  : hasError
-                    ? "Erro na conexão"
-                    : "Não conectado"}
+            <p className="font-semibold text-foreground">Novidade chegando!</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              A integração com o WhatsApp Business estará disponível em uma das próximas atualizações
+              do Vitrine Criativa. Em breve você poderá conectar seu WhatsApp e integrar seu catálogo
+              de forma ainda mais prática. 💜
             </p>
-            {(hasError || isExpired) && (
-              <p className="text-xs text-muted-foreground">
-                {isExpired
-                  ? "Sua conexão expirou. Authorize novamente para continuar sincronizando."
-                  : "Ocorreu um erro. Tente reconectar."}
-              </p>
-            )}
           </div>
         </div>
 
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-foreground">
-              Número do WhatsApp Business
-            </label>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="tel"
-                value={phoneInput}
-                onChange={(e) => setPhoneInput(e.target.value)}
-                placeholder="(51) 99999-9999"
-                className="w-full rounded-xl border border-border bg-card py-3 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                disabled={isSyncing}
-              />
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Informe o número do WhatsApp vinculado à sua conta Business.
-            </p>
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="size-4 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">WhatsApp Business</p>
+            <span className="ml-auto inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+              Em breve
+            </span>
           </div>
-
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Lock className="size-3.5" />
+            <span>Integração em desenvolvimento</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            A conexão direta com o WhatsApp Business estará disponível em uma das próximas
+            atualizações.
+          </p>
           <button
             type="button"
-            onClick={handleConnect}
-            disabled={startOAuth.isPending || !phoneInput.trim() || isSyncing}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1877f2] px-5 py-3.5 text-sm font-semibold text-white hover:bg-[#166fe5] disabled:opacity-60"
+            disabled
+            className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-muted px-5 py-3.5 text-sm font-semibold text-muted-foreground opacity-70"
           >
-            {startOAuth.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <ExternalLink className="size-4" />
-            )}
-            {startOAuth.isPending ? "Abrindo Meta..." : "Autorizar e conectar"}
+            <Lock className="size-4" />
+            Autorizar e conectar
           </button>
         </div>
-      </div>
-
-      <div className="rounded-2xl border border-border bg-muted/30 p-5 text-xs text-muted-foreground space-y-2">
-        <p className="font-semibold text-foreground text-sm">Como funciona</p>
-        <ul className="space-y-1.5">
-          <li>
-            Informe o número do seu WhatsApp Business e clique em{" "}
-            <strong>Autorizar e conectar</strong>.
-          </li>
-          <li>Você será redirecionada para o Facebook para autorizar o acesso.</li>
-          <li>Depois de autorizar, seus produtos aparecerão automaticamente no WhatsApp.</li>
-          <li>Para sincronizar novos produtos, clique em <strong>Sincronizar agora</strong>.</li>
-          <li>
-            Ao desconectar, os produtos já sincronizados são mantidos no catálogo do WhatsApp.
-          </li>
-        </ul>
       </div>
 
       {showDisconnectConfirm && (
