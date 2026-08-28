@@ -21,8 +21,9 @@
 - Repo cloned at `C:\Users\USER\Documents\Default Project`
 - Tech stack: TanStack Start (React 19 + Vite), TypeScript, Tailwind 4, shadcn/ui, Supabase, Nitro with cloudflare-module preset
 - Supabase project `wdcufpvlbisnqtvmbyso` — URL `https://wdcufpvlbisnqtvmbyso.supabase.co`; anon + service-role keys in `.env`
-- Build: set env vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`) then `npm run build`; deploy: `cd .output && npx wrangler deploy --name vitrine`
-- Supabase CLI NOT logged in — cannot deploy Edge Functions; needs `supabase login`
+- Build: `npm run build` (Vite reads `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY` from `.env` automatically). **NEVER set these env vars manually on the command line** — a transposed-character typo in the anon key (`xr`→`rx`, pos 191-192) baked into the deployed bundle caused 401 "Invalid API key" on ALL browser data fetches → public vitrine didn't load (stuck spinner; fixed by rebuilding from `.env`, commit `04acaeaf` worker). If you must override, read from `.env`: `$env:VITE_SUPABASE_PUBLISHABLE_KEY=([regex]::Match((Get-Content .env -Raw),'VITE_SUPABASE_PUBLISHABLE_KEY\s*=\s*"([^"]+)"','Singleline').Groups[1].Value -replace '\s','')`
+- Deploy frontend: `cd .output && npx wrangler deploy --name vitrine`
+- Supabase CLI logged in (verified `supabase projects list`); Edge Functions deployed
 - User runs SQL manually in Supabase SQL Editor (small blocks; Node.removeChild browser bug)
 - PowerShell: cannot use `&&`; use `; if ($?)`; no `head` — use `Select-Object -First N`
 - User requires: always commit and push without asking
