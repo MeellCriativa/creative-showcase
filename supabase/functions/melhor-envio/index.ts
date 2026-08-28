@@ -272,7 +272,8 @@ async function quoteAction(ctx: Ctx) {
   ) {
     return jsonRes({
       success: false,
-      error:
+      error: "products_no_dimensions",
+      message:
         "Alguns produtos do carrinho ainda não têm peso e dimensões cadastrados. A loja precisa preencher esses dados para calcular o frete.",
     });
   }
@@ -329,8 +330,9 @@ async function quoteAction(ctx: Ctx) {
   if (quotes.length === 0) {
     return jsonRes({
       success: false,
-      error:
-        "Não foi possível obter opções de entrega para este endereço. Verifique o CEP e tente novamente.",
+      error: "no_options",
+      message:
+        "Não conseguimos encontrar opções de entrega para este CEP no momento.",
     });
   }
 

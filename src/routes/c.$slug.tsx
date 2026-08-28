@@ -1144,7 +1144,15 @@ function CartSheet({
           ? "Esta loja ainda não ativou o envio por Correios e transportadoras."
           : res.error === "no_origin"
             ? "A loja ainda não definiu o CEP de origem do envio."
-            : res.error || "Não foi possível calcular o frete. Tente outro CEP.",
+            : res.error === "products_no_dimensions"
+              ? "A loja ainda não cadastrou peso e dimensões de alguns produtos."
+              : res.error === "no_options"
+                ? "Não encontramos opções de entrega para este CEP no momento. Verifique o CEP e tente novamente."
+                : res.error && res.error.length > 60
+                  ? res.error
+                  : res.error && res.error !== "no_options"
+                    ? res.error
+                    : "Não encontramos opções de entrega para este CEP no momento. Confira se o CEP está correto e tente novamente.",
       );
     }
   }
