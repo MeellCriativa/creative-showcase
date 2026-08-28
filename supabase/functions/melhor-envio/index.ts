@@ -149,8 +149,8 @@ async function buildAuthorizeUrl(ctx: Ctx, catalogId: string) {
   const env = getPlatformEnv();
   const base = getBase(env);
   const clientId = Deno.env.get("ME_CLIENT_ID") || "";
-  const vitrineUrl = Deno.env.get("VITRINE_URL") || "https://vitrine.meellcriativa.workers.dev";
-  const redirectUri = `${vitrineUrl}/functions/v1/melhor-envio-callback`;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://wdcufpvlbisnqtvmbyso.supabase.co";
+  const redirectUri = `${supabaseUrl}/functions/v1/melhor-envio-callback`;
   const scopes = "shipping:read,shipping:write,checkout:read,checkout:write";
   const state = `${catalogId}`;
   const query = new URLSearchParams({

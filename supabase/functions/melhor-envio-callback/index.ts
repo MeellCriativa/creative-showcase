@@ -14,6 +14,7 @@ serve(async (req) => {
     const error = url.searchParams.get("error");
 
     const vitrineUrl = Deno.env.get("VITRINE_URL") || "https://vitrine.meellcriativa.workers.dev";
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://wdcufpvlbisnqtvmbyso.supabase.co";
     const adminPanel = `${vitrineUrl}/painel/envio`;
     const failUrl = `${adminPanel}?me_connected=0&error=${encodeURIComponent(
       error || "authorization_failed",
@@ -40,7 +41,7 @@ serve(async (req) => {
         grant_type: "authorization_code",
         client_id: Deno.env.get("ME_CLIENT_ID") || "",
         client_secret: Deno.env.get("ME_CLIENT_SECRET") || "",
-        redirect_uri: `${vitrineUrl}/functions/v1/melhor-envio-callback`,
+        redirect_uri: `${supabaseUrl}/functions/v1/melhor-envio-callback`,
         code,
       }),
     });
