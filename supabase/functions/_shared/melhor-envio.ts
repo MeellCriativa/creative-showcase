@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders } from "./cors.ts";
 
 const USER_AGENT = "VitrineCriativa/1.0 (MeellCriativa)";
 
@@ -117,7 +118,7 @@ export async function meApi(
   if (!token) {
     const r = new Response(
       JSON.stringify({ success: false, error: "not_connected", message: "A loja ainda não conectou à Melhor Envio." }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
+      { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } },
     );
     return { res: r, data: await r.json() };
   }
@@ -153,6 +154,6 @@ export async function meApi(
 export function jsonRes(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...corsHeaders },
   });
 }

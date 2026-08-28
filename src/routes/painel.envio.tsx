@@ -112,11 +112,13 @@ function EnvioPage() {
     try {
       const res = await meApi.connect(catalogId);
       if (!res.success || !res.url) {
+        console.error("[melhor-envio] connect falhou:", res.error);
         toast.error(String(res.error || "Falha ao iniciar a conexão."));
         return;
       }
       window.location.href = String(res.url);
-    } catch {
+    } catch (err) {
+      console.error("[melhor-envio] connect exceção:", err);
       toast.error("Não foi possível iniciar a conexão. Tente novamente.");
     } finally {
       setConnecting(false);

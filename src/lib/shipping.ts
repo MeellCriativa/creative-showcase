@@ -115,12 +115,32 @@ async function meCall<T>(
   body: Record<string, unknown>,
 ): Promise<T & { success: boolean; error?: string }> {
   const headers = await authHeaders();
-  const res = await fetch(`${META_FUNCTIONS_URL}/melhor-envio?action=${action}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
+  let res: Response;
+  try {
+    res = await fetch(`${META_FUNCTIONS_URL}/melhor-envio?action=${action}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[melhor-envio] fetch falhou (${action}):`, err);
+    return { success: false, error: `Erro de rede ao chamar o servidor. (${msg})` } as T & {
+      success: boolean;
+      error?: string;
+    };
+  }
+  let data: Record<string, unknown>;
+  try {
+    data = (await res.json()) as Record<string, unknown>;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[melhor-envio] resposta inválida (${action}) status ${res.status}:`, err);
+    return { success: false, error: `Resposta inválida do servidor (status ${res.status}).` } as T & {
+      success: boolean;
+      error?: string;
+    };
+  }
   if (data.error && typeof data.error === "string" && data.error !== "not_connected") {
     return { success: false, error: data.error, ...data } as T & { success: boolean; error?: string };
   }
