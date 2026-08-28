@@ -1182,6 +1182,9 @@ function CartSheet({
     setCep(formatted);
     if (formatted.replace(/\D/g, "").length === 8) {
       void lookupCep();
+      if (deliveryMethod === "melhor_envio") {
+        void handleQuote();
+      }
     }
   }
 
@@ -1197,10 +1200,6 @@ function CartSheet({
       }
       if (!selected) {
         toast.error("Escolha uma modalidade de entrega.");
-        return;
-      }
-      if (!address.street.trim() || !address.number.trim() || !address.city.trim()) {
-        toast.error("Preencha os dados do endereço (rua, número e cidade).");
         return;
       }
     }
@@ -1328,6 +1327,9 @@ function CartSheet({
                   <label className="block text-sm font-semibold text-foreground">
                     CEP para entrega <span className="text-destructive">*</span>
                   </label>
+                  <p className="text-xs text-muted-foreground">
+                    Digite seu CEP para ver o frete + total na hora.
+                  </p>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -1349,8 +1351,7 @@ function CartSheet({
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
                         "Calcular frete"
-                      )}
-                    </button>
+                      )}                    </button>
                   </div>
 
                   {quoteMsg && (
