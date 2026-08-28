@@ -22,6 +22,19 @@ type OrderRow = {
   items: OrderItem[];
   note: string | null;
   total: number;
+  subtotal: number | null;
+  delivery_method: string | null;
+  shipping_zip: string | null;
+  customer_street: string | null;
+  customer_number: string | null;
+  customer_complement: string | null;
+  customer_district: string | null;
+  customer_city: string | null;
+  customer_state: string | null;
+  shipping_service: string | null;
+  shipping_service_name: string | null;
+  shipping_cost: number | null;
+  shipping_eta_text: string | null;
   status: string;
   created_at: string;
 };
@@ -201,6 +214,46 @@ function OrderCard({
           </li>
         ))}
       </ul>
+
+      {order.delivery_method && (
+        <div className="mt-3 rounded-xl bg-accent/50 px-3 py-2 text-xs text-muted-foreground space-y-1">
+          {order.delivery_method === "correios" && (
+            <p className="font-semibold text-foreground">📦 Envio pelos Correios</p>
+          )}
+          {order.delivery_method === "local_pickup" && (
+            <p className="font-semibold text-foreground">🏪 Retirada no local</p>
+          )}
+          {order.delivery_method === "local_delivery" && (
+            <p className="font-semibold text-foreground">🛵 Entrega local</p>
+          )}
+          {order.shipping_service_name && <p>Modalidade: {order.shipping_service_name}</p>}
+          {order.shipping_cost != null && order.shipping_cost > 0 && (
+            <p>Frete: {formatBRL(order.shipping_cost)}</p>
+          )}
+          {order.shipping_eta_text && <p>Prazo: {order.shipping_eta_text}</p>}
+          {order.shipping_zip && <p>CEP: {order.shipping_zip}</p>}
+          {(order.customer_street || order.customer_city) && (
+            <p>
+              {[order.customer_street, order.customer_number].filter(Boolean).join(", ")}
+              {order.customer_complement ? ` - ${order.customer_complement}` : ""}
+              {[
+                order.customer_district,
+                order.customer_city,
+                order.customer_state,
+              ]
+                .filter(Boolean)
+                .join(" - ") && (
+                <>
+                  <br />
+                  {[order.customer_district, order.customer_city, order.customer_state]
+                    .filter(Boolean)
+                    .join(" - ")}
+                </>
+              )}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 flex items-center justify-between">
         <p className="text-sm font-bold text-foreground">Total: {formatBRL(order.total)}</p>

@@ -34,7 +34,15 @@ export type Catalog = {
   owner_bio: string | null;
   owner_hours: string | null;
   meta_catalog_connected: boolean;
+  delivery_methods: string[] | null;
+  shipping_origin_zip: string | null;
 };
+
+export const DELIVERY_METHODS = [
+  { key: "local_pickup", label: "Retirada no local", icon: "🏪" },
+  { key: "local_delivery", label: "Entrega local", icon: "🛵" },
+  { key: "correios", label: "Correios", icon: "📦" },
+] as const;
 
 export const PAYMENT_METHODS = [
   { key: "pix", label: "Pix", icon: "💳" },
@@ -72,6 +80,10 @@ export type Product = {
   is_new: boolean;
   is_bestseller: boolean;
   position: number;
+  weight_grams: number | null;
+  length_cm: number | null;
+  width_cm: number | null;
+  height_cm: number | null;
 };
 
 export type Banner = {
@@ -91,6 +103,20 @@ export type Order = {
   items: OrderItem[];
   note: string | null;
   total: number;
+  subtotal: number | null;
+  delivery_method: string | null;
+  shipping_zip: string | null;
+  customer_street: string | null;
+  customer_number: string | null;
+  customer_complement: string | null;
+  customer_district: string | null;
+  customer_city: string | null;
+  customer_state: string | null;
+  shipping_service: string | null;
+  shipping_service_name: string | null;
+  shipping_cost: number | null;
+  shipping_eta_days: number | null;
+  shipping_eta_text: string | null;
   status: string;
   created_at: string;
 };
@@ -100,6 +126,23 @@ export type OrderItem = {
   quantity: number;
   unitPrice: number;
   variation?: string;
+};
+
+export type ShippingQuote = {
+  service: string;
+  name: string;
+  price: number;
+  delivery_days: number | null;
+  delivery_text: string | null;
+};
+
+export type CustomerAddress = {
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+  state: string;
 };
 
 export const FONT_OPTIONS = [
@@ -141,6 +184,17 @@ export function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
 }
 
+/** Formata um CEP para o padrão 00000-000 (aceita entrada sem formatação). */
+export function formatCep(value: string) {
+  const d = onlyDigits(value).slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
+export function isValidCep(value: string) {
+  return /^\d{8}$/.test(onlyDigits(value));
+}
+
 const TEN_YEARS = 60 * 60 * 24 * 365 * 10;
 
 /** Envia uma imagem e devolve uma URL assinada de longa duração. */
@@ -164,6 +218,23 @@ export function buildWhatsappMessage(opts: {
   items: { name: string; quantity: number; unitPrice: number; variation?: string | undefined }[];
   total: number;
   note?: string | undefined;
+  shipping?: {
+    deliveryMethod?: string;
+    serviceName?: string;
+    cost?: number;
+    etaText?: string;
+    address?: {
+      street?: string;
+      number?: string;
+      complement?: string;
+      district?: string;
+      city?: string;
+      state?: string;
+      zip?: string;
+      recipient?: string;
+    };
+  } | undefined;
+  subtotal?: number | undefined;
 }) {
   const lines: string[] = ["Olá! Gostaria de fazer este pedido pelo seu catálogo:", ""];
   for (const item of opts.items) {
@@ -174,6 +245,45 @@ export function buildWhatsappMessage(opts: {
     lines.push(`Subtotal: ${formatBRL(item.unitPrice * item.quantity)}`);
     lines.push("");
   }
+  const subtotal =
+    opts.subtotal != null ? opts.subtotal : opts.items.reduce((s, it) => s + it.unitPrice * it.quantity, 0);
+  lines.push(`Subtotal: ${formatBRL(subtotal)}`);
+
+  const ship = opts.shipping;
+  if (ship?.deliveryMethod === "correios") {
+    lines.push("");
+    lines.push("📦 Entrega: Correios");
+    if (ship.serviceName) lines.push(`Modalidade: ${ship.serviceName}`);
+    if (ship.cost != null) lines.push(`Frete: ${formatBRL(ship.cost)}`);
+    if (ship.etaText) lines.push(`Prazo estimado: ${ship.etaText}`);
+    const a = ship.address;
+    if (a?.street || a?.city) {
+      lines.push("");
+      lines.push("Endereço:");
+      if (a.recipient) lines.push(a.recipient);
+      lines.push(`${[a.street, a.number].filter(Boolean).join(", ")}${a.complement ? ` - ${a.complement}` : ""}`);
+      lines.push([a.district, a.city, a.state].filter(Boolean).join(" - "));
+      if (a.zip) lines.push(`CEP: ${a.zip}`);
+    }
+  } else if (ship?.deliveryMethod === "local_pickup") {
+    lines.push("");
+    lines.push("🏪 Entrega: Retirada no local");
+  } else if (ship?.deliveryMethod === "local_delivery") {
+    if (ship?.etaText) lines.push(`🛵 Entrega local: ${ship.etaText}`);
+    else lines.push("🛵 Entrega: local");
+    if (ship?.cost != null) lines.push(`Frete: ${formatBRL(ship.cost)}`);
+    const a = ship?.address;
+    if (a?.street || a?.city) {
+      lines.push("");
+      lines.push("Endereço:");
+      if (a.recipient) lines.push(a.recipient);
+      lines.push(`${[a.street, a.number].filter(Boolean).join(", ")}${a.complement ? ` - ${a.complement}` : ""}`);
+      lines.push([a.district, a.city, a.state].filter(Boolean).join(" - "));
+      if (a.zip) lines.push(`CEP: ${a.zip}`);
+    }
+  }
+
+  lines.push("");
   lines.push(`Total do pedido: ${formatBRL(opts.total)}`);
   lines.push("");
   if (opts.note?.trim()) {

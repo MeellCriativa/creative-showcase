@@ -14,11 +14,17 @@ import {
   getFontFamily,
   whatsappLink,
   PAYMENT_METHODS,
+  DELIVERY_METHODS,
+  formatCep,
+  isValidCep,
   type Banner,
   type Catalog,
   type Category,
   type Product,
+  type ShippingQuote,
+  type CustomerAddress,
 } from "@/lib/catalog";
+import { quoteShipping } from "@/lib/shipping";
 
 export const Route = createFileRoute("/c/$slug")({
   loader: async ({ params }) => {
@@ -67,6 +73,10 @@ type CartItem = {
   quantity: number;
   variation?: string | undefined;
   image?: string | undefined;
+  weight_grams?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
 };
 
 const filters = ["Todos", "Novidades", "Mais vendidos", "Promoções"] as const;
@@ -227,12 +237,26 @@ function PublicCatalog() {
   }, []);
 
   const finishOrder = useCallback(
-    (customerName: string, customerPhone: string, note: string) => {
+    (
+      customerName: string,
+      customerPhone: string,
+      note: string,
+      shipping: {
+        deliveryMethod: string;
+        shippingZip?: string;
+        address?: CustomerAddress;
+        quote?: ShippingQuote | null;
+        shippingCost: number;
+      },
+    ) => {
       if (!catalog) return;
       if (!catalog.whatsapp) {
         toast.error("Esta loja ainda não cadastrou o WhatsApp.");
         return;
       }
+
+      const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+      const grandTotal = subtotal + (shipping.shippingCost || 0);
 
       if (customerName.trim()) {
         supabase
@@ -248,12 +272,31 @@ function PublicCatalog() {
               variation: i.variation,
             })),
             note: note.trim() || null,
-            total,
+            subtotal,
+            total: grandTotal,
             status: "novo",
-          })
+            delivery_method: shipping.deliveryMethod || null,
+            shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
+            shipping_service: shipping.quote?.service || null,
+            shipping_service_name: shipping.quote?.name || null,
+            shipping_cost: shipping.shippingCost || null,
+            shipping_eta_days: shipping.quote?.delivery_days ?? null,
+            shipping_eta_text: shipping.quote?.delivery_text || null,
+            customer_street: shipping.address?.street || null,
+            customer_number: shipping.address?.number || null,
+            customer_complement: shipping.address?.complement || null,
+            customer_district: shipping.address?.district || null,
+            customer_city: shipping.address?.city || null,
+            customer_state: shipping.address?.state || null,
+          } as any)
           .then(() => {}, () => {});
       }
 
+      const customerLine = customerName.trim()
+        ? `Cliente: ${customerName.trim()}${customerPhone.trim() ? ` | Tel: ${customerPhone.trim()}` : ""}${note.trim() ? `\nObs: ${note.trim()}` : ""}`
+        : note.trim() || undefined;
+
+      const shipAddress = shipping.address;
       const message = buildWhatsappMessage({
         storeName: catalog.store_name,
         items: cart.map((i) => ({
@@ -262,17 +305,41 @@ function PublicCatalog() {
           unitPrice: i.unitPrice,
           variation: i.variation,
         })),
-        total,
-        note: customerName.trim()
-          ? `Cliente: ${customerName.trim()}${customerPhone.trim() ? ` | Tel: ${customerPhone.trim()}` : ""}${note.trim() ? `\nObs: ${note.trim()}` : ""}`
-          : note.trim() || undefined,
+        subtotal,
+        total: grandTotal,
+        shipping: {
+          ...(shipping.deliveryMethod ? { deliveryMethod: shipping.deliveryMethod } : {}),
+          ...(shipping.quote?.name ? { serviceName: shipping.quote.name } : {}),
+          ...(shipping.shippingCost ? { cost: shipping.shippingCost } : {}),
+          ...(shipping.quote?.delivery_text
+            ? { etaText: shipping.quote.delivery_text }
+            : shipping.deliveryMethod === "local_delivery"
+              ? { etaText: "Combino a data com você" }
+              : {}),
+          ...(shipAddress
+            ? {
+                address: {
+                  street: shipAddress.street,
+                  number: shipAddress.number,
+                  complement: shipAddress.complement,
+                  district: shipAddress.district,
+                  city: shipAddress.city,
+                  state: shipAddress.state,
+                  ...(shipping.shippingZip
+                    ? { zip: shipping.shippingZip.replace(/\D/g, "") }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+        note: customerLine,
       });
 
       window.open(whatsappLink(catalog.whatsapp, message), "_blank");
       setCart([]);
       setCartOpen(false);
     },
-    [catalog, cart, total],
+    [catalog, cart],
   );
 
   if (isLoading) {
@@ -554,6 +621,8 @@ function PublicCatalog() {
           items={cart}
           total={total}
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
+          deliveryMethods={Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []}
+          shippingOriginZip={loadedCatalog.shipping_origin_zip}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
           onRemove={removeItem}
@@ -803,6 +872,10 @@ function ProductSheet({
       quantity,
       variation: variation || undefined,
       image: images[0],
+      weight_grams: product.weight_grams,
+      length_cm: product.length_cm,
+      width_cm: product.width_cm,
+      height_cm: product.height_cm,
     });
   }
 
@@ -977,6 +1050,8 @@ function CartSheet({
   items,
   total,
   primary,
+  deliveryMethods,
+  shippingOriginZip,
   onClose,
   onChangeQty,
   onRemove,
@@ -985,21 +1060,149 @@ function CartSheet({
   items: CartItem[];
   total: number;
   primary: string;
+  deliveryMethods: string[];
+  shippingOriginZip: string | null;
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
-  onFinish: (name: string, phone: string, note: string) => void;
+  onFinish: (
+    name: string,
+    phone: string,
+    note: string,
+    shipping: {
+      deliveryMethod: string;
+      shippingZip?: string;
+      address?: CustomerAddress;
+      quote?: ShippingQuote | null;
+      shippingCost: number;
+    },
+  ) => void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [observation, setObservation] = useState("");
+  const [deliveryMethod, setDeliveryMethod] = useState<string>("");
+  const [cep, setCep] = useState("");
+  const [quotes, setQuotes] = useState<ShippingQuote[]>([]);
+  const [selectedQuote, setSelectedQuote] = useState<string>("");
+  const [quoting, setQuoting] = useState(false);
+  const [quoteMsg, setQuoteMsg] = useState<string>("");
+  const [address, setAddress] = useState<CustomerAddress>({
+    street: "",
+    number: "",
+    complement: "",
+    district: "",
+    city: "",
+    state: "",
+  });
+
+  const subtotal = total;
+  const selected = quotes.find((q) => q.service === selectedQuote) ?? null;
+  const shippingCost =
+    deliveryMethod === "correios" ? selected?.price ?? 0 : 0;
+  const grandTotal = subtotal + shippingCost;
+
+  const hasCorreios = deliveryMethods.includes("correios");
+  useEffect(() => {
+    if (!deliveryMethod && deliveryMethods.length === 1) {
+      setDeliveryMethod(deliveryMethods[0]!);
+    }
+  }, [deliveryMethods, deliveryMethod]);
+
+  async function handleQuote() {
+    if (!isValidCep(cep)) {
+      toast.error("Informe um CEP válido.");
+      return;
+    }
+    setQuoting(true);
+    setQuoteMsg("");
+    setQuotes([]);
+    setSelectedQuote("");
+    const res = await quoteShipping({
+      originZip: shippingOriginZip ?? "",
+      destinationZip: cep,
+      items: items.map((i) => ({
+        weight_grams: i.weight_grams ?? null,
+        length_cm: i.length_cm ?? null,
+        width_cm: i.width_cm ?? null,
+        height_cm: i.height_cm ?? null,
+        quantity: i.quantity,
+      })),
+    });
+    setQuoting(false);
+    if (res.success && Array.isArray(res.quotes) && res.quotes.length) {
+      setQuotes(res.quotes as ShippingQuote[]);
+    } else {
+      setQuoteMsg(
+        res.error === "not_configured"
+          ? "O cálculo de frete dos Correios ainda não foi ativado para esta loja."
+          : res.error || "Não foi possível calcular o frete. Tente outro CEP.",
+      );
+    }
+  }
+
+  async function lookupCep(autoFill = true) {
+    const clean = cep.replace(/\D/g, "");
+    if (clean.length !== 8) return;
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.erro) {
+        if (autoFill) toast.error("CEP não encontrado.");
+        return;
+      }
+      if (autoFill) {
+        setCep(data.cep || cep);
+        setAddress((prev) => ({
+          ...prev,
+          street: data.logradouro ?? prev.street,
+          district: data.bairro ?? prev.district,
+          city: data.localidade ?? prev.city,
+          state: data.uf ?? prev.state,
+        }));
+      }
+    } catch {
+      /* silencioso */
+    }
+  }
+
+  function handleCepChange(value: string) {
+    const formatted = formatCep(value);
+    setCep(formatted);
+    if (formatted.replace(/\D/g, "").length === 8) {
+      void lookupCep();
+    }
+  }
 
   function handleFinish() {
     if (!customerName.trim()) {
       toast.error("Informe seu nome para continuar.");
       return;
     }
-    onFinish(customerName, customerPhone, observation);
+    if (hasCorreios && deliveryMethod === "correios") {
+      if (!isValidCep(cep)) {
+        toast.error("Informe seu CEP para calcular o frete.");
+        return;
+      }
+      if (!selected) {
+        toast.error("Escolha uma modalidade de entrega.");
+        return;
+      }
+      if (!address.street.trim() || !address.number.trim() || !address.city.trim()) {
+        toast.error("Preencha os dados do endereço (rua, número e cidade).");
+        return;
+      }
+    }
+    onFinish(customerName, customerPhone, observation, {
+      deliveryMethod,
+      ...(cep ? { shippingZip: cep } : {}),
+      address,
+      quote: selected,
+      shippingCost,
+    });
   }
 
   return (
@@ -1061,15 +1264,180 @@ function CartSheet({
         <div className="space-y-3 border-t border-border p-5">
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Subtotal</span>
-            <span>{formatBRL(total)}</span>
+            <span>{formatBRL(subtotal)}</span>
           </div>
+          {deliveryMethod === "correios" && (
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>Frete {selected ? `(${selected.name})` : ""}</span>
+              <span>{shippingCost > 0 ? formatBRL(shippingCost) : "—"}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-base font-bold text-foreground">
             <span>Total</span>
-            <span>{formatBRL(total)}</span>
+            <span>{formatBRL(grandTotal)}</span>
           </div>
 
           {items.length > 0 && (
             <div className="space-y-3 rounded-2xl border border-border p-4">
+              {deliveryMethods.length > 1 && (
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-foreground">
+                    Como você quer receber seu pedido?
+                  </label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {deliveryMethods.map((m) => {
+                      const meta = DELIVERY_METHODS.find((d) => d.key === m);
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setDeliveryMethod(m)}
+                          className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                            deliveryMethod === m
+                              ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                              : "border-border bg-card text-muted-foreground"
+                          }`}
+                        >
+                          <span className="text-lg">{meta?.icon ?? "📦"}</span>
+                          {meta?.label ?? (m === "correios" ? "Correios" : m)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {deliveryMethods.length === 1 && (
+                <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground">
+                  <span className="text-lg">
+                    {DELIVERY_METHODS.find((d) => d.key === deliveryMethod)?.icon ?? "📦"}
+                  </span>
+                  {DELIVERY_METHODS.find((d) => d.key === deliveryMethod)?.label ?? deliveryMethod}
+                </div>
+              )}
+
+              {deliveryMethod === "correios" && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-foreground">
+                    CEP para entrega <span className="text-destructive">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={cep}
+                      onChange={(e) => handleCepChange(e.target.value)}
+                      placeholder="00000-000"
+                      maxLength={9}
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleQuote()}
+                      disabled={quoting}
+                      className="shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
+                      style={{ background: primary }}
+                    >
+                      {quoting ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        "Calcular frete"
+                      )}
+                    </button>
+                  </div>
+
+                  {quoteMsg && (
+                    <p className="text-xs text-muted-foreground">{quoteMsg}</p>
+                  )}
+
+                  {quotes.length > 0 && (
+                    <div className="grid grid-cols-1 gap-2 pt-1">
+                      {quotes.map((q) => (
+                        <button
+                          key={q.service}
+                          type="button"
+                          onClick={() => setSelectedQuote(q.service)}
+                          className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                            selectedQuote === q.service
+                              ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                              : "border-border bg-card text-muted-foreground"
+                          }`}
+                        >
+                          <span className="font-semibold">{q.name}</span>
+                          <span className="text-right">
+                            <span className="block font-bold text-foreground">
+                              {formatBRL(q.price)}
+                            </span>
+                            {q.delivery_text && (
+                              <span className="block text-xs text-muted-foreground">
+                                {q.delivery_text}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(deliveryMethod === "correios" ||
+                deliveryMethod === "local_delivery") && (
+                <div className="space-y-2 border-t border-dashed border-border pt-3">
+                  <p className="text-sm font-semibold text-foreground">Endereço de entrega</p>
+                  <div>
+                    <input
+                      type="text"
+                      value={address.street}
+                      onChange={(e) => setAddress((p) => ({ ...p, street: e.target.value }))}
+                      placeholder="Rua / Logradouro"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={address.number}
+                      onChange={(e) => setAddress((p) => ({ ...p, number: e.target.value }))}
+                      placeholder="Número"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                    <input
+                      type="text"
+                      value={address.complement}
+                      onChange={(e) => setAddress((p) => ({ ...p, complement: e.target.value }))}
+                      placeholder="Complemento"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={address.district}
+                      onChange={(e) => setAddress((p) => ({ ...p, district: e.target.value }))}
+                      placeholder="Bairro"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] gap-2">
+                    <input
+                      type="text"
+                      value={address.city}
+                      onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
+                      placeholder="Cidade"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                    <input
+                      type="text"
+                      value={address.state}
+                      onChange={(e) => setAddress((p) => ({ ...p, state: e.target.value }))}
+                      placeholder="UF"
+                      maxLength={2}
+                      className="w-16 rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="mb-1 block text-sm font-semibold text-foreground">
                   Seu nome <span className="text-destructive">*</span>

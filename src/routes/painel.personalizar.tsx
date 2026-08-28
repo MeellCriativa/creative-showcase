@@ -9,7 +9,7 @@ import { ImageUploader } from "@/components/ImageUploader";
 import { CartIcon, CART_STYLES } from "@/components/CartIcons";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
-import { slugify, FONT_OPTIONS, getFontFamily, PAYMENT_METHODS } from "@/lib/catalog";
+import { slugify, FONT_OPTIONS, getFontFamily, PAYMENT_METHODS, DELIVERY_METHODS, formatCep } from "@/lib/catalog";
 import type { Banner } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -54,6 +54,8 @@ function PersonalizarPage() {
   const [storeDescription, setStoreDescription] = useState("");
   const [instagramUrl, setInstagramUrl] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
+  const [deliveryMethods, setDeliveryMethods] = useState<string[]>([]);
+  const [shippingOriginZip, setShippingOriginZip] = useState("");
   const [ownerPhotoUrl, setOwnerPhotoUrl] = useState<string[]>([]);
   const [ownerName, setOwnerName] = useState("");
   const [ownerBio, setOwnerBio] = useState("");
@@ -83,6 +85,10 @@ function PersonalizarPage() {
     setPaymentMethods(
       Array.isArray(catalog.payment_methods) ? (catalog.payment_methods as string[]) : []
     );
+    setDeliveryMethods(
+      Array.isArray(catalog.delivery_methods) ? (catalog.delivery_methods as string[]) : []
+    );
+    setShippingOriginZip(catalog.shipping_origin_zip ?? "");
     setOwnerPhotoUrl(catalog.owner_photo_url ? [catalog.owner_photo_url] : []);
     setOwnerName(catalog.owner_name ?? "");
     setOwnerBio(catalog.owner_bio ?? "");
@@ -166,6 +172,8 @@ function PersonalizarPage() {
       store_description: storeDescription.trim() || null,
       instagram_url: instagramUrl.trim() || null,
       payment_methods: paymentMethods.length > 0 ? paymentMethods : [],
+      delivery_methods: deliveryMethods.length > 0 ? deliveryMethods : [],
+      shipping_origin_zip: shippingOriginZip ? shippingOriginZip.replace(/\D/g, "") : null,
       owner_photo_url: ownerPhotoUrl[0] || null,
       owner_name: ownerName.trim() || null,
       owner_bio: ownerBio.trim() || null,
@@ -174,7 +182,7 @@ function PersonalizarPage() {
 
     const { error: catalogError } = await supabase
       .from("catalogs")
-      .update(payload)
+      .update(payload as any)
       .eq("id", catalog!.id);
 
     if (catalogError) {
@@ -745,7 +753,51 @@ function PersonalizarPage() {
         </div>
       </Field>
 
-      {/* ── Apresentação da Dona ── */}
+      {/* ── Formas de entrega ── */}
+      <Field label="Formas de entrega" hint="Como você entrega os pedidos">
+        <div className="space-y-2">
+          {DELIVERY_METHODS.map((m) => {
+            const active = deliveryMethods.includes(m.key);
+            return (
+              <label
+                key={m.key}
+                className={`flex items-center gap-3 rounded-xl border p-3 transition-colors cursor-pointer ${
+                  active ? "border-primary bg-primary/5" : "border-border"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setDeliveryMethods((prev) => [...prev, m.key]);
+                    } else {
+                      setDeliveryMethods((prev) => prev.filter((k) => k !== m.key));
+                    }
+                  }}
+                  className="size-4 rounded border-border"
+                />
+                <span className="text-sm font-medium text-foreground">
+                  {m.icon} {m.label}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        {deliveryMethods.includes("correios") && (
+          <div className="mt-3">
+            <p className="text-xs text-muted-foreground mb-1">CEP de origem (envio)</p>
+            <input
+              inputMode="numeric"
+              value={shippingOriginZip}
+              onChange={(e) => setShippingOriginZip(formatCep(e.target.value))}
+              placeholder="00000-000"
+              maxLength={9}
+              className="input-base"
+            />
+          </div>
+        )}
+      </Field>
       <Field label="Apresentação da loja" hint="Seção de apresentação que aparece no catálogo público">
         <div className="space-y-4">
           <div>
