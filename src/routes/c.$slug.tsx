@@ -1136,6 +1136,21 @@ function CartSheet({
       })),
     });
     setQuoting(false);
+    console.log(
+      "[ME quote] cep=",
+      cep,
+      "| items=",
+      items.length,
+      "| =>",
+      res.success && Array.isArray(res.quotes)
+        ? res.quotes.map((q) => ({
+            id: q.serviceId,
+            name: q.name,
+            price: q.price,
+            delivery: q.delivery_text,
+          }))
+        : { error: res.error },
+    );
     if (res.success && Array.isArray(res.quotes) && res.quotes.length) {
       setQuotes(res.quotes as ShippingQuote[]);
     } else {
@@ -1206,6 +1221,12 @@ function CartSheet({
         toast.error("Informe seu CEP para calcular o frete.");
         return;
       }
+      if (quotes.length === 0) {
+        toast.error(
+          "Não encontramos opções de envio para este CEP. Verifique o CEP ou tente novamente.",
+        );
+        return;
+      }
       if (!selected) {
         toast.error("Escolha uma modalidade de entrega.");
         return;
@@ -1221,9 +1242,9 @@ function CartSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-center bg-foreground/40">
-      <div className="mt-16 flex w-full max-w-[30rem] flex-col rounded-t-3xl bg-background">
-        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-5 py-4">
+    <div className="fixed inset-0 z-50 flex justify-center bg-foreground/40 md:items-center md:p-6">
+      <div className="flex h-full w-full max-w-[30rem] flex-col rounded-t-3xl bg-background shadow-xl md:h-auto md:max-h-[calc(100dvh-3rem)] md:max-w-[34rem] md:rounded-2xl">
+        <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-5 py-4">
           <h2 className="truncate text-lg font-bold text-foreground">Seu carrinho</h2>
           <button
             onClick={onClose}
@@ -1234,7 +1255,7 @@ function CartSheet({
           </button>
         </header>
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-5">
+        <div className="space-y-3 px-5 pt-5 pb-0">
           {items.length === 0 && (
             <p className="py-10 text-center text-sm text-muted-foreground">Carrinho vazio.</p>
           )}
@@ -1276,22 +1297,7 @@ function CartSheet({
           ))}
         </div>
 
-        <div className="space-y-3 border-t border-border p-5">
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>Subtotal</span>
-            <span>{formatBRL(subtotal)}</span>
-          </div>
-          {deliveryMethod === "melhor_envio" && (
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Frete {selected ? `(${selected.name})` : ""}</span>
-              <span>{shippingCost > 0 ? formatBRL(shippingCost) : "—"}</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between text-base font-bold text-foreground">
-            <span>Total</span>
-            <span>{formatBRL(grandTotal)}</span>
-          </div>
-
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 pb-5">
           {items.length > 0 && (
             <div className="space-y-3 rounded-2xl border border-border p-4">
               {deliveryMethods.length > 1 && (
@@ -1307,7 +1313,7 @@ function CartSheet({
                           key={m}
                           type="button"
                           onClick={() => setDeliveryMethod(m)}
-                          className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                          className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                             deliveryMethod === m
                               ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
                               : "border-border bg-card text-muted-foreground"
@@ -1322,7 +1328,7 @@ function CartSheet({
                 </div>
               )}
               {deliveryMethods.length === 1 && (
-                <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium text-foreground">
+                <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground">
                   <span className="text-lg">
                     {DELIVERY_METHODS.find((d) => d.key === deliveryMethod)?.icon ?? "📦"}
                   </span>
@@ -1346,7 +1352,7 @@ function CartSheet({
                       onChange={(e) => handleCepChange(e.target.value)}
                       placeholder="00000-000"
                       maxLength={9}
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                     <button
                       type="button"
@@ -1373,7 +1379,7 @@ function CartSheet({
                           key={q.serviceId}
                           type="button"
                           onClick={() => setSelectedQuote(q.serviceId)}
-                          className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                          className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm transition-colors ${
                             selectedQuote === q.serviceId
                               ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
                               : "border-border bg-card text-muted-foreground"
@@ -1407,7 +1413,7 @@ function CartSheet({
                       value={address.street}
                       onChange={(e) => setAddress((p) => ({ ...p, street: e.target.value }))}
                       placeholder="Rua / Logradouro"
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1416,14 +1422,14 @@ function CartSheet({
                       value={address.number}
                       onChange={(e) => setAddress((p) => ({ ...p, number: e.target.value }))}
                       placeholder="Número"
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                     <input
                       type="text"
                       value={address.complement}
                       onChange={(e) => setAddress((p) => ({ ...p, complement: e.target.value }))}
                       placeholder="Complemento"
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                   </div>
                   <div>
@@ -1432,7 +1438,7 @@ function CartSheet({
                       value={address.district}
                       onChange={(e) => setAddress((p) => ({ ...p, district: e.target.value }))}
                       placeholder="Bairro"
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                   </div>
                   <div className="grid grid-cols-[1fr_auto] gap-2">
@@ -1441,7 +1447,7 @@ function CartSheet({
                       value={address.city}
                       onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
                       placeholder="Cidade"
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                     <input
                       type="text"
@@ -1449,7 +1455,7 @@ function CartSheet({
                       onChange={(e) => setAddress((p) => ({ ...p, state: e.target.value }))}
                       placeholder="UF"
                       maxLength={2}
-                      className="w-16 rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className="w-16 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                   </div>
                 </div>
@@ -1465,7 +1471,7 @@ function CartSheet({
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Ex: Maria"
-                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
               </div>
               <div>
@@ -1478,7 +1484,7 @@ function CartSheet({
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   placeholder="DDD + número"
-                  className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                  className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
               </div>
               <div>
@@ -1490,12 +1496,28 @@ function CartSheet({
                   onChange={(e) => setObservation(e.target.value)}
                   placeholder="Alguma preferência ou informação extra..."
                   rows={2}
-                  className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                  className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
               </div>
             </div>
           )}
+        </div>
 
+        <div className="shrink-0 space-y-3 border-t border-border px-5 py-4">
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>Subtotal</span>
+            <span>{formatBRL(subtotal)}</span>
+          </div>
+          {deliveryMethod === "melhor_envio" && (
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>Frete {selected ? `(${selected.name})` : ""}</span>
+              <span>{shippingCost > 0 ? formatBRL(shippingCost) : "—"}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between text-base font-bold text-foreground">
+            <span>Total</span>
+            <span>{formatBRL(grandTotal)}</span>
+          </div>
           <button
             onClick={handleFinish}
             disabled={items.length === 0}
