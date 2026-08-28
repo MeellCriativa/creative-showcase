@@ -45,19 +45,20 @@
   - Admin "Formas de entrega" + CEP de origem (painel.personalizar.tsx); weight/dims on product form (painel.produtos.tsx) reference Melhor Envio
 
 ### Blocked / Pending
-- **User must run SQL migration** `20260827130000_add_melhor_envio_shipping.sql` in Supabase SQL Editor (recreate view + new columns + new table)
-- **Deploy Edge Functions** `melhor-envio` and `melhor-envio-callback` — requires `supabase login` (CLI NOT logged in)
+- **SQL migration applied SUCCESSFULLY** (3 parts, user-confirmed; verified all columns + `melhor_envio_accounts` table exist)
+- **Supabase CLI logged in + project `wdcufpvlbisnqtvmbyso` linked** (verified via `supabase projects list`)
+- **Front auto-freight live**: buyer types CEP → freight calculated automatically + product+freight total shown immediately (commit `270b1e5`, worker Version `9aa3c206`)
+- **Deploy Edge Functions** `melhor-envio` and `melhor-envio-callback` — NOT YET done (user has NOT run `scripts/deploy-melhor-envio.ps1`)
 - **Set function secrets** on the deployed functions: `ME_CLIENT_ID`, `ME_CLIENT_SECRET`, `ME_ENV` (sandbox|production), and confirm `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `VITRINE_URL` are set
-- **Register platform Melhor Envio app** (Área Dev): Sandbox `https://app-sandbox.melhorenvio.com.br/integracoes/area-dev`, Prod via Painel → Integrações → Área Dev; set redirect URI to `${VITRINE_URL}/functions/v1/melhor-envio-callback`; note client_id/secret
+- **Register platform Melhor Envio app** (Área Dev) — **BLOCKED on external account signup**: user gets generic error "Ops! Ocorreu um erro no seu cadastro" on Melhor Envio site. **Melhor Envio integration currently PAUSED by user decision.** Sandbox `https://app-sandbox.melhorenvio.com.br/integracoes/area-dev`, Prod via Painel → Integrações → Área Dev; set redirect URI to `${VITRINE_URL}/functions/v1/melhor-envio-callback`; note client_id/secret
 - **Each store owner** must create/own a Melhor Envio account (free) and authorize via `/painel/envio`; access_token valid 30d, refresh 45d (auto-refresh implemented)
 - **DCe / SEFAZ (non-commercial invoice)** — from 06/04/2026 non-commercial sending enforced by ME; `non_commercial: true` set, `from.state_register: "ISENTO"`; commercial option not yet wired in UI
 - Meta Developer app not created (SMS verification failing)
 
 ## Next Move
-1. Tell user to run the SQL migration manually (`20260827130000_add_melhor_envio_shipping.sql`) in Supabase SQL Editor
-2. After `supabase login`: deploy both Edge Functions (`melhor-envio`, `melhor-envio-callback`) with secrets
-3. User registers the platform ME app (Sandbox first) → set `ME_CLIENT_ID`/`ME_CLIENT_SECRET`/`ME_ENV=sandbox`; test OAuth connect in `/painel/envio`
-4. Test first quote → then label in sandbox (no spend); then switch `ME_ENV=production`, re-register app, real labels
-5. Known limits: agency-required services (Latam/Azul/Buslog) need agency selection (not yet in UI); commercial/invoice path optional
+1. **Melhor Envio paused (user decision)** — when resuming: retry external signup OR use existing ME account. Then deploy both Edge Functions (`melhor-envio`, `melhor-envio-callback`) via `powershell -ExecutionPolicy Bypass -File scripts\deploy-melhor-envio.ps1`
+2. User registers the platform ME app (Sandbox first) → set `ME_CLIENT_ID`/`ME_CLIENT_SECRET`/`ME_ENV=sandbox`; test OAuth connect in `/painel/envio`
+3. Test first quote → then label in sandbox (no spend); then switch `ME_ENV=production`, re-register app, real labels
+4. Known limits: agency-required services (Latam/Azul/Buslog) need agency selection (not yet in UI); commercial/invoice path optional
 
 
