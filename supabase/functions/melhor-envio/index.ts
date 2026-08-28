@@ -256,27 +256,49 @@ async function quoteAction(ctx: Ctx) {
     return jsonRes({ success: false, error: "Informe um CEP de destino válido." });
   }
 
-  const products = items.map((it, idx) => ({
-    id: String(it.id ?? idx),
-    width: Number(it.width_cm ?? 0),
-    height: Number(it.height_cm ?? 0),
-    length: Number(it.length_cm ?? 0),
-    weight: Number(it.weight_grams ?? 0) / 1000,
-    insurance_value: Number(it.unit_price ?? 0) * Number(it.quantity ?? 1),
-    quantity: Number(it.quantity ?? 1),
-  }));
+  const products = items
+    .filter((it) => (it.product_type as string | null) !== "digital")
+    .map((it, idx) => ({
+      id: String(it.id ?? idx),
+      width: Number(it.width_cm ?? 0),
+      height: Number(it.height_cm ?? 0),
+      length: Number(it.length_cm ?? 0),
+      weight: Number(it.weight_grams ?? 0) / 1000,
+      insurance_value: Number(it.unit_price ?? 0) * Number(it.quantity ?? 1),
+      quantity: Number(it.quantity ?? 1),
+    }));
+
+  if (products.length === 0) {
+    return jsonRes({
+      success: false,
+      error: "no_physical_products",
+      message: "Os produtos do carrinho são digitais e não precisam de envio.",
+    });
+  }
 
   if (
-    products.length === 0 ||
     products.some((p) => p.weight <= 0 || p.width <= 0 || p.height <= 0 || p.length <= 0)
   ) {
     return jsonRes({
       success: false,
       error: "products_no_dimensions",
       message:
-        "Alguns produtos do carrinho ainda não têm peso e dimensões cadastrados. A loja precisa preencher esses dados para calcular o frete.",
+        "Alguns produtos físicos do carrinho ainda não têm peso e dimensões cadastrados. A loja precisa preencher esses dados para calcular o frete.",
     });
   }
+
+  console.log(
+    "[ME quote payload] from_zip=",
+    digits(senderZip).slice(0, 5) + "***",
+    "| to_zip=",
+    destinationZip.slice(0, 5) + "***",
+    "| products=",
+    products.map((p) => ({
+      w_kg: p.weight,
+      dims_cm: `${p.length}x${p.width}x${p.height}`,
+      qty: p.quantity,
+    })),
+  );
 
   const { res, data } = await meApi({
     catalogId,
@@ -294,10 +316,20 @@ async function quoteAction(ctx: Ctx) {
     message?: string;
   };
 
+  console.log(
+    "[ME quote response] status=",
+    res.status,
+    "| body=",
+    JSON.stringify(data),
+  );
+
   if (!res.ok || raw.error) {
     return jsonRes({
       success: false,
       error: (raw.error?.message as string) || raw.message || "Não foi possível calcular o frete.",
+      error_type: "me_api_error",
+      http_status: res.status,
+      message: (raw.error?.message as string) || raw.message || undefined,
     });
   }
 

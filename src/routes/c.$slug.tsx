@@ -73,6 +73,7 @@ type CartItem = {
   quantity: number;
   variation?: string | undefined;
   image?: string | undefined;
+  product_type?: "fisico" | "digital" | null;
   weight_grams?: number | null;
   length_cm?: number | null;
   width_cm?: number | null;
@@ -876,6 +877,7 @@ function ProductSheet({
       quantity,
       variation: variation || undefined,
       image: images[0],
+      product_type: product.product_type ?? null,
       weight_grams: product.weight_grams,
       length_cm: product.length_cm,
       width_cm: product.width_cm,
@@ -1107,6 +1109,7 @@ function CartSheet({
   const grandTotal = subtotal + shippingCost;
 
   const hasMelhorEnvio = deliveryMethods.includes("melhor_envio");
+  const hasPhysical = items.some((i) => i.product_type !== "digital");
   useEffect(() => {
     if (!deliveryMethod && deliveryMethods.length === 1) {
       setDeliveryMethod(deliveryMethods[0]!);
@@ -1118,6 +1121,15 @@ function CartSheet({
       toast.error("Informe um CEP válido.");
       return;
     }
+    const physical = items.filter((i) => i.product_type !== "digital");
+    if (physical.length === 0) {
+      setQuotes([]);
+      setSelectedQuote("");
+      setQuoteMsg(
+        "Seus produtos são digitais e não necessitam de envio físico.",
+      );
+      return;
+    }
     setQuoting(true);
     setQuoteMsg("");
     setQuotes([]);
@@ -1127,6 +1139,7 @@ function CartSheet({
       destinationZip: cep,
       items: items.map((i) => ({
         key: i.key,
+        product_type: i.product_type ?? null,
         weight_grams: i.weight_grams ?? null,
         length_cm: i.length_cm ?? null,
         width_cm: i.width_cm ?? null,
@@ -1140,7 +1153,15 @@ function CartSheet({
       "[ME quote] cep=",
       cep,
       "| items=",
-      items.length,
+      items.map((i) => ({
+        name: i.name,
+        qty: i.quantity,
+        type: i.product_type ?? "fisico",
+        weight_grams: i.weight_grams ?? null,
+        dims: [i.length_cm, i.width_cm, i.height_cm].some((v) => v != null)
+          ? `${i.length_cm ?? "?"}x${i.width_cm ?? "?"}x${i.height_cm ?? "?"}cm`
+          : null,
+      })),
       "| =>",
       res.success && Array.isArray(res.quotes)
         ? res.quotes.map((q) => ({
@@ -1149,7 +1170,7 @@ function CartSheet({
             price: q.price,
             delivery: q.delivery_text,
           }))
-        : { error: res.error },
+        : { error: res.error, type: res.error_type, http: res.http_status },
     );
     if (res.success && Array.isArray(res.quotes) && res.quotes.length) {
       setQuotes(res.quotes as ShippingQuote[]);
@@ -1158,9 +1179,11 @@ function CartSheet({
         res.error === "not_connected"
           ? "Esta loja ainda não ativou o envio por Correios e transportadoras."
           : res.error === "no_origin"
-            ? "A loja ainda não definiu o CEP de origem do envio."
+            ? res.message ??
+              "A loja ainda não configurou o endereço (CEP de origem) do remetente. Peça à loja para completar os dados do remetente no painel."
             : res.error === "products_no_dimensions"
-              ? "A loja ainda não cadastrou peso e dimensões de alguns produtos."
+              ? res.message ??
+                "A loja ainda não cadastrou peso e dimensões de alguns produtos físicos."
               : res.error === "no_options"
                 ? "Não encontramos opções de entrega para este CEP no momento. Verifique o CEP e tente novamente."
                 : res.error && res.error.length > 60
@@ -1217,6 +1240,17 @@ function CartSheet({
       return;
     }
     if (hasMelhorEnvio && deliveryMethod === "melhor_envio") {
+      const physical = items.filter((i) => i.product_type !== "digital");
+      if (physical.length === 0) {
+        onFinish(customerName, customerPhone, observation, {
+          deliveryMethod,
+          ...(cep ? { shippingZip: cep } : {}),
+          address,
+          quote: null,
+          shippingCost: 0,
+        });
+        return;
+      }
       if (!isValidCep(cep)) {
         toast.error("Informe seu CEP para calcular o frete.");
         return;
@@ -1336,7 +1370,13 @@ function CartSheet({
                 </div>
               )}
 
-              {deliveryMethod === "melhor_envio" && (
+              {deliveryMethod === "melhor_envio" && !hasPhysical && (
+                <p className="text-xs text-muted-foreground">
+                  Seus produtos são digitais e não necessitam de envio físico.
+                </p>
+              )}
+
+              {deliveryMethod === "melhor_envio" && hasPhysical && (
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-foreground">
                     CEP para entrega <span className="text-destructive">*</span>

@@ -29,6 +29,7 @@ type Draft = {
   available: boolean;
   is_new: boolean;
   is_bestseller: boolean;
+  product_type: "fisico" | "digital";
   weight_grams: string;
   length_cm: string;
   width_cm: string;
@@ -47,6 +48,7 @@ const emptyDraft: Draft = {
   available: true,
   is_new: false,
   is_bestseller: false,
+  product_type: "fisico",
   weight_grams: "",
   length_cm: "",
   width_cm: "",
@@ -102,6 +104,7 @@ function ProdutosPage() {
       available: product.available,
       is_new: product.is_new,
       is_bestseller: product.is_bestseller,
+      product_type: product.product_type === "digital" ? "digital" : "fisico",
       weight_grams: product.weight_grams != null ? String(product.weight_grams) : "",
       length_cm: product.length_cm != null ? String(product.length_cm) : "",
       width_cm: product.width_cm != null ? String(product.width_cm) : "",
@@ -278,6 +281,22 @@ function ProductEditor({
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    const isPhysical = draft.product_type !== "digital";
+    if (isPhysical) {
+      const dims = {
+        "peso (em gramas)": draft.weight_grams,
+        "comprimento (em cm)": draft.length_cm,
+        "largura (em cm)": draft.width_cm,
+        "altura (em cm)": draft.height_cm,
+      };
+      const missing = Object.entries(dims).find(([, v]) => !String(v).trim());
+      if (missing) {
+        toast.error(
+          `Produto físico precisa do campo: ${missing[0]}. Preencha para calcular o frete.`,
+        );
+        return;
+      }
+    }
     setSaving(true);
     const payload = {
       catalog_id: catalogId,
@@ -292,10 +311,11 @@ function ProductEditor({
       available: draft.available,
       is_new: draft.is_new,
       is_bestseller: draft.is_bestseller,
-      weight_grams: draft.weight_grams ? Number(draft.weight_grams.replace(",", ".")) : null,
-      length_cm: draft.length_cm ? Number(draft.length_cm.replace(",", ".")) : null,
-      width_cm: draft.width_cm ? Number(draft.width_cm.replace(",", ".")) : null,
-      height_cm: draft.height_cm ? Number(draft.height_cm.replace(",", ".")) : null,
+      product_type: isPhysical ? "fisico" : "digital",
+      weight_grams: isPhysical && draft.weight_grams ? Number(draft.weight_grams.replace(",", ".")) : null,
+      length_cm: isPhysical && draft.length_cm ? Number(draft.length_cm.replace(",", ".")) : null,
+      width_cm: isPhysical && draft.width_cm ? Number(draft.width_cm.replace(",", ".")) : null,
+      height_cm: isPhysical && draft.height_cm ? Number(draft.height_cm.replace(",", ".")) : null,
     };
     const { error } = draft.id
       ? await supabase.from("products").update(payload as any).eq("id", draft.id)
@@ -445,41 +465,71 @@ function ProductEditor({
           </select>
 
           <div className="rounded-2xl border border-border p-4">
-            <p className="text-sm font-semibold text-foreground">Dados de envio</p>
-            <p className="text-xs text-muted-foreground">
-              Usados para calcular o frete com Correios e transportadoras (via Melhor Envio).
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <input
-                inputMode="decimal"
-                placeholder="Peso (gramas)"
-                value={draft.weight_grams}
-                onChange={(e) => set("weight_grams", e.target.value)}
-                className="input-base"
-              />
-              <input
-                inputMode="decimal"
-                placeholder="Comprimento (cm)"
-                value={draft.length_cm}
-                onChange={(e) => set("length_cm", e.target.value)}
-                className="input-base"
-              />
-              <input
-                inputMode="decimal"
-                placeholder="Largura (cm)"
-                value={draft.width_cm}
-                onChange={(e) => set("width_cm", e.target.value)}
-                className="input-base"
-              />
-              <input
-                inputMode="decimal"
-                placeholder="Altura (cm)"
-                value={draft.height_cm}
-                onChange={(e) => set("height_cm", e.target.value)}
-                className="input-base"
-              />
+            <p className="text-sm font-semibold text-foreground">Tipo de produto</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => set("product_type", "fisico")}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  draft.product_type === "fisico"
+                    ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                    : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                📦 Físico
+              </button>
+              <button
+                type="button"
+                onClick={() => set("product_type", "digital")}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  draft.product_type === "digital"
+                    ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                    : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                ✨ Digital
+              </button>
             </div>
           </div>
+
+          {draft.product_type !== "digital" && (
+            <div className="rounded-2xl border border-border p-4">
+              <p className="text-sm font-semibold text-foreground">Dados de envio</p>
+              <p className="text-xs text-muted-foreground">
+                Usados para calcular o frete com Correios e transportadoras (via Melhor Envio).
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <input
+                  inputMode="decimal"
+                  placeholder="Peso (gramas)"
+                  value={draft.weight_grams}
+                  onChange={(e) => set("weight_grams", e.target.value)}
+                  className="input-base"
+                />
+                <input
+                  inputMode="decimal"
+                  placeholder="Comprimento (cm)"
+                  value={draft.length_cm}
+                  onChange={(e) => set("length_cm", e.target.value)}
+                  className="input-base"
+                />
+                <input
+                  inputMode="decimal"
+                  placeholder="Largura (cm)"
+                  value={draft.width_cm}
+                  onChange={(e) => set("width_cm", e.target.value)}
+                  className="input-base"
+                />
+                <input
+                  inputMode="decimal"
+                  placeholder="Altura (cm)"
+                  value={draft.height_cm}
+                  onChange={(e) => set("height_cm", e.target.value)}
+                  className="input-base"
+                />
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-border p-4">
             <p className="text-sm font-semibold text-foreground">Variações</p>

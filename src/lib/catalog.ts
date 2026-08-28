@@ -80,11 +80,14 @@ export type Product = {
   is_new: boolean;
   is_bestseller: boolean;
   position: number;
+  product_type: "fisico" | "digital" | null;
   weight_grams: number | null;
   length_cm: number | null;
   width_cm: number | null;
   height_cm: number | null;
 };
+
+export type ProductType = "fisico" | "digital";
 
 export type Banner = {
   id: string;
@@ -133,6 +136,7 @@ export type OrderItem = {
   quantity: number;
   unitPrice: number;
   variation?: string;
+  product_type?: "fisico" | "digital" | null;
   weight_grams?: number | null;
   length_cm?: number | null;
   width_cm?: number | null;

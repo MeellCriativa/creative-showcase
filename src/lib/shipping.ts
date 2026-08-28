@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type ShippingQuoteItem = {
   key?: string;
+  product_type?: "fisico" | "digital" | null;
   weight_grams: number | null;
   length_cm: number | null;
   width_cm: number | null;
@@ -41,6 +42,9 @@ export type QuoteResult = {
   success: boolean;
   quotes?: MelhorEnvioQuote[];
   error?: string;
+  error_type?: string;
+  http_status?: number;
+  message?: string;
 };
 
 export async function quoteShipping(opts: {
@@ -59,6 +63,7 @@ export async function quoteShipping(opts: {
         destination_zip: opts.destinationZip,
         items: opts.items.map((i) => ({
           id: i.key ?? "x",
+          product_type: i.product_type ?? null,
           weight_grams: i.weight_grams ?? null,
           length_cm: i.length_cm ?? null,
           width_cm: i.width_cm ?? null,
@@ -71,10 +76,22 @@ export async function quoteShipping(opts: {
   );
   const data = await res.json();
   if (data.error && data.error !== "not_connected" && data.error !== "no_origin") {
-    return { success: false, error: data.error };
+    return {
+      success: false,
+      error: data.error,
+      error_type: data.error_type,
+      http_status: data.http_status,
+      message: data.message,
+    };
   }
   if (!data.success) {
-    return { success: false, error: data.error || data.message || "Não foi possível calcular o frete" };
+    return {
+      success: false,
+      error: data.error || data.message || "Não foi possível calcular o frete",
+      error_type: data.error_type,
+      http_status: data.http_status,
+      message: data.message,
+    };
   }
   return data as QuoteResult;
 }
