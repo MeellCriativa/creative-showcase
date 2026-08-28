@@ -1235,6 +1235,18 @@ function CartSheet({
       if (deliveryMethod === "melhor_envio") {
         void handleQuote();
       }
+    } else {
+      setAddress((prev) => ({
+        ...prev,
+        street: "",
+        district: "",
+        city: "",
+        state: "",
+      }));
+      setQuotes([]);
+      setSelectedQuote("");
+      setQuoteMsg("");
+      setCoverageMsg("");
     }
   }
 
