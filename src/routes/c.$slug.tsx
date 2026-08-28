@@ -134,7 +134,7 @@ function PublicCatalog() {
           .order("position"),
       ]);
       return {
-        catalog: catalog as Catalog,
+        catalog: catalog as unknown as Catalog,
         categories: (categories ?? []) as Category[],
         products: (products ?? []) as unknown as Product[],
         banners: (banners ?? []) as Banner[],
@@ -270,6 +270,10 @@ function PublicCatalog() {
               quantity: i.quantity,
               unitPrice: i.unitPrice,
               variation: i.variation,
+              weight_grams: i.weight_grams ?? null,
+              length_cm: i.length_cm ?? null,
+              width_cm: i.width_cm ?? null,
+              height_cm: i.height_cm ?? null,
             })),
             note: note.trim() || null,
             subtotal,
@@ -277,10 +281,10 @@ function PublicCatalog() {
             status: "novo",
             delivery_method: shipping.deliveryMethod || null,
             shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
-            shipping_service: shipping.quote?.service || null,
+            shipping_service: shipping.quote?.serviceId || null,
             shipping_service_name: shipping.quote?.name || null,
             shipping_cost: shipping.shippingCost || null,
-            shipping_eta_days: shipping.quote?.delivery_days ?? null,
+            shipping_eta_days: shipping.quote?.delivery_min ?? null,
             shipping_eta_text: shipping.quote?.delivery_text || null,
             customer_street: shipping.address?.street || null,
             customer_number: shipping.address?.number || null,
@@ -618,11 +622,11 @@ function PublicCatalog() {
 
       {cartOpen && (
         <CartSheet
+          catalogId={loadedCatalog.id}
           items={cart}
           total={total}
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
           deliveryMethods={Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []}
-          shippingOriginZip={loadedCatalog.shipping_origin_zip}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
           onRemove={removeItem}
@@ -1047,21 +1051,21 @@ function ProductSheet({
 }
 
 function CartSheet({
+  catalogId,
   items,
   total,
   primary,
   deliveryMethods,
-  shippingOriginZip,
   onClose,
   onChangeQty,
   onRemove,
   onFinish,
 }: {
+  catalogId: string;
   items: CartItem[];
   total: number;
   primary: string;
   deliveryMethods: string[];
-  shippingOriginZip: string | null;
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
@@ -1097,12 +1101,12 @@ function CartSheet({
   });
 
   const subtotal = total;
-  const selected = quotes.find((q) => q.service === selectedQuote) ?? null;
+  const selected = quotes.find((q) => q.serviceId === selectedQuote) ?? null;
   const shippingCost =
-    deliveryMethod === "correios" ? selected?.price ?? 0 : 0;
+    deliveryMethod === "melhor_envio" ? selected?.price ?? 0 : 0;
   const grandTotal = subtotal + shippingCost;
 
-  const hasCorreios = deliveryMethods.includes("correios");
+  const hasMelhorEnvio = deliveryMethods.includes("melhor_envio");
   useEffect(() => {
     if (!deliveryMethod && deliveryMethods.length === 1) {
       setDeliveryMethod(deliveryMethods[0]!);
@@ -1119,14 +1123,16 @@ function CartSheet({
     setQuotes([]);
     setSelectedQuote("");
     const res = await quoteShipping({
-      originZip: shippingOriginZip ?? "",
+      catalogId,
       destinationZip: cep,
       items: items.map((i) => ({
+        key: i.key,
         weight_grams: i.weight_grams ?? null,
         length_cm: i.length_cm ?? null,
         width_cm: i.width_cm ?? null,
         height_cm: i.height_cm ?? null,
         quantity: i.quantity,
+        unit_price: i.unitPrice,
       })),
     });
     setQuoting(false);
@@ -1134,9 +1140,11 @@ function CartSheet({
       setQuotes(res.quotes as ShippingQuote[]);
     } else {
       setQuoteMsg(
-        res.error === "not_configured"
-          ? "O cálculo de frete dos Correios ainda não foi ativado para esta loja."
-          : res.error || "Não foi possível calcular o frete. Tente outro CEP.",
+        res.error === "not_connected"
+          ? "Esta loja ainda não ativou o envio por Correios e transportadoras."
+          : res.error === "no_origin"
+            ? "A loja ainda não definiu o CEP de origem do envio."
+            : res.error || "Não foi possível calcular o frete. Tente outro CEP.",
       );
     }
   }
@@ -1182,7 +1190,7 @@ function CartSheet({
       toast.error("Informe seu nome para continuar.");
       return;
     }
-    if (hasCorreios && deliveryMethod === "correios") {
+    if (hasMelhorEnvio && deliveryMethod === "melhor_envio") {
       if (!isValidCep(cep)) {
         toast.error("Informe seu CEP para calcular o frete.");
         return;
@@ -1266,7 +1274,7 @@ function CartSheet({
             <span>Subtotal</span>
             <span>{formatBRL(subtotal)}</span>
           </div>
-          {deliveryMethod === "correios" && (
+          {deliveryMethod === "melhor_envio" && (
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>Frete {selected ? `(${selected.name})` : ""}</span>
               <span>{shippingCost > 0 ? formatBRL(shippingCost) : "—"}</span>
@@ -1299,7 +1307,7 @@ function CartSheet({
                           }`}
                         >
                           <span className="text-lg">{meta?.icon ?? "📦"}</span>
-                          {meta?.label ?? (m === "correios" ? "Correios" : m)}
+                          {meta?.label ?? (m === "melhor_envio" ? "Envio" : m)}
                         </button>
                       );
                     })}
@@ -1315,7 +1323,7 @@ function CartSheet({
                 </div>
               )}
 
-              {deliveryMethod === "correios" && (
+              {deliveryMethod === "melhor_envio" && (
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-foreground">
                     CEP para entrega <span className="text-destructive">*</span>
@@ -1353,11 +1361,11 @@ function CartSheet({
                     <div className="grid grid-cols-1 gap-2 pt-1">
                       {quotes.map((q) => (
                         <button
-                          key={q.service}
+                          key={q.serviceId}
                           type="button"
-                          onClick={() => setSelectedQuote(q.service)}
+                          onClick={() => setSelectedQuote(q.serviceId)}
                           className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
-                            selectedQuote === q.service
+                            selectedQuote === q.serviceId
                               ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
                               : "border-border bg-card text-muted-foreground"
                           }`}
@@ -1380,7 +1388,7 @@ function CartSheet({
                 </div>
               )}
 
-              {(deliveryMethod === "correios" ||
+              {(deliveryMethod === "melhor_envio" ||
                 deliveryMethod === "local_delivery") && (
                 <div className="space-y-2 border-t border-dashed border-border pt-3">
                   <p className="text-sm font-semibold text-foreground">Endereço de entrega</p>

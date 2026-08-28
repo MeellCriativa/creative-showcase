@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { BarChart3, ClipboardList, LayoutGrid, Loader2, MessageCircle, Package, Palette, Store } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutGrid, Loader2, MessageCircle, Package, Palette, Store, Truck } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ const tabs = [
   { to: "/painel/pedidos", label: "Pedidos", icon: ClipboardList, exact: false },
   { to: "/painel/personalizar", label: "Vitrine", icon: Palette, exact: false },
   { to: "/painel/whatsapp", label: "WhatsApp", icon: MessageCircle, exact: false },
+  { to: "/painel/envio", label: "Envio", icon: Truck, exact: false },
   { to: "/painel/estatisticas", label: "Estatisticas", icon: BarChart3, exact: false },
 ] as const;
 
@@ -48,7 +49,7 @@ function PainelLayout() {
       <Outlet />
 
       <nav className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur">
-        <ul className="grid grid-cols-7">
+        <ul className="grid grid-cols-8">
           {tabs.map((tab) => {
             const active = tab.exact ? pathname === tab.to : pathname.startsWith(tab.to);
             return (

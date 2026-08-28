@@ -41,7 +41,7 @@ export type Catalog = {
 export const DELIVERY_METHODS = [
   { key: "local_pickup", label: "Retirada no local", icon: "🏪" },
   { key: "local_delivery", label: "Entrega local", icon: "🛵" },
-  { key: "correios", label: "Correios", icon: "📦" },
+  { key: "melhor_envio", label: "Envio (Correios e transportadoras)", icon: "📦" },
 ] as const;
 
 export const PAYMENT_METHODS = [
@@ -117,6 +117,13 @@ export type Order = {
   shipping_cost: number | null;
   shipping_eta_days: number | null;
   shipping_eta_text: string | null;
+  me_order_id: string | null;
+  me_agency_id: string | null;
+  me_tracking: string | null;
+  me_status: string | null;
+  me_protocol: string | null;
+  me_label_id: string | null;
+  me_label_url: string | null;
   status: string;
   created_at: string;
 };
@@ -126,14 +133,21 @@ export type OrderItem = {
   quantity: number;
   unitPrice: number;
   variation?: string;
+  weight_grams?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
 };
 
 export type ShippingQuote = {
-  service: string;
+  serviceId: string;
   name: string;
   price: number;
-  delivery_days: number | null;
+  delivery_min: number | null;
+  delivery_max: number | null;
   delivery_text: string | null;
+  agencyRequired: boolean;
+  collect: boolean;
 };
 
 export type CustomerAddress = {
@@ -143,6 +157,10 @@ export type CustomerAddress = {
   district: string;
   city: string;
   state: string;
+  zip?: string;
+  recipient?: string;
+  recipientPhone?: string;
+  document?: string;
 };
 
 export const FONT_OPTIONS = [
@@ -250,9 +268,9 @@ export function buildWhatsappMessage(opts: {
   lines.push(`Subtotal: ${formatBRL(subtotal)}`);
 
   const ship = opts.shipping;
-  if (ship?.deliveryMethod === "correios") {
+  if (ship?.deliveryMethod === "melhor_envio") {
     lines.push("");
-    lines.push("📦 Entrega: Correios");
+    lines.push("📦 Entrega: Envio (Correios e transportadoras)");
     if (ship.serviceName) lines.push(`Modalidade: ${ship.serviceName}`);
     if (ship.cost != null) lines.push(`Frete: ${formatBRL(ship.cost)}`);
     if (ship.etaText) lines.push(`Prazo estimado: ${ship.etaText}`);

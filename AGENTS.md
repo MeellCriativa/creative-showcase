@@ -32,22 +32,32 @@
 ### Completed
 - Full DB schema on `wdcufpvlbisnqtvmbyso` — catalogs, categories, products, banners, orders, catalog_visits + RLS policies + `catalogs_public` view + storage bucket `catalog-images` + triggers
 - Meta tables created but empty (RLS working); Meta/WhatsApp integration UI **blocked** with "Em breve" (commit `8a593ca`)
-- **Correios shipping implemented** (commit `62ac0ae`, deployed):
-  - Migration `supabase/migrations/20260827120000_add_correios_shipping.sql` (NOT yet run by user): catalogs `delivery_methods`+`shipping_origin_zip`; products weight/dims; orders shipping/address/subtotal; recreates `catalogs_public` view with new columns
-  - `src/lib/shipping.ts` — `quoteShipping()` calls `/functions/v1/quote-shipping`
-  - `supabase/functions/quote-shipping/index.ts` — official Correios PI (Preços e Prazos), returns graceful `not_configured` until env creds set
-  - Admin: "Formas de entrega" + CEP de origem (painel.personalizar.tsx); weight/dims on product form (painel.produtos.tsx)
-  - Checkout (c.$slug.tsx CartSheet): delivery method select, CEP + "Calcular frete" (ViaCEP auto-fill), modalidade options, address fields, freight in total
-  - `finishOrder` saves delivery/address/freight + builds WhatsApp message; orders panel shows "📦 Envio pelos Correios" + address (painel.pedidos.tsx)
+- **Melhor Envio shipping implemented** (Correios + transportadoras, multi-tenant — REPLACES the rejected Correios direct API):
+  - Migration `supabase/migrations/20260827130000_add_melhor_envio_shipping.sql` (NOT yet run by user): catalogs `delivery_methods`+`shipping_origin_zip`; products weight/dims; orders shipping/address/subtotal **+ ME pipeline columns** (me_order_id, me_agency_id, me_tracking, me_status, me_protocol, me_label_id, me_label_url); **new `melhor_envio_accounts` table** (per-catalog OAuth token + sender address, RLS owner-only); recreates `catalogs_public` view
+  - Edge Function router `supabase/functions/melhor-envio/index.ts` — actions: status/connect/disconnect/save_sender/quote/cart/checkout/generate/print/tracking/agencies; quote is public (buyer), everything else owner-auth via verifyUser; token auto-refresh per store
+  - Edge Function `supabase/functions/melhor-envio-callback/index.ts` — OAuth redirect, exchanges code, stores per-store token, redirects to `/painel/envio`
+  - Shared helper `supabase/functions/_shared/melhor-envio.ts` — token load/refresh, `meApi`, sandbox/production base from `ME_ENV`
+  - `src/lib/shipping.ts` — `quoteShipping()` calls `/functions/v1/melhor-envio?action=quote`; `meApi` client (status/connect/disconnect/saveSender/cart/checkout/generate/print/tracking/agencies)
+  - `src/lib/catalog.ts` — `DELIVERY_METHODS` key `melhor_envio`; OrderItem stores weight/dims; Order has ME columns; ShippingQuote = serviceId/name/price/delivery_min/max/agencyRequired/collect
+  - Admin `src/routes/painel.envio.tsx` — connect via OAuth (per store), sender (remetente) address form, disconnect, sandbox/production badge; nav tab "Envio" added (grid-cols-8)
+  - Checkout (`c.$slug.tsx` CartSheet): real ME service quotes (PAC/SEDEX/transportadoras), CEP, address → saves freight to order
+  - Orders panel (`painel.pedidos.tsx`): ME shipping block + buttons "Criar envio → Pagar envio → Gerar etiqueta → Imprimir/Rastrear"
+  - Admin "Formas de entrega" + CEP de origem (painel.personalizar.tsx); weight/dims on product form (painel.produtos.tsx) reference Melhor Envio
 
 ### Blocked / Pending
-- **User must run SQL migration** `20260827120000_add_correios_shipping.sql` in Supabase SQL Editor
-- **Correios API activation** — Edge Function needs env vars on deployed function: `CORREIOS_USER`, `CORREIOS_PASSWORD` (and optional `CORREIOS_CONTRATO`, `CORREIOS_CONTRATO_SENHA`)
-- Deploy Edge Function `quote-shipping` requires `supabase login` (not logged in)
+- **User must run SQL migration** `20260827130000_add_melhor_envio_shipping.sql` in Supabase SQL Editor (recreate view + new columns + new table)
+- **Deploy Edge Functions** `melhor-envio` and `melhor-envio-callback` — requires `supabase login` (CLI NOT logged in)
+- **Set function secrets** on the deployed functions: `ME_CLIENT_ID`, `ME_CLIENT_SECRET`, `ME_ENV` (sandbox|production), and confirm `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` + `VITRINE_URL` are set
+- **Register platform Melhor Envio app** (Área Dev): Sandbox `https://app-sandbox.melhorenvio.com.br/integracoes/area-dev`, Prod via Painel → Integrações → Área Dev; set redirect URI to `${VITRINE_URL}/functions/v1/melhor-envio-callback`; note client_id/secret
+- **Each store owner** must create/own a Melhor Envio account (free) and authorize via `/painel/envio`; access_token valid 30d, refresh 45d (auto-refresh implemented)
+- **DCe / SEFAZ (non-commercial invoice)** — from 06/04/2026 non-commercial sending enforced by ME; `non_commercial: true` set, `from.state_register: "ISENTO"`; commercial option not yet wired in UI
 - Meta Developer app not created (SMS verification failing)
 
 ## Next Move
-1. Tell user to run the SQL migration manually (includes view recreation)
-2. After DB ready + `supabase login`: deploy `quote-shipping` Edge Function
-3. Configure Correios API credentials to activate real freight calc (until then it reports "not configured")
+1. Tell user to run the SQL migration manually (`20260827130000_add_melhor_envio_shipping.sql`) in Supabase SQL Editor
+2. After `supabase login`: deploy both Edge Functions (`melhor-envio`, `melhor-envio-callback`) with secrets
+3. User registers the platform ME app (Sandbox first) → set `ME_CLIENT_ID`/`ME_CLIENT_SECRET`/`ME_ENV=sandbox`; test OAuth connect in `/painel/envio`
+4. Test first quote → then label in sandbox (no spend); then switch `ME_ENV=production`, re-register app, real labels
+5. Known limits: agency-required services (Latam/Azul/Buslog) need agency selection (not yet in UI); commercial/invoice path optional
+
 

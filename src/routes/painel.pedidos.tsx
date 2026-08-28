@@ -7,13 +7,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
 import { formatBRL } from "@/lib/catalog";
+import { meApi } from "@/lib/shipping";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/pedidos")({
   component: PedidosPage,
 });
 
-type OrderItem = { name: string; quantity: number; unitPrice: number; variation?: string };
+type OrderItem = {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  variation?: string;
+  weight_grams?: number | null;
+  length_cm?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
+};
 type OrderRow = {
   id: string;
   catalog_id: string;
@@ -35,6 +45,11 @@ type OrderRow = {
   shipping_service_name: string | null;
   shipping_cost: number | null;
   shipping_eta_text: string | null;
+  me_order_id: string | null;
+  me_status: string | null;
+  me_tracking: string | null;
+  me_protocol: string | null;
+  me_label_url: string | null;
   status: string;
   created_at: string;
 };
@@ -190,6 +205,112 @@ function OrderCard({
   const dt = new Date(order.created_at);
   const formattedDate = dt.toLocaleDateString("pt-BR");
   const formattedTime = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const [meBusy, setMeBusy] = useState<string | null>(null);
+
+  const isMeShipping = order.delivery_method === "melhor_envio";
+
+  async function runMe(action: string) {
+    if (!order.catalog_id) return;
+    setMeBusy(action);
+    try {
+      let res: {
+        success: boolean;
+        error?: string;
+        url?: string | null;
+        me_order_id?: string | null;
+        me_protocol?: string | null;
+        data?: unknown;
+      };
+      const opt = order.catalog_id;
+      if (action === "cart") {
+        const sender = await meApi.status(opt);
+        if (!sender.success) {
+          toast.error(String(sender.error || "Conecte sua loja à Melhor Envio antes."));
+          return;
+        }
+        const s = sender.sender;
+        if (!s || !s.complete) {
+          toast.error("Preencha o endereço de remetente na integração Melhor Envio.");
+          return;
+        }
+        res = await meApi.cart(opt, {
+          service_id: order.shipping_service,
+          sender: {
+            name: s.name, phone: s.phone, email: s.email, document: s.document,
+            street: s.street, number: s.number, complement: s.complement,
+            district: s.district, city: s.city, state: s.state, zip: s.zip,
+          },
+          recipient: {
+            name: order.customer_name,
+            phone: order.customer_phone || "",
+            email: "",
+            document: "",
+            street: order.customer_street, number: order.customer_number,
+            complement: order.customer_complement,
+            district: order.customer_district, city: order.customer_city,
+            state: order.customer_state, zip: order.shipping_zip,
+          },
+          products: (order.items || []).map((it) => ({
+            name: it.name,
+            quantity: it.quantity,
+            unitary_value: it.unitPrice,
+            width_cm: it.width_cm ?? 0,
+            height_cm: it.height_cm ?? 0,
+            length_cm: it.length_cm ?? 0,
+            weight_grams: it.weight_grams ?? 0,
+          })),
+          agency_id: undefined,
+          non_commercial: true,
+        });
+      } else if (order.me_order_id) {
+        if (action === "checkout") res = await meApi.checkout(opt, order.me_order_id);
+        else if (action === "generate") res = await meApi.generate(opt, order.me_order_id);
+        else if (action === "print") res = await meApi.print(opt, order.me_order_id);
+        else if (action === "tracking") res = await meApi.tracking(opt, order.me_order_id);
+        else res = { success: false };
+      } else {
+        res = { success: false, error: "Crie o envio primeiro." };
+      }
+
+      if (!res.success) {
+        toast.error(String(res.error || "Falha na operação."));
+        return;
+      }
+
+      if (action === "cart") {
+        toast.success("Envio criado! Agora pague o envio.");
+      } else if (action === "checkout") {
+        toast.success("Envio pago!");
+      } else if (action === "generate") {
+        toast.success("Etiqueta gerada!");
+      } else if (action === "print" && res.url) {
+        window.open(String(res.url), "_blank");
+      } else if (action === "tracking") {
+        toast.success("Verifique o rastreio retornado.");
+      }
+
+      // refetch orders to update ME fields
+      await new Promise((r) => setTimeout(r, 400));
+      try {
+        const { data: updated } = await supabase
+          .from("orders")
+          .select(
+            "me_order_id, me_status, me_tracking, me_protocol, me_label_url",
+          )
+          .eq("id", order.id)
+          .single();
+        if (updated) {
+          // update local row via callback is complex; just inform user to refresh
+        }
+      } catch {
+        /* ignore */
+      }
+    } catch {
+      toast.error("Erro inesperado ao processar o envio.");
+    } finally {
+      setMeBusy(null);
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
@@ -217,8 +338,8 @@ function OrderCard({
 
       {order.delivery_method && (
         <div className="mt-3 rounded-xl bg-accent/50 px-3 py-2 text-xs text-muted-foreground space-y-1">
-          {order.delivery_method === "correios" && (
-            <p className="font-semibold text-foreground">📦 Envio pelos Correios</p>
+          {order.delivery_method === "melhor_envio" && (
+            <p className="font-semibold text-foreground">📦 Envio (Correios e transportadoras)</p>
           )}
           {order.delivery_method === "local_pickup" && (
             <p className="font-semibold text-foreground">🏪 Retirada no local</p>
@@ -251,6 +372,75 @@ function OrderCard({
                 </>
               )}
             </p>
+          )}
+          {isMeShipping && order.me_tracking && (
+            <p className="pt-1">
+              🔎 Código de rastreio: <span className="font-semibold text-foreground">{order.me_tracking}</span>
+            </p>
+          )}
+          {isMeShipping && order.me_protocol && (
+            <p>Protocolo: {order.me_protocol}</p>
+          )}
+        </div>
+      )}
+
+      {isMeShipping && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {!order.me_order_id ? (
+            <button
+              onClick={() => void runMe("cart")}
+              disabled={meBusy === "cart"}
+              className="flex items-center gap-1 rounded-xl border border-border bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+            >
+              {meBusy === "cart" ? <Loader2 className="size-3 animate-spin" /> : null}
+              Criar envio
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => void runMe("checkout")}
+                disabled={meBusy === "checkout"}
+                className="flex items-center gap-1 rounded-xl border border-border bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {meBusy === "checkout" ? <Loader2 className="size-3 animate-spin" /> : null}
+                Pagar envio
+              </button>
+              <button
+                onClick={() => void runMe("generate")}
+                disabled={meBusy === "generate"}
+                className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground disabled:opacity-50"
+              >
+                {meBusy === "generate" ? <Loader2 className="size-3 animate-spin" /> : null}
+                Gerar etiqueta
+              </button>
+              <button
+                onClick={() => void runMe("tracking")}
+                disabled={meBusy === "tracking"}
+                className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground disabled:opacity-50"
+              >
+                {meBusy === "tracking" ? <Loader2 className="size-3 animate-spin" /> : null}
+                Rastrear
+              </button>
+              {order.me_label_url ? (
+                <a
+                  href={order.me_label_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground"
+                >
+                  Imprimir etiqueta
+                </a>
+              ) : (
+                <button
+                  onClick={() => void runMe("print")}
+                  disabled={meBusy === "print"}
+                  className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground disabled:opacity-50"
+                >
+                  {meBusy === "print" ? <Loader2 className="size-3 animate-spin" /> : null}
+                  Imprimir etiqueta
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

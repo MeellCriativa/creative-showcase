@@ -784,7 +784,7 @@ function PersonalizarPage() {
             );
           })}
         </div>
-        {deliveryMethods.includes("correios") && (
+        {deliveryMethods.includes("melhor_envio") && (
           <div className="mt-3">
             <p className="text-xs text-muted-foreground mb-1">CEP de origem (envio)</p>
             <input
@@ -795,6 +795,10 @@ function PersonalizarPage() {
               maxLength={9}
               className="input-base"
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Para calcular o frete você também precisa <strong>conectar sua loja à Melhor Envio</strong> e
+              informar o endereço de remetente.
+            </p>
           </div>
         )}
       </Field>

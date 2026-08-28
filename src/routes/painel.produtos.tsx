@@ -447,7 +447,7 @@ function ProductEditor({
           <div className="rounded-2xl border border-border p-4">
             <p className="text-sm font-semibold text-foreground">Dados de envio</p>
             <p className="text-xs text-muted-foreground">
-              Usados para calcular o frete dos Correios (opcional).
+              Usados para calcular o frete com Correios e transportadoras (via Melhor Envio).
             </p>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <input
