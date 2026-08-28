@@ -45,6 +45,9 @@ export type QuoteResult = {
   error_type?: string;
   http_status?: number;
   message?: string;
+  environment?: string;
+  coverage?: string[];
+  coverage_message?: string;
 };
 
 export async function quoteShipping(opts: {
@@ -82,6 +85,9 @@ export async function quoteShipping(opts: {
       error_type: data.error_type,
       http_status: data.http_status,
       message: data.message,
+      environment: data.environment,
+      coverage: data.coverage,
+      coverage_message: data.coverage_message,
     };
   }
   if (!data.success) {
@@ -91,6 +97,9 @@ export async function quoteShipping(opts: {
       error_type: data.error_type,
       http_status: data.http_status,
       message: data.message,
+      environment: data.environment,
+      coverage: data.coverage,
+      coverage_message: data.coverage_message,
     };
   }
   return data as QuoteResult;

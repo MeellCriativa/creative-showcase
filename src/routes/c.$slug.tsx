@@ -1093,6 +1093,7 @@ function CartSheet({
   const [selectedQuote, setSelectedQuote] = useState<string>("");
   const [quoting, setQuoting] = useState(false);
   const [quoteMsg, setQuoteMsg] = useState<string>("");
+  const [coverageMsg, setCoverageMsg] = useState<string>("");
   const [address, setAddress] = useState<CustomerAddress>({
     street: "",
     number: "",
@@ -1172,6 +1173,7 @@ function CartSheet({
           }))
         : { error: res.error, type: res.error_type, http: res.http_status },
     );
+    setCoverageMsg(res.coverage_message ?? "");
     if (res.success && Array.isArray(res.quotes) && res.quotes.length) {
       setQuotes(res.quotes as ShippingQuote[]);
     } else {
@@ -1185,7 +1187,9 @@ function CartSheet({
               ? res.message ??
                 "A loja ainda não cadastrou peso e dimensões de alguns produtos físicos."
               : res.error === "no_options"
-                ? "Não encontramos opções de entrega para este CEP no momento. Verifique o CEP e tente novamente."
+                ? res.coverage_message
+                  ? `${res.coverage_message} Não conseguimos encontrar opções para este CEP no momento.`
+                  : "Não encontramos opções de entrega para este CEP no momento. Verifique o CEP e tente novamente."
                 : res.error && res.error.length > 60
                   ? res.error
                   : res.error && res.error !== "no_options"
@@ -1439,6 +1443,12 @@ function CartSheet({
                         </button>
                       ))}
                     </div>
+                  )}
+
+                  {quotes.length > 0 && coverageMsg && (
+                    <p className="rounded-lg bg-[var(--shop-accent)]/60 px-3 py-2 text-xs font-medium text-foreground/80">
+                      {coverageMsg}
+                    </p>
                   )}
                 </div>
               )}

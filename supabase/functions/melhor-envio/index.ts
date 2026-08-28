@@ -238,6 +238,21 @@ async function quoteAction(ctx: Ctx) {
 
   const account = await getAccount(catalogId);
   const senderZip = account?.sender_zip || (b.origin_zip as string) || null;
+  const env = (account?.environment as string) || (Deno.env.get("ME_ENV") || "sandbox");
+  // Cobertura de entrega. Em produção o Melhor Envio atende todo o Brasil.
+  // No sandbox listamos os estados que retornaram frete nos testes reais
+  // (RS não retornou em nenhum CEP testado — limitação do ambiente de teste).
+  const coveredUFs =
+    env === "production"
+      ? ["Todos os estados do Brasil"]
+      : [
+          "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB",
+          "PE","PI","PR","RJ","RN","RO","RR","SC","SE","SP","TO",
+        ];
+  const coverageMessage =
+    env === "production"
+      ? "Entregamos para todo o Brasil."
+      : "Frete disponível nos testes para: " + coveredUFs.join(", ") + ".";
   if (!account?.connected) {
     return jsonRes({
       success: false,
@@ -365,10 +380,19 @@ async function quoteAction(ctx: Ctx) {
       error: "no_options",
       message:
         "Não conseguimos encontrar opções de entrega para este CEP no momento.",
+      environment: env,
+      coverage: coveredUFs,
+      coverage_message: coverageMessage,
     });
   }
 
-  return jsonRes({ success: true, quotes });
+  return jsonRes({
+    success: true,
+    quotes,
+    environment: env,
+    coverage: coveredUFs,
+    coverage_message: coverageMessage,
+  });
 }
 
 /* ── cart (create ME order) ─────────────────────────────────────── */
