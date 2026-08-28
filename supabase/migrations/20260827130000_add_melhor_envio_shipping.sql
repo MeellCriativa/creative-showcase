@@ -67,6 +67,12 @@ create table if not exists public.melhor_envio_accounts (
   updated_at timestamptz not null default now()
 );
 
+-- One Melhor Envio account per catalog. Required so the app can use
+-- `ON CONFLICT (catalog_id) DO UPDATE` (upsert) — without a unique index on
+-- catalog_id, PostgREST returns SQLSTATE 42P10 and the save fails.
+alter table public.melhor_envio_accounts
+  add constraint melhor_envio_accounts_catalog_id_key unique (catalog_id);
+
 -- RLS: only the catalog owner can manage their Melhor Envio account.
 alter table public.melhor_envio_accounts enable row level security;
 
