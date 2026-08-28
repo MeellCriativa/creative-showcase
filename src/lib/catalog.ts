@@ -303,6 +303,9 @@ export function buildWhatsappMessage(opts: {
 
   lines.push("");
   lines.push(`Total do pedido: ${formatBRL(opts.total)}`);
+  if (ship?.cost != null && ship.cost > 0) {
+    lines.push("(já incluso o valor do frete)");
+  }
   lines.push("");
   if (opts.note?.trim()) {
     lines.push(`${opts.note.trim()}`);
