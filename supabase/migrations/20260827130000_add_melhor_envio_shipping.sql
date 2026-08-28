@@ -68,6 +68,8 @@ create table if not exists public.melhor_envio_accounts (
 );
 
 -- RLS: only the catalog owner can manage their Melhor Envio account.
+alter table public.melhor_envio_accounts enable row level security;
+
 drop policy if exists "melhor_envio_accounts_owner_select" on public.melhor_envio_accounts;
 create policy "melhor_envio_accounts_owner_select"
   on public.melhor_envio_accounts for select
