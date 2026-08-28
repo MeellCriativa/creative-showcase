@@ -151,7 +151,22 @@ async function buildAuthorizeUrl(ctx: Ctx, catalogId: string) {
   const clientId = Deno.env.get("ME_CLIENT_ID") || "";
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://wdcufpvlbisnqtvmbyso.supabase.co";
   const redirectUri = `${supabaseUrl}/functions/v1/melhor-envio-callback`;
-  const scopes = "shipping:read,shipping:write,checkout:read,checkout:write";
+  // Melhor Envio expects SPACE-separated scope names (hyphenated, e.g.
+  // shipping-calculate). Comma-separated names like "shipping:read" do NOT
+  // exist and cause the authorization to be rejected.
+  const scopes = [
+    "shipping-calculate",
+    "shipping-checkout",
+    "shipping-generate",
+    "shipping-print",
+    "shipping-tracking",
+    "shipping-companies",
+    "cart-read",
+    "cart-write",
+    "orders-read",
+    "purchases-read",
+    "users-read",
+  ].join(" ");
   const state = `${catalogId}`;
   const query = new URLSearchParams({
     response_type: "code",

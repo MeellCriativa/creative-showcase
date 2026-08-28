@@ -8,8 +8,8 @@
 #    3) ME_ENV (sandbox | production)
 #  O restante roda automático (login, link, deploy das funções, secrets).
 #
-#  ANTES: na Melhor Envio (Área Dev) defina o redirect URI:
-#     https://vitrine.meellcriativa.workers.dev/functions/v1/melhor-envio-callback
+#  ANTES: na Melhor Envio (Área Dev) defina o redirect URI (CALLBACK) para:
+#     https://wdcufpvlbisnqtvmbyso.supabase.co/functions/v1/melhor-envio-callback
 # =====================================================================
 
 $ErrorActionPreference = "Stop"
@@ -74,5 +74,5 @@ Write-Host ""
 Write-Host "Lembre:"
 Write-Host "  1) Cada loja conecta OAuth em /painel/envio (botao Conectar)."
 Write-Host "  2) Preencha os dados do remetente apos conectar."
-Write-Host "  3) No app da Melhor Envio, o redirect URI deve ser:"
-Write-Host "     $VITRINE_URL/functions/v1/melhor-envio-callback"
+Write-Host "  3) No app da Melhor Envio, o redirect URI (callback) deve ser:"
+Write-Host "     https://wdcufpvlbisnqtvmbyso.supabase.co/functions/v1/melhor-envio-callback"

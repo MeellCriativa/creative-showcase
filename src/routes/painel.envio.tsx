@@ -76,11 +76,23 @@ function EnvioPage() {
     const params = new URLSearchParams(window.location.search);
     const ok = params.get("me_connected");
     if (ok) {
-      toast[ok === "1" ? "success" : "error"](
-        ok === "1"
-          ? "Loja conectada à Melhor Envio!"
-          : "A conexão com a Melhor Envio não pôde ser concluída.",
-      );
+      if (ok === "1") {
+        toast.success("Loja conectada à Melhor Envio!");
+      } else {
+        const rawErr = params.get("error");
+        let detail = "";
+        try {
+          detail = rawErr ? decodeURIComponent(rawErr) : "";
+        } catch {
+          detail = rawErr || "";
+        }
+        console.error("[melhor-envio] callback retornou erro:", detail);
+        toast.error(
+          detail && detail !== "authorization_failed"
+            ? `Não foi possível conectar: ${detail}`
+            : "A conexão com a Melhor Envio não pôde ser concluída.",
+        );
+      }
       window.history.replaceState({}, "", "/painel/envio");
       qc.invalidateQueries({ queryKey: ["me-status", catalogId] });
     }
