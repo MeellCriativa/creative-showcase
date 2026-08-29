@@ -7,6 +7,7 @@ import {
   Copy,
   ExternalLink,
   Eye,
+  KeyboardIcon,
   Loader2,
   LogOut,
   Package,
@@ -235,6 +236,12 @@ function PainelHome() {
           text="Logo, fonte, cores, carrinho e banners"
         />
         <ShortcutLink to="/painel/estatisticas" icon={BarChart3} title="Estatísticas" text="Visitas ao catálogo" />
+        <ShortcutLink
+          to="/painel/senha"
+          icon={KeyboardIcon}
+          title="Redefinir senha"
+          text="Altere a senha do seu acesso"
+        />
       </nav>
     </div>
   );
