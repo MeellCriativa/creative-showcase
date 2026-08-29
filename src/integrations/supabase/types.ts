@@ -100,6 +100,7 @@ export type Database = {
           owner_name: string | null
           owner_photo_url: string | null
           payment_methods: Json | null
+          plan: string
           primary_color: string
           slug: string
           store_description: string | null
@@ -131,6 +132,7 @@ export type Database = {
           owner_name?: string | null
           owner_photo_url?: string | null
           payment_methods?: Json | null
+          plan?: string
           primary_color?: string
           slug: string
           store_description?: string | null
@@ -162,6 +164,7 @@ export type Database = {
           owner_name?: string | null
           owner_photo_url?: string | null
           payment_methods?: Json | null
+          plan?: string
           primary_color?: string
           slug?: string
           store_description?: string | null

@@ -36,6 +36,7 @@ export type Catalog = {
   meta_catalog_connected: boolean;
   delivery_methods: string[] | null;
   shipping_origin_zip: string | null;
+  plan?: string;
 };
 
 export const DELIVERY_METHODS = [

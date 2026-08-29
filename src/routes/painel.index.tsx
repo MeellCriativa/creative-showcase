@@ -101,6 +101,16 @@ function PainelHome() {
     typeof window !== "undefined" ? `${window.location.origin}/c/${catalog.slug}` : `/c/${catalog.slug}`;
   const message = `\u{1F49C} Venha ver meu catálogo\n${link}`;
 
+  const plan = catalog.plan ?? "free";
+  const planLabel =
+    plan === "mensal"
+      ? "Plano Mensal"
+      : plan === "trimestral"
+        ? "Plano Trimestral"
+        : plan === "anual"
+          ? "Plano Anual"
+          : "Plano Free";
+
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(link);
@@ -147,6 +157,25 @@ function PainelHome() {
           <LogOut className="size-4" />
         </button>
       </header>
+
+      <section className="mt-6 overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/15 via-accent to-background p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-primary">
+              Vitrine Criativa
+            </p>
+            <h2 className="mt-0.5 text-lg font-bold text-foreground">{planLabel}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {plan === "free"
+                ? "Plano gratuito — aproveite todos os recursos básicos."
+                : "Acesso liberado ao seu plano de assinatura."}
+            </p>
+          </div>
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
+            <Store className="size-6" />
+          </span>
+        </div>
+      </section>
 
       <section className="mt-6 rounded-3xl border border-border bg-card p-5">
         <div className="flex items-center gap-3">
@@ -236,14 +265,30 @@ function PainelHome() {
           text="Logo, fonte, cores, carrinho e banners"
         />
         <ShortcutLink to="/painel/estatisticas" icon={BarChart3} title="Estatísticas" text="Visitas ao catálogo" />
-        <ShortcutLink
-          to="/painel/senha"
-          icon={KeyboardIcon}
-          title="Redefinir senha"
-          text="Altere a senha do seu acesso"
-        />
+        <PasswordLink to="/painel/senha" />
       </nav>
     </div>
+  );
+}
+
+function PasswordLink({ to }: { to: string }) {
+  return (
+    <Link
+      to={to}
+      className="btn-elevated btn-shimmer group relative flex items-center gap-3 overflow-hidden rounded-2xl p-4 text-white shadow-[0_2px_4px_rgb(0_0_0/0.08),0_8px_20px_-6px_var(--primary-glow)] transition-transform duration-200 hover:-translate-y-0.5 active:scale-[0.97]"
+      style={{
+        background: "linear-gradient(135deg, #8b5cf6 0%, #a78bfa 50%, #c4b5fd 100%)",
+      }}
+    >
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/20 text-white backdrop-blur-sm">
+        <KeyboardIcon className="size-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold">Redefinir senha</span>
+        <span className="block text-xs text-white/80">Altere a senha do seu acesso</span>
+      </span>
+      <ExternalLink className="size-4 shrink-0 text-white/70 transition-transform group-hover:translate-x-0.5" />
+    </Link>
   );
 }
 
