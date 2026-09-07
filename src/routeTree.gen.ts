@@ -20,7 +20,6 @@ import { Route as PainelEstatisticasRouteImport } from './routes/painel.estatist
 import { Route as PainelPedidosRouteImport } from './routes/painel.pedidos'
 import { Route as PainelPersonalizarRouteImport } from './routes/painel.personalizar'
 import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
-import { Route as PainelRadarGruposRouteImport } from './routes/painel.radar-grupos'
 import { Route as PainelSenhaRouteImport } from './routes/painel.senha'
 import { Route as PainelWhatsappRouteImport } from './routes/painel.whatsapp'
 
@@ -79,11 +78,6 @@ const PainelProdutosRoute = PainelProdutosRouteImport.update({
   path: '/produtos',
   getParentRoute: () => PainelRoute,
 } as any)
-const PainelRadarGruposRoute = PainelRadarGruposRouteImport.update({
-  id: '/radar-grupos',
-  path: '/radar-grupos',
-  getParentRoute: () => PainelRoute,
-} as any)
 const PainelSenhaRoute = PainelSenhaRouteImport.update({
   id: '/senha',
   path: '/senha',
@@ -106,7 +100,6 @@ export interface FileRoutesByFullPath {
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
-  '/painel/radar-grupos': typeof PainelRadarGruposRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
   '/painel/': typeof PainelIndexRoute
@@ -121,7 +114,6 @@ export interface FileRoutesByTo {
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
-  '/painel/radar-grupos': typeof PainelRadarGruposRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
   '/painel': typeof PainelIndexRoute
@@ -138,7 +130,6 @@ export interface FileRoutesById {
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
-  '/painel/radar-grupos': typeof PainelRadarGruposRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
   '/painel/': typeof PainelIndexRoute
@@ -156,7 +147,6 @@ export interface FileRouteTypes {
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
-    | '/painel/radar-grupos'
     | '/painel/senha'
     | '/painel/whatsapp'
     | '/painel/'
@@ -171,7 +161,6 @@ export interface FileRouteTypes {
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
-    | '/painel/radar-grupos'
     | '/painel/senha'
     | '/painel/whatsapp'
     | '/painel'
@@ -187,7 +176,6 @@ export interface FileRouteTypes {
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
-    | '/painel/radar-grupos'
     | '/painel/senha'
     | '/painel/whatsapp'
     | '/painel/'
@@ -279,13 +267,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelProdutosRouteImport
       parentRoute: typeof PainelRoute
     }
-    '/painel/radar-grupos': {
-      id: '/painel/radar-grupos'
-      path: '/radar-grupos'
-      fullPath: '/painel/radar-grupos'
-      preLoaderRoute: typeof PainelRadarGruposRouteImport
-      parentRoute: typeof PainelRoute
-    }
     '/painel/senha': {
       id: '/painel/senha'
       path: '/senha'
@@ -310,7 +291,6 @@ interface PainelRouteChildren {
   PainelPedidosRoute: typeof PainelPedidosRoute
   PainelPersonalizarRoute: typeof PainelPersonalizarRoute
   PainelProdutosRoute: typeof PainelProdutosRoute
-  PainelRadarGruposRoute: typeof PainelRadarGruposRoute
   PainelSenhaRoute: typeof PainelSenhaRoute
   PainelWhatsappRoute: typeof PainelWhatsappRoute
   PainelIndexRoute: typeof PainelIndexRoute
@@ -323,7 +303,6 @@ const PainelRouteChildren: PainelRouteChildren = {
   PainelPedidosRoute: PainelPedidosRoute,
   PainelPersonalizarRoute: PainelPersonalizarRoute,
   PainelProdutosRoute: PainelProdutosRoute,
-  PainelRadarGruposRoute: PainelRadarGruposRoute,
   PainelSenhaRoute: PainelSenhaRoute,
   PainelWhatsappRoute: PainelWhatsappRoute,
   PainelIndexRoute: PainelIndexRoute,
