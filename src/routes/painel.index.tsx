@@ -102,16 +102,19 @@ function PainelHome() {
   const message = `\u{1F49C} Venha ver meu catálogo\n${link}`;
 
   const plan = catalog.plan ?? "free";
+  const isVip = plan === "premium" || plan === "vitalicio";
   const planLabel =
     plan === "premium"
       ? "Plano Premium"
-      : plan === "mensal"
-        ? "Plano Mensal"
-        : plan === "trimestral"
-          ? "Plano Trimestral"
-          : plan === "anual"
-            ? "Plano Anual"
-            : "Plano Free";
+      : plan === "vitalicio"
+        ? "Plano Vitalício"
+        : plan === "mensal"
+          ? "Plano Mensal"
+          : plan === "trimestral"
+            ? "Plano Trimestral"
+            : plan === "anual"
+              ? "Plano Anual"
+              : "Plano Free";
 
   async function copyLink() {
     try {
@@ -163,7 +166,7 @@ function PainelHome() {
       <section
         className={
           "mt-6 overflow-hidden rounded-3xl border p-5 " +
-          (plan === "premium"
+          (isVip
             ? "border-amber-300 bg-gradient-to-br from-amber-100 via-amber-50 to-accent shadow-[0_8px_30px_-8px_rgba(217,177,87,0.6)]"
             : "border-primary/20 bg-gradient-to-br from-primary/15 via-accent to-background")
         }
@@ -173,27 +176,29 @@ function PainelHome() {
             <p
               className={
                 "text-[11px] font-semibold uppercase tracking-widest " +
-                (plan === "premium" ? "text-amber-600" : "text-primary")
+                (isVip ? "text-amber-600" : "text-primary")
               }
             >
               Vitrine Criativa
             </p>
             <h2 className="mt-0.5 flex items-center gap-1.5 text-lg font-bold text-foreground">
               {planLabel}
-              {plan === "premium" && <span className="text-xl">👑</span>}
+              {isVip && <span className="text-xl">👑</span>}
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {plan === "free"
                 ? "Plano gratuito — aproveite todos os recursos básicos."
-                : plan === "premium"
-                  ? "Plano Premium — você é a rainha da vitrine!"
-                  : "Acesso liberado ao seu plano de assinatura."}
+                : plan === "vitalicio"
+                  ? "Plano Vitalício — acesso para sempre, sem mensalidade!"
+                  : plan === "premium"
+                    ? "Plano Premium — você é a rainha da vitrine!"
+                    : "Acesso liberado ao seu plano de assinatura."}
             </p>
           </div>
           <span
             className={
               "grid size-12 shrink-0 place-items-center rounded-2xl shadow-lg " +
-              (plan === "premium"
+              (isVip
                 ? "bg-gradient-to-br from-amber-300 to-amber-500 text-white shadow-amber-500/40"
                 : "bg-primary text-primary-foreground shadow-primary/30")
             }
