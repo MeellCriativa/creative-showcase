@@ -111,6 +111,7 @@ export type MEStatusResult = {
   success: boolean;
   error?: string;
   connected?: boolean;
+  needs_reconnect?: boolean;
   environment?: string;
   configured?: boolean;
   connectUrl?: string | null;

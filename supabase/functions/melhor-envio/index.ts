@@ -108,11 +108,23 @@ async function statusAction(ctx: Ctx) {
 
   const account = await getAccount(catalogId);
   const env = getPlatformEnv();
-  const connected = !!(account?.connected && account?.access_token);
+  let connected = !!(account?.connected && account?.access_token);
+  let needsReconnect = false;
+
+  // Validate (and silently refresh) the token so the panel never reports
+  // "connected" when the OAuth token is actually expired.
+  if (connected) {
+    const token = await ensureValidAccessToken(catalogId);
+    if (!token) {
+      connected = false;
+      needsReconnect = true;
+    }
+  }
 
   return jsonRes({
     success: true,
     connected,
+    needs_reconnect: needsReconnect,
     environment: env,
     configured: hasPlatformCredentials(),
     connectUrl: hasPlatformCredentials()
@@ -339,6 +351,15 @@ async function quoteAction(ctx: Ctx) {
   );
 
   if (!res.ok || raw.error) {
+    const errCode = typeof raw.error === "string" ? raw.error : "";
+    if (errCode === "not_connected") {
+      return jsonRes({
+        success: false,
+        error: "needs_reconnect",
+        message:
+          "A loja precisa reconectar o envio (Correios e transportadoras) para voltar a calcular o frete.",
+      });
+    }
     return jsonRes({
       success: false,
       error: (raw.error?.message as string) || raw.message || "Não foi possível calcular o frete.",

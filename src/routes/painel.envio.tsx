@@ -214,11 +214,15 @@ function EnvioPage() {
           </div>
         ) : (
           <div className="flex items-center gap-3">
-            <MapPin className="size-5 text-muted-foreground" />
+            <MapPin className={`size-5 ${status?.needs_reconnect ? "text-amber-500" : "text-muted-foreground"}`} />
             <div>
-              <p className="font-semibold text-foreground">Não conectado</p>
+              <p className="font-semibold text-foreground">
+                {status?.needs_reconnect ? "Conexão expirada" : "Não conectado"}
+              </p>
               <p className="text-xs text-muted-foreground">
-                Autorize sua conta da Melhor Envio para começar.
+                {status?.needs_reconnect
+                  ? "Sua autorização com a Melhor Envio expirou. Reconecte para voltar a calcular fretes e gerar etiquetas."
+                  : "Autorize sua conta da Melhor Envio para começar."}
               </p>
             </div>
           </div>
@@ -241,7 +245,7 @@ function EnvioPage() {
           ) : (
             <Plug className="size-4" />
           )}
-          {connecting ? "Conectando..." : connected ? "Desconectar" : "Conectar à Melhor Envio"}
+          {connecting ? "Conectando..." : connected ? "Desconectar" : status?.needs_reconnect ? "Reconectar à Melhor Envio" : "Conectar à Melhor Envio"}
         </button>
 
         {!connected && (

@@ -49,6 +49,18 @@ export async function getAccount(catalogId: string) {
   return data || null;
 }
 
+async function markDisconnected(catalogId: string) {
+  try {
+    const admin = getSupabaseAdmin();
+    await admin
+      .from("melhor_envio_accounts")
+      .update({ connected: false, updated_at: new Date().toISOString() })
+      .eq("catalog_id", catalogId);
+  } catch (e) {
+    console.error("[melhor-envio] falha ao marcar conta como desconectada", e);
+  }
+}
+
 export async function ensureValidAccessToken(catalogId: string): Promise<string | null> {
   const account = await getAccount(catalogId);
   if (!account || !account.connected) return null;
@@ -61,11 +73,15 @@ export async function ensureValidAccessToken(catalogId: string): Promise<string 
     return account.access_token as string;
   }
 
-  // Try to refresh
+  // Token expired and there is no refresh token -> the owner must reconnect.
+  // Mark the account disconnected so the panel and the buyer both see the truth.
   if (!account.refresh_token) {
-    console.error("[melhor-envio] sem refresh_token", catalogId);
-    return account.access_token as string || null;
+    console.error("[melhor-envio] token expirado e sem refresh_token", catalogId);
+    await markDisconnected(catalogId);
+    return null;
   }
+
+  // Try to refresh
 
   const platform = getPlatformEnv();
   const base = getBase(platform);
@@ -86,6 +102,7 @@ export async function ensureValidAccessToken(catalogId: string): Promise<string 
   const data = await res.json();
   if (!res.ok || !data.access_token) {
     console.error("[melhor-envio] falha ao renovar token", res.status, JSON.stringify(data));
+    await markDisconnected(catalogId);
     return null;
   }
 
@@ -97,6 +114,7 @@ export async function ensureValidAccessToken(catalogId: string): Promise<string 
       access_token: data.access_token,
       refresh_token: data.refresh_token || account.refresh_token,
       token_expires_at: new Date(newExpires).toISOString(),
+      connected: true,
       updated_at: new Date().toISOString(),
     })
     .eq("catalog_id", catalogId);

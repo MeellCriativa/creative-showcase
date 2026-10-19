@@ -1180,7 +1180,10 @@ function CartSheet({
       setQuoteMsg(
         res.error === "not_connected"
           ? "Esta loja ainda não ativou o envio por Correios e transportadoras."
-          : res.error === "no_origin"
+          : res.error === "needs_reconnect"
+            ? res.message ??
+              "Esta loja precisa reconectar o envio. Avise a loja para o frete voltar a funcionar."
+            : res.error === "no_origin"
             ? res.message ??
               "A loja ainda não configurou o endereço (CEP de origem) do remetente. Peça à loja para completar os dados do remetente no painel."
             : res.error === "products_no_dimensions"
