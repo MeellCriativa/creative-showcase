@@ -27,6 +27,8 @@
 - User runs SQL manually in Supabase SQL Editor (small blocks; Node.removeChild browser bug)
 - PowerShell: cannot use `&&`; use `; if ($?)`; no `head` — use `Select-Object -First N`
 - User requires: always commit and push without asking
+- **Push auth gotcha**: `gh` is logged in as `geansilveiraprodartivs-tech` (no push rights) and its credential helper overrides git. A plain `git push` fails 403. Push with the `agendacreator-pro` credential stored in Windows Credential Manager: `git -c credential.https://github.com.helper=manager push https://agendacreator-pro@github.com/MeellCriativa/creative-showcase.git main`
+- **Melhor Envio tokens**: `status` now validates/refreshes the token; any call (incl. public `quote`) auto-refreshes if within the 45d refresh window. If a store is fully idle >45d both tokens die → owner must reconnect OAuth in `/painel/envio` (panel shows "Conexão expirada"). On refresh failure the account is auto-marked `connected=false`.
 
 ## Work State
 
