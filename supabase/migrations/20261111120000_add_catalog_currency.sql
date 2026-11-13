@@ -6,9 +6,10 @@
 -- Retrocompatibilidade:
 --   • catalogs.currency entra com DEFAULT 'BRL' NOT NULL  → todas as lojas
 --     existentes passam a ser BRL automaticamente, sem conversão de preços;
---   • orders.currency fica NULL para os pedidos antigos → a aplicação resolve
---     a moeda do pedido como "moeda da loja", preservando o histórico;
---   • nenhum UPDATE em products / price_options / orders é executado aqui.
+--   • orders.currency é preenchida com 'BRL' nos pedidos históricos (a
+--     plataforma operava exclusivamente em BRL antes da Etapa 1);
+--   • nenhum UPDATE em products / price_options / orders altera valores:
+--     o único UPDATE toca exclusivamente a coluna de moeda (metadado).
 -- ============================================================================
 
 begin;
@@ -36,7 +37,8 @@ comment on column public.catalogs.currency is
   'Moeda principal da loja (ISO 4217). Padrão BRL para lojas anteriores à Etapa 1.';
 
 -- ── 2. Moeda do pedido (histórico) ──────────────────────────────────────────
--- NULL = pedido anterior à migração; a app usa a moeda da loja.
+-- Pedidos novos: a aplicação SEMPRE grava a moeda usada na compra.
+-- Pedidos históricos: recebem BRL abaixo, porque a plataforma só operava em BRL.
 alter table public.orders
   add column if not exists currency text;
 
@@ -54,12 +56,37 @@ begin
   end if;
 end $$;
 
+-- ── 2.1 Backfill do histórico financeiro ────────────────────────────────────
+-- Congela os pedidos anteriores à Etapa 1 em BRL.
+--
+-- Efeito: trocar a moeda da loja depois NÃO altera pedidos antigos, nem em
+-- exibição nem em relatórios. O UPDATE mexe APENAS na coluna `currency`:
+-- items, subtotal, total, frete, descontos e datas permanecem intactos.
+--
+-- Idempotente: em uma segunda execução não encontra nenhuma linha NULL.
+update public.orders
+   set currency = 'BRL'
+ where currency is null;
+
 comment on column public.orders.currency is
-  'Moeda usada no momento da compra (ISO 4217). NULL = pedido anterior à Etapa 1 (usa a moeda da loja).';
+  'Moeda usada no momento da compra (ISO 4217). Pedidos anteriores à Etapa 1 foram fixados em BRL.';
 
 -- ── 3. View pública: passa a expor a moeda da loja ──────────────────────────
 -- ATENÇÃO: `create or replace view` só permite ADICIONAR colunas no FIM.
 -- Por isso `currency` entra depois de `updated_at` (nunca no meio).
+--
+-- AUDITORIA DE SEGURANÇA (Etapa 1):
+--   • A lista de colunas abaixo é IDÊNTICA à view em produção; a única adição
+--     é `currency` (dado público, não sensível). Nenhuma coluna privada é
+--     exposta e nenhuma coluna existente é removida.
+--   • `currency` é a única informação nova: código ISO 4217 da loja.
+--   • A view NÃO recebe `security_invoker = true` de propósito. Hoje ela roda
+--     como owner (postgres) e é isso que permite ao `anon` ler o catálogo
+--     público. Ativar `security_invoker` faria a view passar a respeitar a RLS
+--     de `public.catalogs` e, no estado atual das políticas, o catálogo público
+--     deixaria de carregar. Não alterar sem revisar as políticas de `catalogs`.
+--   • Os GRANTs abaixo são reaplicados de forma idempotente para preservar as
+--     permissões anteriores (`anon` e `authenticated` já os possuíam).
 create or replace view public.catalogs_public as
 select
   id, user_id, slug, store_name, logo_url, cover_url,
@@ -85,6 +112,9 @@ commit;
 -- ============================================================================
 -- ROLLBACK (executar somente se necessário)
 -- ----------------------------------------------------------------------------
+-- O backfill é reversível sem perda: antes desta migration a coluna não
+-- existia (equivalente a NULL), então dropar a coluna devolve o estado
+-- original. Nenhum valor de pedido foi alterado para isso.
 -- begin;
 -- create or replace view public.catalogs_public as
 -- select

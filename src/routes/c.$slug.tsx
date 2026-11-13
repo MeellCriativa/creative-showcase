@@ -23,7 +23,7 @@ import {
   type ShippingQuote,
   type CustomerAddress,
 } from "@/lib/catalog";
-import { formatMoney, resolveStoreCurrency } from "@/lib/currency";
+import { describeOrderInsertError, formatMoney, resolveStoreCurrency } from "@/lib/currency";
 import { quoteShipping } from "@/lib/shipping";
 
 export const Route = createFileRoute("/c/$slug")({
@@ -242,7 +242,7 @@ function PublicCatalog() {
   }, []);
 
   const finishOrder = useCallback(
-    (
+    async (
       customerName: string,
       customerPhone: string,
       note: string,
@@ -253,66 +253,66 @@ function PublicCatalog() {
         quote?: ShippingQuote | null;
         shippingCost: number;
       },
-    ) => {
-      if (!catalog) return;
+    ): Promise<boolean> => {
+      if (!catalog) return false;
       if (!catalog.whatsapp) {
         toast.error("Esta loja ainda não cadastrou o WhatsApp.");
-        return;
+        return false;
+      }
+      if (!customerName.trim()) {
+        toast.error("Informe seu nome para continuar.");
+        return false;
       }
 
       const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
       const grandTotal = subtotal + (shipping.shippingCost || 0);
 
-      if (customerName.trim()) {
-        const orderBase = {
-          catalog_id: catalog.id,
-          customer_name: customerName.trim(),
-          customer_phone: customerPhone.trim() || null,
-          items: cart.map((i) => ({
-            name: i.name,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            variation: i.variation,
-            weight_grams: i.weight_grams ?? null,
-            length_cm: i.length_cm ?? null,
-            width_cm: i.width_cm ?? null,
-            height_cm: i.height_cm ?? null,
-          })),
-          note: note.trim() || null,
-          subtotal,
-          total: grandTotal,
-          status: "novo",
-          delivery_method: shipping.deliveryMethod || null,
-          shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
-          shipping_service: shipping.quote?.serviceId || null,
-          shipping_service_name: shipping.quote?.name || null,
-          shipping_cost: shipping.shippingCost || null,
-          shipping_eta_days: shipping.quote?.delivery_min ?? null,
-          shipping_eta_text: shipping.quote?.delivery_text || null,
-          customer_street: shipping.address?.street || null,
-          customer_number: shipping.address?.number || null,
-          customer_complement: shipping.address?.complement || null,
-          customer_district: shipping.address?.district || null,
-          customer_city: shipping.address?.city || null,
-          customer_state: shipping.address?.state || null,
-        };
+      /**
+       * Gravação do pedido: SEMPRE com a moeda da loja, em uma única tentativa.
+       *
+       * Não existe retry sem `currency` — um pedido sem moeda seria
+       * financeiramente incompleto. Se o banco recusar (migration não aplicada
+       * ou erro de rede), a operação é interrompida antes de abrir o WhatsApp:
+       * nada é enviado, o carrinho continua intacto e o comprador vê o motivo.
+       */
+      const orderPayload = {
+        catalog_id: catalog.id,
+        customer_name: customerName.trim(),
+        customer_phone: customerPhone.trim() || null,
+        items: cart.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          variation: i.variation,
+          weight_grams: i.weight_grams ?? null,
+          length_cm: i.length_cm ?? null,
+          width_cm: i.width_cm ?? null,
+          height_cm: i.height_cm ?? null,
+        })),
+        note: note.trim() || null,
+        subtotal,
+        total: grandTotal,
+        status: "novo",
+        currency,
+        delivery_method: shipping.deliveryMethod || null,
+        shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
+        shipping_service: shipping.quote?.serviceId || null,
+        shipping_service_name: shipping.quote?.name || null,
+        shipping_cost: shipping.shippingCost || null,
+        shipping_eta_days: shipping.quote?.delivery_min ?? null,
+        shipping_eta_text: shipping.quote?.delivery_text || null,
+        customer_street: shipping.address?.street || null,
+        customer_number: shipping.address?.number || null,
+        customer_complement: shipping.address?.complement || null,
+        customer_district: shipping.address?.district || null,
+        customer_city: shipping.address?.city || null,
+        customer_state: shipping.address?.state || null,
+      };
 
-        const insertOrder = (withCurrency: boolean) =>
-          supabase
-            .from("orders")
-            .insert((withCurrency ? { ...orderBase, currency } : orderBase) as any);
-
-        // Retrocompatibilidade: se a coluna `orders.currency` ainda não existir
-        // no banco, o pedido é gravado sem ela (a moeda vem da loja).
-        insertOrder(true).then(
-          () => {},
-          () => {
-            void insertOrder(false).then(
-              () => {},
-              () => {},
-            );
-          },
-        );
+      const { error: orderError } = await supabase.from("orders").insert(orderPayload as any);
+      if (orderError) {
+        toast.error(describeOrderInsertError(orderError), { duration: 9000 });
+        return false;
       }
 
       const customerLine = customerName.trim()
@@ -359,9 +359,14 @@ function PublicCatalog() {
         note: customerLine,
       });
 
-      window.open(whatsappLink(catalog.whatsapp, message), "_blank");
+      const url = whatsappLink(catalog.whatsapp, message);
+      const opened = window.open(url, "_blank");
+      // Alguns navegadores bloqueiam window.open após uma chamada assíncrona.
+      if (!opened) window.location.href = url;
+
       setCart([]);
       setCartOpen(false);
+      return true;
     },
     [catalog, cart, currency],
   );
@@ -1108,7 +1113,7 @@ function CartSheet({
       quote?: ShippingQuote | null;
       shippingCost: number;
     },
-  ) => void;
+  ) => Promise<boolean>;
 }) {
   const money = (value: number) => formatMoney(value, currency);
   const [customerName, setCustomerName] = useState("");
@@ -1119,6 +1124,7 @@ function CartSheet({
   const [quotes, setQuotes] = useState<ShippingQuote[]>([]);
   const [selectedQuote, setSelectedQuote] = useState<string>("");
   const [quoting, setQuoting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [quoteMsg, setQuoteMsg] = useState<string>("");
   const [coverageMsg, setCoverageMsg] = useState<string>("");
   const [address, setAddress] = useState<CustomerAddress>({
@@ -1280,7 +1286,25 @@ function CartSheet({
     }
   }
 
+  async function submit(shipping: {
+    deliveryMethod: string;
+    shippingZip?: string;
+    address?: CustomerAddress;
+    quote?: ShippingQuote | null;
+    shippingCost: number;
+  }) {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onFinish(customerName, customerPhone, observation, shipping);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   function handleFinish() {
+    // Trava anti-duplo clique: evita dois pedidos iguais.
+    if (submitting) return;
     if (!customerName.trim()) {
       toast.error("Informe seu nome para continuar.");
       return;
@@ -1288,7 +1312,7 @@ function CartSheet({
     if (hasMelhorEnvio && deliveryMethod === "melhor_envio") {
       const physical = items.filter((i) => i.product_type !== "digital");
       if (physical.length === 0) {
-        onFinish(customerName, customerPhone, observation, {
+        void submit({
           deliveryMethod,
           ...(cep ? { shippingZip: cep } : {}),
           address,
@@ -1312,7 +1336,7 @@ function CartSheet({
         return;
       }
     }
-    onFinish(customerName, customerPhone, observation, {
+    void submit({
       deliveryMethod,
       ...(cep ? { shippingZip: cep } : {}),
       address,
@@ -1612,11 +1636,12 @@ function CartSheet({
           </div>
           <button
             onClick={handleFinish}
-            disabled={items.length === 0}
-            className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
+            disabled={items.length === 0 || submitting}
+            className="btn-shimmer btn-elevated flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
             style={{ background: primary }}
           >
-            Finalizar pedido pelo WhatsApp
+            {submitting && <Loader2 className="size-4 animate-spin" />}
+            {submitting ? "Registrando pedido..." : "Finalizar pedido pelo WhatsApp"}
           </button>
         </div>
       </div>

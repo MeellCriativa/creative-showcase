@@ -766,17 +766,79 @@ export function resolveStoreCurrency(value: string | null | undefined): string {
 }
 
 /**
- * Moeda de um pedido: usa a moeda gravada no pedido (histórico) e, quando
- * ausente (pedidos anteriores à migração), cai para a moeda da loja.
+ * Moeda dos pedidos anteriores à Etapa 1. Antes da internacionalização a
+ * plataforma operava exclusivamente em BRL, então um pedido sem moeda é
+ * sempre um pedido em BRL — nunca herda a moeda atual da loja.
  */
-export function resolveOrderCurrency(
-  orderCurrency: string | null | undefined,
-  storeCurrency: string | null | undefined,
-): string {
-  if (typeof orderCurrency === "string" && BY_CODE.has(orderCurrency.trim().toUpperCase())) {
-    return orderCurrency.trim().toUpperCase();
+export const LEGACY_ORDER_CURRENCY = "BRL";
+
+/**
+ * Moeda de um pedido: SEMPRE a moeda gravada no momento da compra.
+ *
+ * Importante: pedidos sem `currency` são históricos (anteriores à Etapa 1) e
+ * ficam fixos em BRL. Se o lojista trocar a moeda principal depois, os pedidos
+ * antigos não mudam de moeda nem de valor — o histórico financeiro continua
+ * consistente.
+ */
+export function resolveOrderCurrency(orderCurrency: string | null | undefined): string {
+  if (typeof orderCurrency === "string") {
+    const code = orderCurrency.trim().toUpperCase();
+    if (BY_CODE.has(code)) return code;
   }
-  return resolveStoreCurrency(storeCurrency);
+  return LEGACY_ORDER_CURRENCY;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * Gravação de pedidos: a moeda é obrigatória
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/** Mensagem exibida ao comprador quando o banco não aceita a moeda do pedido. */
+export const ORDER_CURRENCY_UNAVAILABLE_MESSAGE =
+  "Não foi possível registrar o pedido com a moeda desta loja. O sistema da loja ainda não foi atualizado — nenhum pedido foi enviado. Tente novamente em alguns minutos ou fale com a loja.";
+
+/** Mensagem genérica para falhas de gravação do pedido. */
+export const ORDER_INSERT_FAILED_MESSAGE =
+  "Não foi possível registrar seu pedido. Nenhum pedido foi enviado. Tente novamente em instantes.";
+
+export type OrderInsertErrorLike =
+  | {
+      code?: string | null;
+      message?: string | null;
+      details?: string | null;
+      hint?: string | null;
+    }
+  | null
+  | undefined;
+
+/**
+ * Detecta falha por ausência da coluna `currency` (migration não aplicada).
+ *
+ * Códigos relevantes:
+ *  • `42703`     — undefined_column do PostgreSQL;
+ *  • `PGRST204`  — coluna não encontrada no schema cache do PostgREST.
+ */
+export function isMissingCurrencyColumnError(error: OrderInsertErrorLike): boolean {
+  if (!error) return false;
+  const code = (error.code ?? "").toUpperCase();
+  const text = [error.message, error.details, error.hint]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" ")
+    .toLowerCase();
+
+  if (!text.includes("currency")) return false;
+  if (code === "42703" || code === "PGRST204") return true;
+
+  return /column|coluna|schema cache|does not exist|não existe/.test(text);
+}
+
+/**
+ * Traduz o erro de gravação em uma mensagem clara para o comprador.
+ * Nunca retorna vazio: falha de pedido sempre tem retorno visível.
+ */
+export function describeOrderInsertError(error: OrderInsertErrorLike): string {
+  return isMissingCurrencyColumnError(error)
+    ? ORDER_CURRENCY_UNAVAILABLE_MESSAGE
+    : ORDER_INSERT_FAILED_MESSAGE;
 }
 
 export function getCurrency(code: string | null | undefined): CurrencyDef {

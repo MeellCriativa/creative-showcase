@@ -20,6 +20,42 @@ import {
   resolveStoreCurrency,
 } from "@/lib/currency";
 
+/**
+ * Copia texto para a área de transferência com fallback.
+ *
+ * `navigator.clipboard.writeText` pode ser negado pelo navegador (permissão
+ * `clipboard-write` = denied, contexto sem foco, iframe etc.). Nesse caso o
+ * caminho antigo — textarea + `document.execCommand("copy")` — continua
+ * funcionando e evita que o botão "Copiar" falhe silenciosamente.
+ */
+async function writeToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* cai para o fallback abaixo */
+  }
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export const Route = createFileRoute("/painel/conversor")({
   head: () => ({
     meta: [
@@ -80,12 +116,12 @@ function ConversorPage() {
   async function copyResult() {
     if (!conversion) return;
     const text = buildConversionCopyText(conversion, updatedAt);
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await writeToClipboard(text);
+    if (ok) {
       setCopied(true);
       toast.success("Resultado copiado!");
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } else {
       toast.error("Não foi possível copiar. Selecione o valor manualmente.");
     }
   }
@@ -154,19 +190,23 @@ function ConversorPage() {
 
       {/* ── Moedas ── */}
       <div className="mt-4 rounded-2xl border border-border bg-card p-5">
-        <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+        {/* O painel vive em uma coluna de 30rem, então "De → Para" fica sempre
+            empilhado (mesmo layout do celular) para os nomes das moedas
+            aparecerem inteiros, sem corte nem sobreposição. */}
+        <div className="grid gap-4">
           <CurrencyPicker
             id="conversor-origem"
             label="De"
             value={from}
             onChange={setFrom}
             unavailableCodes={unavailableCodes}
+            className="min-w-0"
           />
           <button
             type="button"
             onClick={swap}
             aria-label="Inverter moedas"
-            className="mx-auto grid size-11 place-items-center rounded-full border border-border bg-background text-primary transition active:scale-95 sm:mb-1"
+            className="mx-auto grid size-11 place-items-center rounded-full border border-border bg-background text-primary transition active:scale-95"
           >
             <ArrowLeftRight className="size-5" />
           </button>
@@ -177,6 +217,7 @@ function ConversorPage() {
             onChange={setTo}
             disabledCodes={[from]}
             unavailableCodes={unavailableCodes}
+            className="min-w-0"
           />
         </div>
       </div>

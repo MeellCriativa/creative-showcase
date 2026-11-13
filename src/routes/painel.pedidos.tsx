@@ -122,14 +122,15 @@ function PedidosPage() {
   const finishedCount = (orders ?? []).filter((o) => o.status === "finalizado").length;
 
   /**
-   * Faturamento por moeda: pedidos antigos (sem `currency`) contam na moeda da
-   * loja; pedidos feitos em outra moeda nunca são somados juntos.
+   * Faturamento por moeda: cada pedido entra na moeda em que foi feito.
+   * Pedidos históricos (sem `currency`) são BRL e não mudam se a loja trocar
+   * de moeda depois.
    */
   const storeCurrency = resolveStoreCurrency(catalog?.currency);
   const revenueByCurrency = new Map<string, number>();
   for (const order of orders ?? []) {
     if (order.status === "cancelado") continue;
-    const code = resolveOrderCurrency(order.currency, storeCurrency);
+    const code = resolveOrderCurrency(order.currency);
     revenueByCurrency.set(code, (revenueByCurrency.get(code) ?? 0) + (order.total ?? 0));
   }
   const revenueEntries = [...revenueByCurrency.entries()].sort((a, b) => b[1] - a[1]);
@@ -197,12 +198,7 @@ function PedidosPage() {
           </p>
         )}
         {filtered.map((order) => (
-          <OrderCard
-            key={order.id}
-            order={order}
-            storeCurrency={storeCurrency}
-            onStatusChange={updateStatus}
-          />
+          <OrderCard key={order.id} order={order} onStatusChange={updateStatus} />
         ))}
       </div>
     </div>
@@ -220,14 +216,12 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function OrderCard({
   order,
-  storeCurrency,
   onStatusChange,
 }: {
   order: OrderRow;
-  storeCurrency: string;
   onStatusChange: (id: string, status: string) => void;
 }) {
-  const orderCurrency = resolveOrderCurrency(order.currency, storeCurrency);
+  const orderCurrency = resolveOrderCurrency(order.currency);
   const money = (value: number) => formatMoney(value, orderCurrency);
   const dt = new Date(order.created_at);
   const formattedDate = dt.toLocaleDateString("pt-BR");

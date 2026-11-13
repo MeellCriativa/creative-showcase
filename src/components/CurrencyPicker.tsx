@@ -111,7 +111,12 @@ export function CurrencyPicker({
       {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 sm:items-center">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Escolher moeda"
+        >
           <div className="flex max-h-[85vh] w-full max-w-[30rem] flex-col overflow-hidden rounded-t-3xl bg-background sm:rounded-3xl">
             <div className="flex items-center justify-between px-5 pb-2 pt-4">
               <p className="text-base font-bold text-foreground">Escolher moeda</p>
