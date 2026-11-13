@@ -9,7 +9,8 @@ import { ImageUploader } from "@/components/ImageUploader";
 import { useAuth } from "@/hooks/useAuth";
 import { useCategories, useMyCatalog, useProducts } from "@/hooks/useCatalog";
 import { useMetaConnection, useMetaMappings } from "@/hooks/useMetaCatalog";
-import { formatBRL, type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
+import { type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
+import { formatMoney, getCurrencySymbol, resolveStoreCurrency } from "@/lib/currency";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/produtos")({
@@ -64,6 +65,9 @@ function ProdutosPage() {
   const { data: metaConn } = useMetaConnection(catalog?.id);
   const { data: metaMappings } = useMetaMappings(catalog?.id);
   const [draft, setDraft] = useState<Draft | null>(null);
+
+  const currency = resolveStoreCurrency(catalog?.currency);
+  const money = (value: number) => formatMoney(value, currency);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["products", catalog?.id] });
 
@@ -173,17 +177,17 @@ function ProdutosPage() {
               <p className="text-sm text-muted-foreground">
                 {product.price_options && product.price_options.length > 0 ? (
                   <span className="font-semibold text-primary">
-                    {product.price_options.map((o) => formatBRL(o.price)).join(" / ")}
+                    {product.price_options.map((o) => money(o.price)).join(" / ")}
                   </span>
                 ) : product.sale_price ? (
                   <>
-                    <span className="line-through">{formatBRL(Number(product.price))}</span>{" "}
+                    <span className="line-through">{money(Number(product.price))}</span>{" "}
                     <span className="font-semibold text-primary">
-                      {formatBRL(Number(product.sale_price))}
+                      {money(Number(product.sale_price))}
                     </span>
                   </>
                 ) : (
-                  formatBRL(Number(product.price))
+                  money(Number(product.price))
                 )}
               </p>
               {!product.available && (
@@ -216,6 +220,7 @@ function ProdutosPage() {
           setDraft={setDraft}
           userId={user.id}
           catalogId={catalog.id}
+          currency={currency}
           categories={categories ?? []}
           nextPosition={products?.length ?? 0}
           onSaved={() => {
@@ -258,6 +263,7 @@ function ProductEditor({
   setDraft,
   userId,
   catalogId,
+  currency,
   categories,
   nextPosition,
   onSaved,
@@ -266,6 +272,7 @@ function ProductEditor({
   setDraft: (d: Draft | null) => void;
   userId: string;
   catalogId: string;
+  currency: string;
   categories: { id: string; name: string }[];
   nextPosition: number;
   onSaved: () => void;
@@ -378,14 +385,14 @@ function ProductEditor({
           <div className="grid grid-cols-2 gap-3">
             <input
               inputMode="decimal"
-              placeholder="Preço"
+              placeholder={`Preço (${currency})`}
               value={draft.price}
               onChange={(e) => set("price", e.target.value)}
               className="input-base"
             />
             <input
               inputMode="decimal"
-              placeholder="Promocional"
+              placeholder={`Promocional (${currency})`}
               value={draft.sale_price}
               onChange={(e) => set("sale_price", e.target.value)}
               className="input-base"
@@ -393,9 +400,12 @@ function ProductEditor({
           </div>
 
           <div className="rounded-2xl border border-border p-4">
-            <p className="text-sm font-semibold text-foreground">Valores do produto</p>
+            <p className="text-sm font-semibold text-foreground">
+              Valores do produto ({currency})
+            </p>
             <p className="text-xs text-muted-foreground">
-              Adicione opções de preço (ex.: Mini R$25, Médio R$35, Grande R$50)
+              Adicione opções de preço (ex.: Mini {getCurrencySymbol(currency)}25, Médio{" "}
+              {getCurrencySymbol(currency)}35, Grande {getCurrencySymbol(currency)}50)
             </p>
             <div className="mt-3 space-y-2">
               {draft.price_options.map((opt, index) => (

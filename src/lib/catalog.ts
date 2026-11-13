@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { DEFAULT_CURRENCY, formatMoney, resolveStoreCurrency } from "@/lib/currency";
 
 export type VariationGroup = { name: string; options: string[] };
 
@@ -36,6 +37,8 @@ export type Catalog = {
   meta_catalog_connected: boolean;
   delivery_methods: string[] | null;
   shipping_origin_zip: string | null;
+  /** Moeda principal da loja (ISO 4217). Ausente em lojas antigas = BRL. */
+  currency?: string | null;
   plan?: string;
 };
 
@@ -130,6 +133,8 @@ export type Order = {
   me_label_url: string | null;
   status: string;
   created_at: string;
+  /** Moeda do pedido no momento da compra (histórico). Ausente = moeda da loja. */
+  currency?: string | null;
 };
 
 export type OrderItem = {
@@ -184,9 +189,15 @@ export function getFontFamily(key: string) {
 }
 
 export function formatBRL(value: number) {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    Number.isFinite(value) ? value : 0,
-  );
+  return formatMoney(Number.isFinite(value) ? value : 0, DEFAULT_CURRENCY);
+}
+
+/**
+ * Formata um valor na moeda da loja. Mantém `formatBRL` para
+ * retrocompatibilidade, mas todo código novo deve usar `formatMoney`.
+ */
+export function formatCatalogMoney(value: number, catalog: { currency?: string | null } | null | undefined) {
+  return formatMoney(Number.isFinite(value) ? value : 0, resolveStoreCurrency(catalog?.currency));
 }
 
 export function finalPrice(p: { price: number; sale_price: number | null }) {
@@ -240,6 +251,8 @@ export function buildWhatsappMessage(opts: {
   storeName: string;
   items: { name: string; quantity: number; unitPrice: number; variation?: string | undefined }[];
   total: number;
+  /** Moeda da loja (ISO 4217). Padrão: BRL. */
+  currency?: string | null;
   note?: string | undefined;
   shipping?: {
     deliveryMethod?: string;
@@ -260,24 +273,25 @@ export function buildWhatsappMessage(opts: {
   subtotal?: number | undefined;
 }) {
   const lines: string[] = ["Olá! Gostaria de fazer este pedido pelo seu catálogo:", ""];
+  const money = (value: number) => formatMoney(value, resolveStoreCurrency(opts.currency));
   for (const item of opts.items) {
     lines.push(`Produto: ${item.name}`);
     if (item.variation) lines.push(`Variação: ${item.variation}`);
     lines.push(`Quantidade: ${item.quantity}`);
-    lines.push(`Valor unitário: ${formatBRL(item.unitPrice)}`);
-    lines.push(`Subtotal: ${formatBRL(item.unitPrice * item.quantity)}`);
+    lines.push(`Valor unitário: ${money(item.unitPrice)}`);
+    lines.push(`Subtotal: ${money(item.unitPrice * item.quantity)}`);
     lines.push("");
   }
   const subtotal =
     opts.subtotal != null ? opts.subtotal : opts.items.reduce((s, it) => s + it.unitPrice * it.quantity, 0);
-  lines.push(`Subtotal: ${formatBRL(subtotal)}`);
+  lines.push(`Subtotal: ${money(subtotal)}`);
 
   const ship = opts.shipping;
   if (ship?.deliveryMethod === "melhor_envio") {
     lines.push("");
     lines.push("📦 Entrega: Envio (Correios e transportadoras)");
     if (ship.serviceName) lines.push(`Modalidade: ${ship.serviceName}`);
-    if (ship.cost != null) lines.push(`Frete: ${formatBRL(ship.cost)}`);
+    if (ship.cost != null) lines.push(`Frete: ${money(ship.cost)}`);
     if (ship.etaText) lines.push(`Prazo estimado: ${ship.etaText}`);
     const a = ship.address;
     if (a?.street || a?.city) {
@@ -294,7 +308,7 @@ export function buildWhatsappMessage(opts: {
   } else if (ship?.deliveryMethod === "local_delivery") {
     if (ship?.etaText) lines.push(`🛵 Entrega local: ${ship.etaText}`);
     else lines.push("🛵 Entrega: local");
-    if (ship?.cost != null) lines.push(`Frete: ${formatBRL(ship.cost)}`);
+    if (ship?.cost != null) lines.push(`Frete: ${money(ship.cost)}`);
     const a = ship?.address;
     if (a?.street || a?.city) {
       lines.push("");
@@ -307,7 +321,7 @@ export function buildWhatsappMessage(opts: {
   }
 
   lines.push("");
-  lines.push(`Total do pedido: ${formatBRL(opts.total)}`);
+  lines.push(`Total do pedido: ${money(opts.total)}`);
   if (ship?.cost != null && ship.cost > 0) {
     lines.push("(já incluso o valor do frete)");
   }

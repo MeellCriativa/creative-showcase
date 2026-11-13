@@ -10,7 +10,6 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   buildWhatsappMessage,
   finalPrice,
-  formatBRL,
   getFontFamily,
   whatsappLink,
   PAYMENT_METHODS,
@@ -24,6 +23,7 @@ import {
   type ShippingQuote,
   type CustomerAddress,
 } from "@/lib/catalog";
+import { formatMoney, resolveStoreCurrency } from "@/lib/currency";
 import { quoteShipping } from "@/lib/shipping";
 
 export const Route = createFileRoute("/c/$slug")({
@@ -147,6 +147,10 @@ function PublicCatalog() {
 
   const catalog = data?.catalog;
 
+  /** Moeda da loja (lojas antigas = BRL). Nunca converte valores, só formata. */
+  const currency = resolveStoreCurrency(catalog?.currency);
+  const money = (value: number) => formatMoney(value, currency);
+
   useEffect(() => {
     if (!catalog) return;
     if (user && user.id === catalog.user_id) return;
@@ -260,41 +264,55 @@ function PublicCatalog() {
       const grandTotal = subtotal + (shipping.shippingCost || 0);
 
       if (customerName.trim()) {
-        supabase
-          .from("orders")
-          .insert({
-            catalog_id: catalog.id,
-            customer_name: customerName.trim(),
-            customer_phone: customerPhone.trim() || null,
-            items: cart.map((i) => ({
-              name: i.name,
-              quantity: i.quantity,
-              unitPrice: i.unitPrice,
-              variation: i.variation,
-              weight_grams: i.weight_grams ?? null,
-              length_cm: i.length_cm ?? null,
-              width_cm: i.width_cm ?? null,
-              height_cm: i.height_cm ?? null,
-            })),
-            note: note.trim() || null,
-            subtotal,
-            total: grandTotal,
-            status: "novo",
-            delivery_method: shipping.deliveryMethod || null,
-            shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
-            shipping_service: shipping.quote?.serviceId || null,
-            shipping_service_name: shipping.quote?.name || null,
-            shipping_cost: shipping.shippingCost || null,
-            shipping_eta_days: shipping.quote?.delivery_min ?? null,
-            shipping_eta_text: shipping.quote?.delivery_text || null,
-            customer_street: shipping.address?.street || null,
-            customer_number: shipping.address?.number || null,
-            customer_complement: shipping.address?.complement || null,
-            customer_district: shipping.address?.district || null,
-            customer_city: shipping.address?.city || null,
-            customer_state: shipping.address?.state || null,
-          } as any)
-          .then(() => {}, () => {});
+        const orderBase = {
+          catalog_id: catalog.id,
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim() || null,
+          items: cart.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            variation: i.variation,
+            weight_grams: i.weight_grams ?? null,
+            length_cm: i.length_cm ?? null,
+            width_cm: i.width_cm ?? null,
+            height_cm: i.height_cm ?? null,
+          })),
+          note: note.trim() || null,
+          subtotal,
+          total: grandTotal,
+          status: "novo",
+          delivery_method: shipping.deliveryMethod || null,
+          shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
+          shipping_service: shipping.quote?.serviceId || null,
+          shipping_service_name: shipping.quote?.name || null,
+          shipping_cost: shipping.shippingCost || null,
+          shipping_eta_days: shipping.quote?.delivery_min ?? null,
+          shipping_eta_text: shipping.quote?.delivery_text || null,
+          customer_street: shipping.address?.street || null,
+          customer_number: shipping.address?.number || null,
+          customer_complement: shipping.address?.complement || null,
+          customer_district: shipping.address?.district || null,
+          customer_city: shipping.address?.city || null,
+          customer_state: shipping.address?.state || null,
+        };
+
+        const insertOrder = (withCurrency: boolean) =>
+          supabase
+            .from("orders")
+            .insert((withCurrency ? { ...orderBase, currency } : orderBase) as any);
+
+        // Retrocompatibilidade: se a coluna `orders.currency` ainda não existir
+        // no banco, o pedido é gravado sem ela (a moeda vem da loja).
+        insertOrder(true).then(
+          () => {},
+          () => {
+            void insertOrder(false).then(
+              () => {},
+              () => {},
+            );
+          },
+        );
       }
 
       const customerLine = customerName.trim()
@@ -304,6 +322,7 @@ function PublicCatalog() {
       const shipAddress = shipping.address;
       const message = buildWhatsappMessage({
         storeName: catalog.store_name,
+        currency,
         items: cart.map((i) => ({
           name: i.name,
           quantity: i.quantity,
@@ -344,7 +363,7 @@ function PublicCatalog() {
       setCart([]);
       setCartOpen(false);
     },
-    [catalog, cart],
+    [catalog, cart, currency],
   );
 
   if (isLoading) {
@@ -530,21 +549,21 @@ function PublicCatalog() {
                   {product.price_options && product.price_options.length > 0 ? (
                     <span className="font-bold" style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}>
                       {product.price_options.length === 1
-                        ? formatBRL(product.price_options[0]!.price)
-                        : `${formatBRL(Math.min(...product.price_options.map((o) => o.price)))} – ${formatBRL(Math.max(...product.price_options.map((o) => o.price)))}`}
+                        ? money(product.price_options[0]!.price)
+                        : `${money(Math.min(...product.price_options.map((o) => o.price)))} – ${money(Math.max(...product.price_options.map((o) => o.price)))}`}
                     </span>
                   ) : product.sale_price ? (
                     <>
                       <span className="text-xs text-muted-foreground line-through">
-                        {formatBRL(Number(product.price))}
+                        {money(Number(product.price))}
                       </span>{" "}
                       <span className="font-bold" style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}>
-                        {formatBRL(Number(product.sale_price))}
+                        {money(Number(product.sale_price))}
                       </span>
                     </>
                   ) : (
                     <span className="font-bold text-foreground">
-                      {formatBRL(Number(product.price))}
+                      {money(Number(product.price))}
                     </span>
                   )}
                 </p>
@@ -608,7 +627,7 @@ function PublicCatalog() {
           <span className="text-sm font-semibold">
             {count} {count === 1 ? "item" : "itens"}
           </span>
-          <span className="font-bold">{formatBRL(total)}</span>
+          <span className="font-bold">{money(total)}</span>
         </button>
       )}
 
@@ -616,6 +635,7 @@ function PublicCatalog() {
         <ProductSheet
           product={selected}
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
+          currency={currency}
           onClose={() => setSelected(null)}
           onAdd={addToCart}
         />
@@ -627,6 +647,7 @@ function PublicCatalog() {
           items={cart}
           total={total}
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
+          currency={currency}
           deliveryMethods={Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
@@ -824,14 +845,17 @@ function BannerCarousel({
 function ProductSheet({
   product,
   primary,
+  currency,
   onClose,
   onAdd,
 }: {
   product: Product;
   primary: string;
+  currency: string;
   onClose: () => void;
   onAdd: (item: CartItem) => void;
 }) {
+  const money = (value: number) => formatMoney(value, currency);
   const [quantity, setQuantity] = useState(1);
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [selectedPriceOption, setSelectedPriceOption] = useState<string | null>(null);
@@ -937,10 +961,10 @@ function ProductSheet({
         <div className="flex-1 overflow-y-auto px-5 py-5">
           <h2 className="text-xl font-bold text-foreground">{product.name}</h2>
           <p className="mt-1 text-lg font-bold" style={{ color: primary }}>
-            {formatBRL(price)}
+            {money(price)}
             {!activePriceOption && product.sale_price != null && product.sale_price > 0 && (
               <span className="ml-2 text-sm font-normal text-muted-foreground line-through">
-                {formatBRL(Number(product.price))}
+                {money(Number(product.price))}
               </span>
             )}
           </p>
@@ -967,7 +991,7 @@ function ProductSheet({
                           : { borderColor: "var(--color-border)" }
                       }
                     >
-                      {opt.label} — {formatBRL(opt.price)}
+                      {opt.label} — {money(opt.price)}
                     </button>
                   );
                 })}
@@ -1022,7 +1046,7 @@ function ProductSheet({
             style={{ background: primary }}
           >
             {product.available
-              ? `Adicionar • ${formatBRL(price * quantity)}`
+              ? `Adicionar • ${money(price * quantity)}`
               : "Produto esgotado"}
           </button>
         </div>
@@ -1057,6 +1081,7 @@ function CartSheet({
   items,
   total,
   primary,
+  currency,
   deliveryMethods,
   onClose,
   onChangeQty,
@@ -1067,6 +1092,7 @@ function CartSheet({
   items: CartItem[];
   total: number;
   primary: string;
+  currency: string;
   deliveryMethods: string[];
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
@@ -1084,6 +1110,7 @@ function CartSheet({
     },
   ) => void;
 }) {
+  const money = (value: number) => formatMoney(value, currency);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [observation, setObservation] = useState("");
@@ -1325,7 +1352,7 @@ function CartSheet({
                   <p className="truncate text-xs text-muted-foreground">{item.variation}</p>
                 )}
                 <p className="text-sm font-semibold" style={{ color: primary }}>
-                  {formatBRL(item.unitPrice * item.quantity)}
+                  {money(item.unitPrice * item.quantity)}
                 </p>
                 <div className="mt-2 flex items-center gap-3">
                   <div className="flex items-center gap-3 rounded-full border border-border px-3 py-1">
@@ -1447,7 +1474,7 @@ function CartSheet({
                           <span className="font-semibold">{q.name}</span>
                           <span className="text-right">
                             <span className="block font-bold text-foreground">
-                              {formatBRL(q.price)}
+                              {money(q.price)}
                             </span>
                             {q.delivery_text && (
                               <span className="block text-xs text-muted-foreground">
@@ -1571,17 +1598,17 @@ function CartSheet({
         <div className="shrink-0 space-y-3 border-t border-border px-5 py-4">
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Subtotal</span>
-            <span>{formatBRL(subtotal)}</span>
+            <span>{money(subtotal)}</span>
           </div>
           {deliveryMethod === "melhor_envio" && (
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>Frete {selected ? `(${selected.name})` : ""}</span>
-              <span>{shippingCost > 0 ? formatBRL(shippingCost) : "—"}</span>
+              <span>{shippingCost > 0 ? money(shippingCost) : "—"}</span>
             </div>
           )}
           <div className="flex items-center justify-between text-base font-bold text-foreground">
             <span>Total</span>
-            <span>{formatBRL(grandTotal)}</span>
+            <span>{money(grandTotal)}</span>
           </div>
           <button
             onClick={handleFinish}

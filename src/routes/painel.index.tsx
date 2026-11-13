@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowLeftRight,
   BarChart3,
   ClipboardList,
   Copy,
@@ -296,6 +297,12 @@ function PainelHome() {
           text="Logo, fonte, cores, carrinho e banners"
         />
         <ShortcutLink to="/painel/estatisticas" icon={BarChart3} title="Estatísticas" text="Visitas ao catálogo" />
+        <ShortcutLink
+          to="/painel/conversor"
+          icon={ArrowLeftRight}
+          title="Conversor de moedas"
+          text="Converta valores com cotação de referência"
+        />
         <PasswordLink to="/painel/senha" />
       </nav>
     </div>

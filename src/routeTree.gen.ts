@@ -15,6 +15,7 @@ import { Route as PainelRouteImport } from './routes/painel'
 import { Route as CSlugRouteImport } from './routes/c.$slug'
 import { Route as PainelIndexRouteImport } from './routes/painel.index'
 import { Route as PainelCategoriasRouteImport } from './routes/painel.categorias'
+import { Route as PainelConversorRouteImport } from './routes/painel.conversor'
 import { Route as PainelEnvioRouteImport } from './routes/painel.envio'
 import { Route as PainelEstatisticasRouteImport } from './routes/painel.estatisticas'
 import { Route as PainelPedidosRouteImport } from './routes/painel.pedidos'
@@ -51,6 +52,11 @@ const PainelIndexRoute = PainelIndexRouteImport.update({
 const PainelCategoriasRoute = PainelCategoriasRouteImport.update({
   id: '/categorias',
   path: '/categorias',
+  getParentRoute: () => PainelRoute,
+} as any)
+const PainelConversorRoute = PainelConversorRouteImport.update({
+  id: '/conversor',
+  path: '/conversor',
   getParentRoute: () => PainelRoute,
 } as any)
 const PainelEnvioRoute = PainelEnvioRouteImport.update({
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/painel': typeof PainelRouteWithChildren
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
   '/painel/pedidos': typeof PainelPedidosRoute
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
   '/painel/pedidos': typeof PainelPedidosRoute
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/painel': typeof PainelRouteWithChildren
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
   '/painel/pedidos': typeof PainelPedidosRoute
@@ -142,6 +151,7 @@ export interface FileRouteTypes {
     | '/painel'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
     | '/painel/pedidos'
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
     | '/painel/pedidos'
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
     | '/painel'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
     | '/painel/pedidos'
@@ -232,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelCategoriasRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/painel/conversor': {
+      id: '/painel/conversor'
+      path: '/conversor'
+      fullPath: '/painel/conversor'
+      preLoaderRoute: typeof PainelConversorRouteImport
+      parentRoute: typeof PainelRoute
+    }
     '/painel/envio': {
       id: '/painel/envio'
       path: '/envio'
@@ -286,6 +305,7 @@ declare module '@tanstack/react-router' {
 
 interface PainelRouteChildren {
   PainelCategoriasRoute: typeof PainelCategoriasRoute
+  PainelConversorRoute: typeof PainelConversorRoute
   PainelEnvioRoute: typeof PainelEnvioRoute
   PainelEstatisticasRoute: typeof PainelEstatisticasRoute
   PainelPedidosRoute: typeof PainelPedidosRoute
@@ -298,6 +318,7 @@ interface PainelRouteChildren {
 
 const PainelRouteChildren: PainelRouteChildren = {
   PainelCategoriasRoute: PainelCategoriasRoute,
+  PainelConversorRoute: PainelConversorRoute,
   PainelEnvioRoute: PainelEnvioRoute,
   PainelEstatisticasRoute: PainelEstatisticasRoute,
   PainelPedidosRoute: PainelPedidosRoute,

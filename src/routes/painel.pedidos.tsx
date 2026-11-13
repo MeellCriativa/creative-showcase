@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
-import { formatBRL } from "@/lib/catalog";
+import { formatMoney, resolveOrderCurrency, resolveStoreCurrency } from "@/lib/currency";
 import { meApi } from "@/lib/shipping";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -52,6 +52,8 @@ type OrderRow = {
   me_label_url: string | null;
   status: string;
   created_at: string;
+  /** Moeda do pedido no momento da compra. NULL = pedido anterior à Etapa 1. */
+  currency: string | null;
 };
 
 const STATUSES = ["novo", "confirmado", "em_preparacao", "pronto", "finalizado", "cancelado"] as const;
@@ -118,9 +120,19 @@ function PedidosPage() {
   const todayCount = (orders ?? []).filter((o) => isToday(o.created_at)).length;
   const pendingCount = (orders ?? []).filter((o) => PENDING_STATUSES.includes(o.status)).length;
   const finishedCount = (orders ?? []).filter((o) => o.status === "finalizado").length;
-  const totalRevenue = (orders ?? [])
-    .filter((o) => o.status !== "cancelado")
-    .reduce((sum, o) => sum + (o.total ?? 0), 0);
+
+  /**
+   * Faturamento por moeda: pedidos antigos (sem `currency`) contam na moeda da
+   * loja; pedidos feitos em outra moeda nunca são somados juntos.
+   */
+  const storeCurrency = resolveStoreCurrency(catalog?.currency);
+  const revenueByCurrency = new Map<string, number>();
+  for (const order of orders ?? []) {
+    if (order.status === "cancelado") continue;
+    const code = resolveOrderCurrency(order.currency, storeCurrency);
+    revenueByCurrency.set(code, (revenueByCurrency.get(code) ?? 0) + (order.total ?? 0));
+  }
+  const revenueEntries = [...revenueByCurrency.entries()].sort((a, b) => b[1] - a[1]);
 
   async function updateStatus(orderId: string, status: string) {
     const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
@@ -144,7 +156,13 @@ function PedidosPage() {
         <StatCard label="Hoje" value={String(todayCount)} />
         <StatCard label="Pendentes" value={String(pendingCount)} />
         <StatCard label="Finalizados" value={String(finishedCount)} />
-        <StatCard label="Total (R$)" value={formatBRL(totalRevenue)} />
+        {revenueEntries.length === 0 ? (
+          <StatCard label={`Total (${storeCurrency})`} value={formatMoney(0, storeCurrency)} />
+        ) : (
+          revenueEntries.map(([code, value]) => (
+            <StatCard key={code} label={`Total (${code})`} value={formatMoney(value, code)} />
+          ))
+        )}
       </div>
 
       <div className="mt-6 flex gap-2 overflow-x-auto pb-1">
@@ -179,7 +197,12 @@ function PedidosPage() {
           </p>
         )}
         {filtered.map((order) => (
-          <OrderCard key={order.id} order={order} onStatusChange={updateStatus} />
+          <OrderCard
+            key={order.id}
+            order={order}
+            storeCurrency={storeCurrency}
+            onStatusChange={updateStatus}
+          />
         ))}
       </div>
     </div>
@@ -197,11 +220,15 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function OrderCard({
   order,
+  storeCurrency,
   onStatusChange,
 }: {
   order: OrderRow;
+  storeCurrency: string;
   onStatusChange: (id: string, status: string) => void;
 }) {
+  const orderCurrency = resolveOrderCurrency(order.currency, storeCurrency);
+  const money = (value: number) => formatMoney(value, orderCurrency);
   const dt = new Date(order.created_at);
   const formattedDate = dt.toLocaleDateString("pt-BR");
   const formattedTime = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -331,7 +358,7 @@ function OrderCard({
           <li key={idx} className="text-sm text-foreground">
             <span className="font-medium">{item.quantity}x</span> {item.name}
             {item.variation && <span className="text-muted-foreground"> ({item.variation})</span>}
-            <span className="ml-1 text-muted-foreground">— {formatBRL(item.unitPrice * item.quantity)}</span>
+            <span className="ml-1 text-muted-foreground">— {money(item.unitPrice * item.quantity)}</span>
           </li>
         ))}
       </ul>
@@ -349,7 +376,7 @@ function OrderCard({
           )}
           {order.shipping_service_name && <p>Modalidade: {order.shipping_service_name}</p>}
           {order.shipping_cost != null && order.shipping_cost > 0 && (
-            <p>Frete: {formatBRL(order.shipping_cost)}</p>
+            <p>Frete: {money(order.shipping_cost)}</p>
           )}
           {order.shipping_eta_text && <p>Prazo: {order.shipping_eta_text}</p>}
           {order.shipping_zip && <p>CEP: {order.shipping_zip}</p>}
@@ -446,7 +473,7 @@ function OrderCard({
       )}
 
       <div className="mt-3 flex items-center justify-between">
-        <p className="text-sm font-bold text-foreground">Total: {formatBRL(order.total)}</p>
+        <p className="text-sm font-bold text-foreground">Total: {money(order.total)}</p>
         <p className="text-xs text-muted-foreground">
           {formattedDate} às {formattedTime}
         </p>

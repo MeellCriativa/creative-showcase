@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
+import { ArrowLeftRight, Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { ImageUploader } from "@/components/ImageUploader";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { CartIcon, CART_STYLES } from "@/components/CartIcons";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
 import { slugify, FONT_OPTIONS, getFontFamily, PAYMENT_METHODS, DELIVERY_METHODS, formatCep } from "@/lib/catalog";
+import { formatMoney, getCurrency, resolveStoreCurrency } from "@/lib/currency";
 import type { Banner } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -60,6 +62,7 @@ function PersonalizarPage() {
   const [ownerName, setOwnerName] = useState("");
   const [ownerBio, setOwnerBio] = useState("");
   const [ownerHours, setOwnerHours] = useState("");
+  const [currency, setCurrency] = useState("BRL");
 
   useEffect(() => {
     if (!catalog) return;
@@ -93,6 +96,7 @@ function PersonalizarPage() {
     setOwnerName(catalog.owner_name ?? "");
     setOwnerBio(catalog.owner_bio ?? "");
     setOwnerHours(catalog.owner_hours ?? "");
+    setCurrency(resolveStoreCurrency(catalog.currency));
 
     (async () => {
       const { data } = await supabase
@@ -178,6 +182,7 @@ function PersonalizarPage() {
       owner_name: ownerName.trim() || null,
       owner_bio: ownerBio.trim() || null,
       owner_hours: ownerHours.trim() || null,
+      currency: resolveStoreCurrency(currency),
     };
 
     const { error: catalogError } = await supabase
@@ -190,6 +195,10 @@ function PersonalizarPage() {
       console.error("[Vitrine Criativa] Catalog save error:", catalogError);
       if (catalogError.code === "23505") {
         toast.error("Esse endereço de link já está em uso.");
+      } else if (catalogError.message?.includes("currency")) {
+        toast.error(
+          "A coluna de moeda ainda não existe no banco. Rode a migration 20261111120000_add_catalog_currency.sql no Supabase.",
+        );
       } else if (catalogError.message?.includes("column")) {
         toast.error("Erro de configuração do banco. Execute a migration SQL no Supabase.");
       } else {
@@ -349,6 +358,31 @@ function PersonalizarPage() {
           placeholder="11988887777"
           className="input-base"
         />
+      </Field>
+
+      {/* ── Moeda principal da loja ── */}
+      <Field
+        label="Moeda principal da loja"
+        hint="Todos os preços, promoções e pedidos desta loja são exibidos nesta moeda."
+      >
+        <CurrencyPicker value={currency} onChange={setCurrency} />
+        <div className="mt-3 rounded-xl bg-accent/60 px-3 py-2.5">
+          <p className="text-[11px] font-semibold text-foreground">
+            Exemplo: {formatMoney(202.4, currency)} · {getCurrency(currency).code} —{" "}
+            {getCurrency(currency).name}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            Trocar a moeda <strong>não converte</strong> os valores já cadastrados — ela só muda a forma
+            como os preços são exibidos. Pedidos antigos mantêm a moeda da época.
+          </p>
+          <Link
+            to="/painel/conversor"
+            className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-primary"
+          >
+            <ArrowLeftRight className="size-3.5" />
+            Abrir conversor de moedas
+          </Link>
+        </div>
       </Field>
 
       <Field label="Logotipo">
