@@ -72,10 +72,22 @@ function PainelHome() {
   if (!catalog) {
     return (
       <div className="px-5 pb-10 pt-12">
-        <h1 className="text-3xl font-bold text-foreground">Criar catálogo</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Vamos começar pelo nome da sua loja. Você pode mudar depois.
-        </p>
+        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold text-foreground">Criar catálogo</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Vamos começar pelo nome da sua loja. Você pode mudar depois.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={logout}
+            aria-label="Sair"
+            className="grid size-10 shrink-0 place-items-center rounded-full border border-border text-muted-foreground"
+          >
+            <LogOut className="size-4" />
+          </button>
+        </header>
         <form onSubmit={createCatalog} className="mt-8 space-y-4">
           <input
             required
