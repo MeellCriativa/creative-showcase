@@ -309,6 +309,31 @@ test("toMinorUnits / fromMinorUnits evitam erro de ponto flutuante", () => {
   assert.equal(fromMinorUnits(total, "BRL"), 0.6);
 });
 
+test("carrinho: somar em unidades mínimas evita artefato de ponto flutuante", () => {
+  // Caso real: 10,10 × 3 em ponto flutuante vira 30.299999999999997.
+  const naive = 10.1 * 3;
+  assert.notEqual(naive, 30.3);
+
+  const subtotal = fromMinorUnits(toMinorUnits(10.1, "BRL") * 3, "BRL");
+  assert.equal(subtotal, 30.3);
+  assert.equal(formatMoney(subtotal, "BRL"), "R$ 30,30");
+
+  // Subtotal + frete também fecham exatamente.
+  const totalWithShipping = fromMinorUnits(
+    toMinorUnits(subtotal, "BRL") + toMinorUnits(23.45, "BRL"),
+    "BRL",
+  );
+  assert.equal(totalWithShipping, 53.75);
+  assert.equal(formatMoney(totalWithShipping, "BRL"), "R$ 53,75");
+
+  // Moedas sem centavos continuam inteiras.
+  assert.equal(fromMinorUnits(toMinorUnits(1200, "JPY") * 2, "JPY"), 2400);
+
+  // Moeda com 3 casas decimais.
+  const kwd = fromMinorUnits(toMinorUnits(1.234, "KWD") * 2, "KWD");
+  assert.equal(kwd, 2.468);
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 6. Conversão (BRL→CHF, USD→EUR, inversão)
 // ─────────────────────────────────────────────────────────────────────────────

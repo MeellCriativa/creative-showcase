@@ -23,7 +23,13 @@ import {
   type ShippingQuote,
   type CustomerAddress,
 } from "@/lib/catalog";
-import { describeOrderInsertError, formatMoney, resolveStoreCurrency } from "@/lib/currency";
+import {
+  describeOrderInsertError,
+  formatMoney,
+  fromMinorUnits,
+  resolveStoreCurrency,
+  toMinorUnits,
+} from "@/lib/currency";
 import { quoteShipping } from "@/lib/shipping";
 
 export const Route = createFileRoute("/c/$slug")({
@@ -211,7 +217,19 @@ function PublicCatalog() {
     return all.filter((p) => p.category_id === filter);
   }, [data, filter]);
 
-  const total = cart.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  /**
+   * Soma SEMPRE em unidades mínimas (centavos) para evitar artefatos de ponto
+   * flutuante (ex.: 19.99 × 3 = 59.97000000000001) no total exibido e no total
+   * gravado no pedido.
+   */
+  const total = useMemo(
+    () =>
+      fromMinorUnits(
+        cart.reduce((sum, item) => sum + toMinorUnits(item.unitPrice, currency) * item.quantity, 0),
+        currency,
+      ),
+    [cart, currency],
+  );
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const addToCart = useCallback((item: CartItem) => {
@@ -264,8 +282,15 @@ function PublicCatalog() {
         return false;
       }
 
-      const subtotal = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-      const grandTotal = subtotal + (shipping.shippingCost || 0);
+      // Subtotal e total calculados em unidades mínimas da moeda da loja.
+      const subtotal = fromMinorUnits(
+        cart.reduce((s, i) => s + toMinorUnits(i.unitPrice, currency) * i.quantity, 0),
+        currency,
+      );
+      const grandTotal = fromMinorUnits(
+        toMinorUnits(subtotal, currency) + toMinorUnits(shipping.shippingCost || 0, currency),
+        currency,
+      );
 
       /**
        * Gravação do pedido: SEMPRE com a moeda da loja, em uma única tentativa.
@@ -1140,7 +1165,10 @@ function CartSheet({
   const selected = quotes.find((q) => q.serviceId === selectedQuote) ?? null;
   const shippingCost =
     deliveryMethod === "melhor_envio" ? selected?.price ?? 0 : 0;
-  const grandTotal = subtotal + shippingCost;
+  const grandTotal = fromMinorUnits(
+    toMinorUnits(subtotal, currency) + toMinorUnits(shippingCost, currency),
+    currency,
+  );
 
   const hasMelhorEnvio = deliveryMethods.includes("melhor_envio");
   const hasPhysical = items.some((i) => i.product_type !== "digital");
