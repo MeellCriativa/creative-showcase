@@ -135,7 +135,23 @@ export type Order = {
   created_at: string;
   /** Moeda do pedido no momento da compra (histórico). Ausente = moeda da loja. */
   currency?: string | null;
+  /** Estado financeiro (Etapa 2). Ausente em pedidos anteriores à migration. */
+  payment_status?: PaymentStatusValue | null;
+  payment_provider?: "paypal" | "mercadopago" | null;
+  payment_transaction_id?: string | null;
 };
+
+/** Estados financeiros mínimos da Etapa 2. */
+export type PaymentStatusValue =
+  | "pending"
+  | "approved"
+  | "authorized"
+  | "captured"
+  | "failed"
+  | "cancelled"
+  | "refunded"
+  | "partially_refunded"
+  | "disputed";
 
 export type OrderItem = {
   name: string;

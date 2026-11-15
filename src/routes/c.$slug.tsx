@@ -24,13 +24,19 @@ import {
   type CustomerAddress,
 } from "@/lib/catalog";
 import {
-  describeOrderInsertError,
   formatMoney,
   fromMinorUnits,
   resolveStoreCurrency,
   toMinorUnits,
 } from "@/lib/currency";
 import { quoteShipping } from "@/lib/shipping";
+import {
+  createPayment,
+  createSecureOrder,
+  listPaymentMethods,
+  type PaymentProviderKey,
+  type PublicPaymentMethod,
+} from "@/lib/payments";
 
 export const Route = createFileRoute("/c/$slug")({
   loader: async ({ params }) => {
@@ -208,6 +214,39 @@ function PublicCatalog() {
     };
   }, [catalog]);
 
+  /**
+   * Métodos de pagamento online realmente habilitados nesta loja.
+   *
+   * A lista vem do backend (que confere conexão do vendedor + moeda). Se nada
+   * estiver habilitado — ou se a função ainda não estiver disponível — o
+   * checkout continua exatamente como antes (pedido pelo WhatsApp).
+   */
+  const { data: paymentMethods } = useQuery({
+    queryKey: ["public-payment-methods", catalog?.id],
+    enabled: !!catalog?.id,
+    retry: 0,
+    staleTime: 60_000,
+    queryFn: async (): Promise<PublicPaymentMethod[]> => {
+      const res = await listPaymentMethods({ catalogId: catalog!.id });
+      return res.success && Array.isArray(res.methods) ? res.methods : [];
+    },
+  });
+
+  /** Aviso pós-pagamento: nunca confirma nada só pelo retorno do navegador. */
+  const [paymentReturn, setPaymentReturn] = useState<{ provider: string; orderId: string } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment") !== "return") return;
+    const provider = params.get("provider") ?? "";
+    const orderId = params.get("order") ?? "";
+    setPaymentReturn({ provider, orderId });
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete("payment");
+    clean.searchParams.delete("provider");
+    clean.searchParams.delete("order");
+    window.history.replaceState({}, "", clean.pathname + (clean.search ? clean.search : ""));
+  }, []);
+
   const products = useMemo(() => {
     const all = data?.products ?? [];
     if (filter === "Todos") return all;
@@ -271,9 +310,12 @@ function PublicCatalog() {
         quote?: ShippingQuote | null;
         shippingCost: number;
       },
+      payment: { provider: PaymentProviderKey } | null,
     ): Promise<boolean> => {
       if (!catalog) return false;
-      if (!catalog.whatsapp) {
+      // Com pagamento online o WhatsApp não é obrigatório; sem ele, continua
+      // sendo o canal de finalização (fluxo original preservado).
+      if (!payment && !catalog.whatsapp) {
         toast.error("Esta loja ainda não cadastrou o WhatsApp.");
         return false;
       }
@@ -282,64 +324,80 @@ function PublicCatalog() {
         return false;
       }
 
-      // Subtotal e total calculados em unidades mínimas da moeda da loja.
-      const subtotal = fromMinorUnits(
-        cart.reduce((s, i) => s + toMinorUnits(i.unitPrice, currency) * i.quantity, 0),
-        currency,
-      );
-      const grandTotal = fromMinorUnits(
-        toMinorUnits(subtotal, currency) + toMinorUnits(shipping.shippingCost || 0, currency),
-        currency,
-      );
-
       /**
-       * Gravação do pedido: SEMPRE com a moeda da loja, em uma única tentativa.
+       * O pedido é criado SEMPRE no backend (`payments?action=create_order`).
        *
-       * Não existe retry sem `currency` — um pedido sem moeda seria
-       * financeiramente incompleto. Se o banco recusar (migration não aplicada
-       * ou erro de rede), a operação é interrompida antes de abrir o WhatsApp:
-       * nada é enviado, o carrinho continua intacto e o comprador vê o motivo.
+       * O navegador envia apenas produto + quantidade + variação escolhida.
+       * Preços, disponibilidade, moeda, frete (re-cotado) e total são
+       * recalculados a partir do banco — nada aqui é confiado como verdade.
        */
-      const orderPayload = {
-        catalog_id: catalog.id,
-        customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim() || null,
-        items: cart.map((i) => ({
-          name: i.name,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          variation: i.variation,
-          weight_grams: i.weight_grams ?? null,
-          length_cm: i.length_cm ?? null,
-          width_cm: i.width_cm ?? null,
-          height_cm: i.height_cm ?? null,
-        })),
+      const created = await createSecureOrder({
+        catalogId: catalog.id,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || null,
         note: note.trim() || null,
-        subtotal,
-        total: grandTotal,
-        status: "novo",
-        currency,
-        delivery_method: shipping.deliveryMethod || null,
-        shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
-        shipping_service: shipping.quote?.serviceId || null,
-        shipping_service_name: shipping.quote?.name || null,
-        shipping_cost: shipping.shippingCost || null,
-        shipping_eta_days: shipping.quote?.delivery_min ?? null,
-        shipping_eta_text: shipping.quote?.delivery_text || null,
-        customer_street: shipping.address?.street || null,
-        customer_number: shipping.address?.number || null,
-        customer_complement: shipping.address?.complement || null,
-        customer_district: shipping.address?.district || null,
-        customer_city: shipping.address?.city || null,
-        customer_state: shipping.address?.state || null,
-      };
+        items: cart.map((i) => ({
+          product_id: i.productId,
+          quantity: i.quantity,
+          variation: i.variation ?? null,
+        })),
+        deliveryMethod: shipping.deliveryMethod || null,
+        shippingZip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
+        shippingService: shipping.quote?.serviceId ?? null,
+        address: shipping.address
+          ? {
+              street: shipping.address.street || null,
+              number: shipping.address.number || null,
+              complement: shipping.address.complement || null,
+              district: shipping.address.district || null,
+              city: shipping.address.city || null,
+              state: shipping.address.state || null,
+            }
+          : null,
+      });
 
-      const { error: orderError } = await supabase.from("orders").insert(orderPayload as any);
-      if (orderError) {
-        toast.error(describeOrderInsertError(orderError), { duration: 9000 });
+      if (!created.success || !created.order_id) {
+        toast.error(
+          String(created.error || "Não foi possível registrar o pedido. Tente novamente."),
+          { duration: 9000 },
+        );
         return false;
       }
 
+      // Valores oficiais devolvidos pelo backend.
+      const serverCurrency = resolveStoreCurrency(created.currency ?? currency);
+      const subtotal = Number(created.subtotal ?? 0);
+      const grandTotal = Number(created.total ?? 0);
+      const serverShipping = Number(created.shipping_cost ?? 0);
+
+      // ── Pagamento online ────────────────────────────────────────────────
+      if (payment) {
+        const paid = await createPayment({
+          orderId: created.order_id,
+          checkoutToken: created.checkout_token,
+          provider: payment.provider,
+          returnUrl: `${window.location.origin}/c/${catalog.slug}?payment=return&provider=${payment.provider}&order=${created.order_id}`,
+          cancelUrl: `${window.location.origin}/c/${catalog.slug}?payment=return&provider=${payment.provider}&order=${created.order_id}`,
+        });
+
+        if (!paid.success || !paid.checkout_url) {
+          toast.error(
+            String(
+              paid.error ||
+                "O pedido foi registrado, mas não foi possível abrir o pagamento. Fale com a loja.",
+            ),
+            { duration: 9000 },
+          );
+          return false;
+        }
+
+        setCart([]);
+        setCartOpen(false);
+        window.location.href = String(paid.checkout_url);
+        return true;
+      }
+
+      // ── Finalização pelo WhatsApp (fluxo preservado) ────────────────────
       const customerLine = customerName.trim()
         ? `Cliente: ${customerName.trim()}${customerPhone.trim() ? ` | Tel: ${customerPhone.trim()}` : ""}${note.trim() ? `\nObs: ${note.trim()}` : ""}`
         : note.trim() || undefined;
@@ -347,7 +405,7 @@ function PublicCatalog() {
       const shipAddress = shipping.address;
       const message = buildWhatsappMessage({
         storeName: catalog.store_name,
-        currency,
+        currency: serverCurrency,
         items: cart.map((i) => ({
           name: i.name,
           quantity: i.quantity,
@@ -359,7 +417,7 @@ function PublicCatalog() {
         shipping: {
           ...(shipping.deliveryMethod ? { deliveryMethod: shipping.deliveryMethod } : {}),
           ...(shipping.quote?.name ? { serviceName: shipping.quote.name } : {}),
-          ...(shipping.shippingCost ? { cost: shipping.shippingCost } : {}),
+          ...(serverShipping ? { cost: serverShipping } : {}),
           ...(shipping.quote?.delivery_text
             ? { etaText: shipping.quote.delivery_text }
             : shipping.deliveryMethod === "local_delivery"
@@ -384,7 +442,7 @@ function PublicCatalog() {
         note: customerLine,
       });
 
-      const url = whatsappLink(catalog.whatsapp, message);
+      const url = whatsappLink(catalog.whatsapp!, message);
       const opened = window.open(url, "_blank");
       // Alguns navegadores bloqueiam window.open após uma chamada assíncrona.
       if (!opened) window.location.href = url;
@@ -514,6 +572,29 @@ function PublicCatalog() {
         </div>
       </header>
 
+      {paymentReturn && (
+        <div
+          className="mx-5 mt-4 rounded-2xl border px-4 py-3 text-sm"
+          style={{ borderColor: `${primary}30`, backgroundColor: `${primary}08` }}
+        >
+          <p className="font-semibold text-foreground">Pagamento enviado</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Estamos aguardando a confirmação do{" "}
+            {paymentReturn.provider === "paypal" ? "PayPal" : "Mercado Pago"}. A loja é avisada
+            automaticamente assim que o pagamento for aprovado — você não precisa fazer mais nada.
+            Se o status não mudar, fale com a loja pelo WhatsApp.
+          </p>
+          <button
+            type="button"
+            onClick={() => setPaymentReturn(null)}
+            className="mt-2 text-xs font-semibold"
+            style={{ color: primary }}
+          >
+            Entendi
+          </button>
+        </div>
+      )}
+
       {loadedCatalog.banner_enabled && banners.length > 0 && (
         <BannerCarousel
           banners={banners}
@@ -614,7 +695,7 @@ function PublicCatalog() {
       </section>
 
       {/* ── Formas de pagamento (catalog view) ── */}
-      {activePayments.length > 0 && (
+      {(activePayments.length > 0 || (paymentMethods?.length ?? 0) > 0) && (
         <section className="mt-8 px-5">
           <h2
             className="text-lg font-bold text-center"
@@ -623,6 +704,21 @@ function PublicCatalog() {
             Formas de pagamento
           </h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
+            {(paymentMethods ?? []).map((m) => (
+              <div
+                key={m.provider}
+                className="flex items-center gap-3 rounded-2xl border p-4"
+                style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
+              >
+                <div
+                  className="flex size-9 items-center justify-center rounded-full text-xs font-bold"
+                  style={{ background: `${primary}15`, color: primary }}
+                >
+                  {m.provider === "paypal" ? "PP" : "MP"}
+                </div>
+                <span className="text-sm font-medium text-foreground">{m.label}</span>
+              </div>
+            ))}
             {activePayments.map((m) => (
               <div
                 key={m.key}
@@ -679,6 +775,7 @@ function PublicCatalog() {
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
           currency={currency}
           deliveryMethods={Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []}
+          paymentMethods={paymentMethods ?? []}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
           onRemove={removeItem}
@@ -1113,6 +1210,7 @@ function CartSheet({
   primary,
   currency,
   deliveryMethods,
+  paymentMethods,
   onClose,
   onChangeQty,
   onRemove,
@@ -1124,6 +1222,7 @@ function CartSheet({
   primary: string;
   currency: string;
   deliveryMethods: string[];
+  paymentMethods: PublicPaymentMethod[];
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
@@ -1138,6 +1237,7 @@ function CartSheet({
       quote?: ShippingQuote | null;
       shippingCost: number;
     },
+    payment: { provider: PaymentProviderKey } | null,
   ) => Promise<boolean>;
 }) {
   const money = (value: number) => formatMoney(value, currency);
@@ -1152,6 +1252,8 @@ function CartSheet({
   const [submitting, setSubmitting] = useState(false);
   const [quoteMsg, setQuoteMsg] = useState<string>("");
   const [coverageMsg, setCoverageMsg] = useState<string>("");
+  /** `null` = finalizar pelo WhatsApp (fluxo original). */
+  const [paymentProvider, setPaymentProvider] = useState<PaymentProviderKey | null>(null);
   const [address, setAddress] = useState<CustomerAddress>({
     street: "",
     number: "",
@@ -1324,7 +1426,13 @@ function CartSheet({
     if (submitting) return;
     setSubmitting(true);
     try {
-      await onFinish(customerName, customerPhone, observation, shipping);
+      await onFinish(
+        customerName,
+        customerPhone,
+        observation,
+        shipping,
+        paymentProvider ? { provider: paymentProvider } : null,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1643,6 +1751,57 @@ function CartSheet({
                   className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
               </div>
+
+              {paymentMethods.length > 0 && (
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-foreground">
+                    Como você quer pagar?
+                  </label>
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentProvider(null)}
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors ${
+                        paymentProvider === null
+                          ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                          : "border-border bg-card text-muted-foreground"
+                      }`}
+                    >
+                      <span className="text-lg">💬</span>
+                      <span>
+                        Combinar com a loja
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          Pedido enviado pelo WhatsApp
+                        </span>
+                      </span>
+                    </button>
+                    {paymentMethods.map((method) => (
+                      <button
+                        key={method.provider}
+                        type="button"
+                        onClick={() => setPaymentProvider(method.provider)}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors ${
+                          paymentProvider === method.provider
+                            ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                            : "border-border bg-card text-muted-foreground"
+                        }`}
+                      >
+                        <span className="text-lg">{method.provider === "paypal" ? "🅿" : "💳"}</span>
+                        <span>
+                          {method.label}
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            Pagamento online em {method.currency}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    O pagamento é confirmado automaticamente pelo provedor. Você será levado para a
+                    página segura do provedor para concluir.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1669,7 +1828,13 @@ function CartSheet({
             style={{ background: primary }}
           >
             {submitting && <Loader2 className="size-4 animate-spin" />}
-            {submitting ? "Registrando pedido..." : "Finalizar pedido pelo WhatsApp"}
+            {submitting
+              ? paymentProvider
+                ? "Abrindo pagamento..."
+                : "Registrando pedido..."
+              : paymentProvider
+                ? `Pagar com ${paymentProvider === "paypal" ? "PayPal" : "Mercado Pago"}`
+                : "Finalizar pedido pelo WhatsApp"}
           </button>
         </div>
       </div>

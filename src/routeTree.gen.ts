@@ -18,6 +18,7 @@ import { Route as PainelCategoriasRouteImport } from './routes/painel.categorias
 import { Route as PainelConversorRouteImport } from './routes/painel.conversor'
 import { Route as PainelEnvioRouteImport } from './routes/painel.envio'
 import { Route as PainelEstatisticasRouteImport } from './routes/painel.estatisticas'
+import { Route as PainelPagamentosRouteImport } from './routes/painel.pagamentos'
 import { Route as PainelPedidosRouteImport } from './routes/painel.pedidos'
 import { Route as PainelPersonalizarRouteImport } from './routes/painel.personalizar'
 import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
@@ -69,6 +70,11 @@ const PainelEstatisticasRoute = PainelEstatisticasRouteImport.update({
   path: '/estatisticas',
   getParentRoute: () => PainelRoute,
 } as any)
+const PainelPagamentosRoute = PainelPagamentosRouteImport.update({
+  id: '/pagamentos',
+  path: '/pagamentos',
+  getParentRoute: () => PainelRoute,
+} as any)
 const PainelPedidosRoute = PainelPedidosRouteImport.update({
   id: '/pedidos',
   path: '/pedidos',
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pagamentos': typeof PainelPagamentosRoute
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
@@ -119,6 +126,7 @@ export interface FileRoutesByTo {
   '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pagamentos': typeof PainelPagamentosRoute
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
@@ -136,6 +144,7 @@ export interface FileRoutesById {
   '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pagamentos': typeof PainelPagamentosRoute
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
@@ -154,6 +163,7 @@ export interface FileRouteTypes {
     | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
+    | '/painel/pagamentos'
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
+    | '/painel/pagamentos'
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
@@ -185,6 +196,7 @@ export interface FileRouteTypes {
     | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
+    | '/painel/pagamentos'
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
@@ -265,6 +277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelEstatisticasRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/painel/pagamentos': {
+      id: '/painel/pagamentos'
+      path: '/pagamentos'
+      fullPath: '/painel/pagamentos'
+      preLoaderRoute: typeof PainelPagamentosRouteImport
+      parentRoute: typeof PainelRoute
+    }
     '/painel/pedidos': {
       id: '/painel/pedidos'
       path: '/pedidos'
@@ -308,6 +327,7 @@ interface PainelRouteChildren {
   PainelConversorRoute: typeof PainelConversorRoute
   PainelEnvioRoute: typeof PainelEnvioRoute
   PainelEstatisticasRoute: typeof PainelEstatisticasRoute
+  PainelPagamentosRoute: typeof PainelPagamentosRoute
   PainelPedidosRoute: typeof PainelPedidosRoute
   PainelPersonalizarRoute: typeof PainelPersonalizarRoute
   PainelProdutosRoute: typeof PainelProdutosRoute
@@ -321,6 +341,7 @@ const PainelRouteChildren: PainelRouteChildren = {
   PainelConversorRoute: PainelConversorRoute,
   PainelEnvioRoute: PainelEnvioRoute,
   PainelEstatisticasRoute: PainelEstatisticasRoute,
+  PainelPagamentosRoute: PainelPagamentosRoute,
   PainelPedidosRoute: PainelPedidosRoute,
   PainelPersonalizarRoute: PainelPersonalizarRoute,
   PainelProdutosRoute: PainelProdutosRoute,
