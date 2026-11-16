@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
+import { Copy, Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -28,6 +28,10 @@ const palettes = [
   { primary: "#1f2937", accent: "#f3f4f6", label: "Grafite" },
   { primary: "#be123c", accent: "#ffe4e6", label: "Vermelho" },
 ];
+
+/** Prompt pronto para a vendedora colar no ChatGPT/Gemini e gerar o banner. */
+const BANNER_PROMPT =
+  "Gere em 1792 × 1024 px, com o assunto centralizado e bastante espaço vazio em cima e embaixo (a imagem será cortada para 1792 × 782 e redimensionada para 1320 × 576).";
 
 function PersonalizarPage() {
   const { user } = useAuth();
@@ -713,6 +717,35 @@ function PersonalizarPage() {
             </div>
           </div>
         )}
+
+        <div className="mt-4 rounded-xl border border-border bg-accent/40 p-4">
+          <p className="text-xs font-semibold text-foreground">Medida do banner</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            O banner aparece com <strong>440 × 192 px</strong> na vitrine. Envie a imagem em{" "}
+            <strong>1320 × 576 px</strong> (proporção 55:24) para ficar nítida no celular.
+          </p>
+          <p className="mt-3 text-[11px] font-semibold text-foreground">
+            Peça para a IA criar a imagem com este texto:
+          </p>
+          <p className="mt-1 rounded-lg bg-background px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+            {BANNER_PROMPT}
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(BANNER_PROMPT);
+                toast.success("Texto copiado! Cole no ChatGPT.");
+              } catch {
+                toast.error("Não foi possível copiar. Selecione o texto manualmente.");
+              }
+            }}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background py-2.5 text-xs font-semibold text-foreground"
+          >
+            <Copy className="size-3.5" />
+            Copiar texto
+          </button>
+        </div>
       </Field>
 
       {/* ── Descrição da Loja ── */}
