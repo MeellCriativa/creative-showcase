@@ -14,6 +14,7 @@ import {
 
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
+import { PanelSaveBar } from "@/components/PanelSaveBar";
 import { meApi } from "@/lib/shipping";
 
 export const Route = createFileRoute("/painel/envio")({
@@ -191,6 +192,10 @@ function EnvioPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
+      {connected && (
+        <PanelSaveBar className="-mx-5 -mt-5 mb-0" onClick={handleSaveSender} saving={saving} label="Salvar remetente" />
+      )}
+
       <h1 className="flex items-center gap-2 text-xl font-bold text-foreground">
         <Package className="size-5" /> Envio (Correios e transportadoras)
       </h1>

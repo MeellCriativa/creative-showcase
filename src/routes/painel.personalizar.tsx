@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
+import { Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { ImageUploader } from "@/components/ImageUploader";
-import { CurrencyPicker } from "@/components/CurrencyPicker";
+import { PanelSaveBar } from "@/components/PanelSaveBar";
 import { CartIcon, CART_STYLES } from "@/components/CartIcons";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
 import { slugify, FONT_OPTIONS, getFontFamily, PAYMENT_METHODS, DELIVERY_METHODS, formatCep } from "@/lib/catalog";
-import { formatMoney, getCurrency, resolveStoreCurrency } from "@/lib/currency";
+import { resolveStoreCurrency } from "@/lib/currency";
 import type { Banner } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -276,6 +276,8 @@ function PersonalizarPage() {
 
   return (
     <form onSubmit={save} className="px-5 pb-10 pt-10">
+      <PanelSaveBar className="-mt-10" saving={saving} label="Salvar alterações" />
+
       <h1 className="text-2xl font-bold text-foreground">Personalizar vitrine</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Deixe o catálogo com a cara da sua marca.
@@ -360,30 +362,8 @@ function PersonalizarPage() {
         />
       </Field>
 
-      {/* ── Moeda principal da loja ── */}
-      <Field
-        label="Moeda principal da loja"
-        hint="Todos os preços, promoções e pedidos desta loja são exibidos nesta moeda."
-      >
-        <CurrencyPicker value={currency} onChange={setCurrency} />
-        <div className="mt-3 rounded-xl bg-accent/60 px-3 py-2.5">
-          <p className="text-[11px] font-semibold text-foreground">
-            Exemplo: {formatMoney(202.4, currency)} · {getCurrency(currency).code} —{" "}
-            {getCurrency(currency).name}
-          </p>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            Trocar a moeda <strong>não converte</strong> os valores já cadastrados — ela só muda a forma
-            como os preços são exibidos. Pedidos antigos mantêm a moeda da época.
-          </p>
-          <Link
-            to="/painel/conversor"
-            className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-primary"
-          >
-            <ArrowLeftRight className="size-3.5" />
-            Abrir conversor de moedas
-          </Link>
-        </div>
-      </Field>
+      {/* ── Moeda principal da loja ──
+          Movida para o painel inicial (/painel), logo acima do conversor. */}
 
       <Field label="Logotipo">
         <ImageUploader

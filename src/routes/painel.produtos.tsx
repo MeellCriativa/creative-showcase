@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { ImageUploader } from "@/components/ImageUploader";
+import { PanelSaveBar } from "@/components/PanelSaveBar";
 import { useAuth } from "@/hooks/useAuth";
 import { useCategories, useMyCatalog, useProducts } from "@/hooks/useCatalog";
 import { useMetaConnection, useMetaMappings } from "@/hooks/useMetaCatalog";
@@ -353,6 +354,8 @@ function ProductEditor({
         </header>
 
         <form onSubmit={save} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+          <PanelSaveBar className="-mx-5 -mt-5" saving={saving} label="Salvar produto" />
+
           <div>
             <label className="text-sm font-semibold text-foreground">Fotos</label>
             <div className="mt-2">

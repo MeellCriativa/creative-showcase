@@ -4,6 +4,7 @@ import { Eye, EyeOff, KeyboardIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { PanelSaveBar } from "@/components/PanelSaveBar";
 import { useAuth } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/painel/senha")({
@@ -62,6 +63,8 @@ function SenhaPage() {
 
   return (
     <div className="px-5 pb-10 pt-10">
+      <PanelSaveBar formId="senha-form" className="-mt-10" saving={busy} label="Salvar nova senha" />
+
       <header className="flex items-center gap-3">
         <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-accent text-accent-foreground">
           <KeyboardIcon className="size-5" />
@@ -72,7 +75,7 @@ function SenhaPage() {
         </div>
       </header>
 
-      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+      <form id="senha-form" onSubmit={handleSubmit} className="mt-8 space-y-4">
         <div>
           <label htmlFor="current" className="text-sm font-medium text-foreground">
             Senha atual

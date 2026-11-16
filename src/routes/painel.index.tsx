@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeftRight,
   BarChart3,
   ClipboardList,
+  Coins,
   Copy,
   ExternalLink,
   Eye,
@@ -13,15 +14,18 @@ import {
   LogOut,
   Package,
   Palette,
+  Save,
   Share2,
   Store,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog, useProducts } from "@/hooks/useCatalog";
 import { slugify } from "@/lib/catalog";
+import { resolveStoreCurrency } from "@/lib/currency";
 
 export const Route = createFileRoute("/painel/")({
   component: PainelHome,
@@ -36,6 +40,42 @@ function PainelHome() {
 
   const [storeName, setStoreName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [slug, setSlug] = useState("");
+  const [currency, setCurrency] = useState("BRL");
+  const [savingStore, setSavingStore] = useState(false);
+
+  useEffect(() => {
+    if (!catalog) return;
+    setSlug(catalog.slug);
+    setCurrency(resolveStoreCurrency(catalog.currency));
+  }, [catalog]);
+
+  /** Salva o endereço do link e a moeda principal direto do painel. */
+  async function saveStore() {
+    if (!catalog) return;
+    setSavingStore(true);
+    try {
+      const nextSlug = slugify(slug) || catalog.slug;
+      const { error } = await supabase
+        .from("catalogs")
+        .update({ slug: nextSlug, currency: resolveStoreCurrency(currency) } as any)
+        .eq("id", catalog.id);
+
+      if (error) {
+        if (error.code === "23505") {
+          toast.error("Esse endereço de link já está em uso.");
+        } else {
+          toast.error(`Erro ao salvar: ${error.message ?? "tente novamente"}`);
+        }
+        return;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
+      toast.success("Loja atualizada!");
+    } finally {
+      setSavingStore(false);
+    }
+  }
 
   async function createCatalog(e: React.FormEvent) {
     e.preventDefault();
@@ -98,8 +138,11 @@ function PainelHome() {
     );
   }
 
+  const currentSlug = slugify(slug) || catalog.slug;
   const link =
-    typeof window !== "undefined" ? `${window.location.origin}/c/${catalog.slug}` : `/c/${catalog.slug}`;
+    typeof window !== "undefined"
+      ? `${window.location.origin}/c/${currentSlug}`
+      : `/c/${currentSlug}`;
   const message = `\u{1F49C} Venha ver meu catálogo\n${link}`;
 
   const plan = catalog.plan ?? "free";
@@ -225,7 +268,21 @@ function PainelHome() {
             </p>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
+
+        <label className="mt-3 block">
+          <span className="text-xs font-medium text-muted-foreground">Editar link da loja</span>
+          <span className="mt-1 flex items-center rounded-xl border border-input bg-card px-3">
+            <span className="shrink-0 text-xs text-muted-foreground">/c/</span>
+            <input
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="minha-loja"
+              className="w-full bg-transparent py-2.5 text-sm text-foreground outline-none"
+            />
+          </span>
+        </label>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
           <button
             onClick={copyLink}
             className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground"
@@ -234,9 +291,17 @@ function PainelHome() {
           </button>
           <button
             onClick={shareLink}
-            className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+            className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground"
           >
             <Share2 className="size-4" /> Compartilhar
+          </button>
+          <button
+            onClick={saveStore}
+            disabled={savingStore}
+            className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {savingStore ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            Salvar
           </button>
         </div>
         <div className="mt-3 grid grid-cols-4 gap-2 text-[11px] font-medium text-muted-foreground">
@@ -297,6 +362,28 @@ function PainelHome() {
           text="Logo, fonte, cores, carrinho e banners"
         />
         <ShortcutLink to="/painel/estatisticas" icon={BarChart3} title="Estatísticas" text="Visitas ao catálogo" />
+
+        {/* ── Moeda principal da loja ── */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Coins className="size-4" /> Moeda principal da loja
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Todos os preços, promoções e pedidos desta loja são exibidos nesta moeda.
+          </p>
+          <div className="mt-3">
+            <CurrencyPicker value={currency} onChange={setCurrency} />
+          </div>
+          <button
+            onClick={saveStore}
+            disabled={savingStore}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {savingStore ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            Salvar
+          </button>
+        </div>
+
         <ShortcutLink
           to="/painel/conversor"
           icon={ArrowLeftRight}
