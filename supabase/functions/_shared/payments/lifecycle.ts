@@ -93,6 +93,11 @@ export type RefundStateInput = {
   currentStatus: PaymentStatus;
   snapshotRefunded: number;
   snapshotStatus: PaymentStatus;
+  /**
+   * `false` quando o provedor não informa um total confiável (F-06B).
+   * Nesse caso o valor local é preservado e NADA é confirmado.
+   */
+  snapshotKnown?: boolean;
 };
 
 export type RefundStateResult = {
@@ -100,6 +105,8 @@ export type RefundStateResult = {
   status: PaymentStatus;
   /** `true` quando o provedor devolveu menos reembolso do que já sabíamos. */
   regressed: boolean;
+  /** `false` quando o total informado não é confiável (desconhecido). */
+  refundedAmountKnown: boolean;
 };
 
 /**
@@ -108,22 +115,45 @@ export type RefundStateResult = {
  * Correção da auditoria (C5): o PayPal devolvia `refundedAmount: 0` em toda
  * consulta, e o webhook/refresh sobrescrevia o histórico — permitindo reembolsar
  * o mesmo valor duas vezes. Aqui o valor é monotônico e o status é derivado.
+ *
+ * Correção 2.1.3 (F-06B): quando o provedor informa `PARTIALLY_REFUNDED` sem o
+ * total oficial (`snapshotKnown = false`), o saldo NÃO vira 0: mantém o valor
+ * já conhecido e marca `refundedAmountKnown = false`. Nenhuma pendência pode
+ * ser aprovada a partir de um valor desconhecido.
  */
 export function mergeRefundState(input: RefundStateInput): RefundStateResult {
   const current = roundAmount(Math.max(0, input.currentRefunded ?? 0));
   const snapshot = roundAmount(Math.max(0, input.snapshotRefunded ?? 0));
   const total = roundAmount(Math.max(0, input.totalAmount ?? 0));
+  const snapshotKnown = input.snapshotKnown ?? true;
+
+  if (!snapshotKnown) {
+    // Status parcial/total continua válido (o provedor afirmou que houve
+    // reembolso), mas o VALOR é desconhecido: preserva o que já sabíamos.
+    const status: PaymentStatus =
+      input.snapshotStatus === "disputed"
+        ? "disputed"
+        : input.snapshotStatus === "refunded" || input.snapshotStatus === "partially_refunded"
+          ? input.snapshotStatus
+          : input.currentStatus;
+    return { refundedAmount: current, status, regressed: false, refundedAmountKnown: false };
+  }
 
   const refundedAmount = roundAmount(Math.max(current, snapshot));
   const regressed = snapshot + EPSILON < current;
 
   if (input.snapshotStatus === "disputed") {
-    return { refundedAmount, status: "disputed", regressed };
+    return { refundedAmount, status: "disputed", regressed, refundedAmountKnown: true };
   }
 
   if (refundedAmount > EPSILON) {
     const fully = total > EPSILON && refundedAmount >= total - EPSILON;
-    return { refundedAmount, status: fully ? "refunded" : "partially_refunded", regressed };
+    return {
+      refundedAmount,
+      status: fully ? "refunded" : "partially_refunded",
+      regressed,
+      refundedAmountKnown: true,
+    };
   }
 
   // Sem reembolso conhecido: se já havíamos registrado um reembolso, não
@@ -132,10 +162,20 @@ export function mergeRefundState(input: RefundStateInput): RefundStateResult {
     (input.currentStatus === "refunded" || input.currentStatus === "partially_refunded") &&
     refundedAmount <= EPSILON
   ) {
-    return { refundedAmount: current, status: input.currentStatus, regressed: true };
+    return {
+      refundedAmount: current,
+      status: input.currentStatus,
+      regressed: true,
+      refundedAmountKnown: true,
+    };
   }
 
-  return { refundedAmount, status: input.snapshotStatus, regressed };
+  return {
+    refundedAmount,
+    status: input.snapshotStatus,
+    regressed,
+    refundedAmountKnown: true,
+  };
 }
 
 /* ── Captura do PayPal ──────────────────────────────────────────────────── */

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   computeRefundState,
+  isSnapshotEntry,
   newRefundOperationId,
   normalizeRefundOperationId,
   planRefund,
@@ -793,4 +794,204 @@ test("R-02: status é derivado do saldo e disputa é preservada", () => {
     refundStatusFor({ totalMinor: 10000, refundedMinor: 10000, currentStatus: "disputed" }),
     "disputed",
   );
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 2.1.3 — F-02: snapshots do provedor NÃO são somáveis
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("F-02: linha de snapshot não entra em refundLedgerTotals", () => {
+  const ledger = [
+    refundRow({
+      id: "real",
+      amount: 30,
+      operationId: operationId(),
+      providerRefundId: "MP-1",
+    }),
+    refundRow({
+      id: "snapshot",
+      amount: 30,
+      status: "approved",
+      entryKind: "snapshot",
+      operationId: null,
+      providerRefundId: null,
+      requestedBy: null,
+    }),
+  ];
+
+  const totals = refundLedgerTotals(ledger, "BRL");
+  assert.equal(totals.approvedMinor, 3000);
+  assert.equal(totals.approved.length, 1);
+  assert.equal(totals.approved[0]?.id, "real");
+});
+
+test("F-02: snapshot explícito é ignorado mesmo com ids preenchidos", () => {
+  const ledger = [
+    refundRow({
+      id: "real",
+      amount: 30,
+      operationId: operationId(),
+      providerRefundId: "MP-1",
+    }),
+    refundRow({
+      id: "snapshot-com-ids",
+      amount: 30,
+      status: "approved",
+      entryKind: "snapshot",
+      operationId: operationId(),
+      providerRefundId: "MP-1",
+      requestedBy: "seller-1",
+    }),
+  ];
+
+  assert.equal(isSnapshotEntry(ledger[1]!), true);
+  const totals = refundLedgerTotals(ledger, "BRL");
+  assert.equal(totals.approvedMinor, 3000);
+});
+
+test("F-02: 30 real + 30 webhook + 30 webhook continua 30 (sem clamp)", () => {
+  const ledger = [
+    refundRow({ id: "real", amount: 30, operationId: operationId(), providerRefundId: "MP-1" }),
+    refundRow({
+      id: "wh-1",
+      amount: 30,
+      entryKind: "snapshot",
+      operationId: null,
+      providerRefundId: null,
+      requestedBy: null,
+    }),
+    refundRow({
+      id: "wh-2",
+      amount: 30,
+      entryKind: "snapshot",
+      operationId: null,
+      providerRefundId: null,
+      requestedBy: null,
+    }),
+  ];
+
+  // Total 100: 90 estaria DENTRO do limite, então um clamp não esconderia o
+  // defeito — o valor precisa ser exatamente 30.
+  const result = state({ total: 100, currency: "BRL", ledger, snapshot: 30 });
+  assert.equal(result.refundedAmount, 30);
+  assert.equal(result.ledgerMinor, 3000);
+});
+
+test("F-02: linha anônima legada (sem entry_kind) é tratada como snapshot", () => {
+  const legacy = refundRow({
+    id: "legacy",
+    amount: 30,
+    status: "approved",
+    entryKind: null,
+    operationId: null,
+    providerRefundId: null,
+    requestedBy: null,
+  });
+  assert.equal(isSnapshotEntry(legacy), true);
+
+  const result = state({ total: 100, currency: "BRL", ledger: [legacy], snapshot: 30 });
+  assert.equal(result.refundedAmount, 30);
+});
+
+test("F-02: operação real sem solicitante NÃO é confundida com snapshot", () => {
+  const operation = refundRow({
+    id: "real",
+    amount: 30,
+    operationId: operationId(),
+    providerRefundId: null,
+    requestedBy: null,
+  });
+  assert.equal(isSnapshotEntry(operation), false);
+  assert.equal(refundLedgerTotals([operation], "BRL").approvedMinor, 3000);
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 2.1.3 — F-06B: total oficial desconhecido e piso monotônico
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+test("F-06B: snapshot desconhecido não aprova NENHUMA pendência", () => {
+  const pending = refundRow({
+    id: "pending-1",
+    amount: 40,
+    status: "pending",
+    operationId: operationId(),
+    providerRefundId: "MP-PENDING",
+  });
+
+  const unknown = reconcilePendingRefunds({
+    totalAmount: 100,
+    currency: "BRL",
+    ledger: [pending],
+    snapshotRefunded: null,
+    snapshotKnown: false,
+    currentStatus: "captured",
+  });
+  assert.deepEqual(unknown.approveIds, []);
+  assert.equal(unknown.state.snapshotKnown, false);
+  assert.equal(unknown.state.refundedAmount, 0);
+
+  // Mesma pendência com total oficial CONFIÁVEL é aprovada.
+  const known = reconcilePendingRefunds({
+    totalAmount: 100,
+    currency: "BRL",
+    ledger: [pending],
+    snapshotRefunded: 40,
+    snapshotKnown: true,
+    currentStatus: "captured",
+  });
+  assert.deepEqual(known.approveIds, ["pending-1"]);
+  assert.equal(known.state.refundedAmount, 40);
+});
+
+test("F-06B: piso monotônico preserva o saldo sem aprovar pendência", () => {
+  const pending = refundRow({
+    id: "pending-1",
+    amount: 40,
+    status: "pending",
+    operationId: operationId(),
+    providerRefundId: null,
+  });
+
+  // O provedor não informou total, mas o banco já tinha 30 confirmados.
+  const withFloor = computeRefundState({
+    totalAmount: 100,
+    currency: "BRL",
+    ledger: [pending],
+    snapshotRefunded: null,
+    snapshotKnown: false,
+    currentRefunded: 30,
+    currentStatus: "partially_refunded",
+  });
+  assert.equal(withFloor.refundedAmount, 30, "o saldo não regride");
+  assert.equal(withFloor.status, "partially_refunded");
+
+  // O piso NÃO participa da decisão de aprovação: nada é confirmado.
+  const reconciliation = reconcilePendingRefunds({
+    totalAmount: 100,
+    currency: "BRL",
+    ledger: [pending],
+    snapshotRefunded: null,
+    snapshotKnown: false,
+    currentStatus: "partially_refunded",
+  });
+  assert.deepEqual(reconciliation.approveIds, []);
+  assert.equal(reconciliation.state.refundedAmount, 0);
+});
+
+test("F-06B: total oficial desconhecido não grava zero por cima do saldo", () => {
+  const ledger = [
+    refundRow({ amount: 30, operationId: operationId(), providerRefundId: "MP-1" }),
+  ];
+
+  const unknown = computeRefundState({
+    totalAmount: 100,
+    currency: "BRL",
+    ledger,
+    snapshotRefunded: null,
+    snapshotKnown: false,
+    currentRefunded: 30,
+    currentStatus: "partially_refunded",
+  });
+  assert.equal(unknown.refundedAmount, 30);
+  assert.equal(unknown.remainingAmount, 70);
 });

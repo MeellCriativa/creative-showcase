@@ -74,6 +74,19 @@ export const payments = defineNamespace({
     refundPending:
       "Reembolso de {{amount}} enviado ao provedor e aguardando confirmação. O saldo só muda quando for aprovado.",
     refundConfirmed: "Reembolso de {{amount}} confirmado.",
+    refundProviderExecuted:
+      "O provedor JÁ executou este reembolso, mas o registro local falhou. NÃO reembolse novamente: use “Verificar no provedor” para reconciliar.",
+    refundPendingRecover:
+      "Existe uma operação de reembolso pendente. Use “Retomar” para continuar a MESMA operação — nada será reembolsado duas vezes.",
+    refundPendingUnavailable:
+      "A operação pendente não tem identificador recuperável. Use “Verificar no provedor” antes de tentar de novo.",
+    refundPendingTitle: "Reembolso pendente de confirmação",
+    refundPendingAcknowledged: "provedor já recebeu",
+    refundPendingUnknown: "resultado desconhecido",
+    refundResume: "Retomar",
+    refundRefused: "O provedor recusou o reembolso. Nada foi reembolsado.",
+    refundUnknown:
+      "O provedor não informou o total reembolsado. O saldo exibido preserva o último valor conhecido; nada foi confirmado.",
     status: {
       pending: "Aguardando pagamento",
       approved: "Aprovado",
@@ -158,6 +171,19 @@ export const payments = defineNamespace({
     refundPending:
       "Refund of {{amount}} sent to the provider and awaiting confirmation. The balance only changes once it is approved.",
     refundConfirmed: "Refund of {{amount}} confirmed.",
+    refundProviderExecuted:
+      "The provider ALREADY executed this refund, but the local record failed. Do NOT refund again: use “Check with provider” to reconcile.",
+    refundPendingRecover:
+      "A pending refund operation exists. Use “Resume” to continue the SAME operation — nothing will be refunded twice.",
+    refundPendingUnavailable:
+      "The pending operation has no recoverable identifier. Use “Check with provider” before trying again.",
+    refundPendingTitle: "Refund awaiting confirmation",
+    refundPendingAcknowledged: "provider already received it",
+    refundPendingUnknown: "unknown result",
+    refundResume: "Resume",
+    refundRefused: "The provider declined the refund. Nothing was refunded.",
+    refundUnknown:
+      "The provider did not report the refunded total. The displayed balance keeps the last known value; nothing was confirmed.",
     status: {
       pending: "Awaiting payment",
       approved: "Approved",
@@ -243,6 +269,19 @@ export const payments = defineNamespace({
     refundPending:
       "Reembolso de {{amount}} enviado al proveedor y pendiente de confirmación. El saldo solo cambia cuando se aprueba.",
     refundConfirmed: "Reembolso de {{amount}} confirmado.",
+    refundProviderExecuted:
+      "El proveedor YA ejecutó este reembolso, pero el registro local falló. NO reembolses de nuevo: usa “Verificar en el proveedor” para conciliar.",
+    refundPendingRecover:
+      "Existe una operación de reembolso pendiente. Usa “Reanudar” para continuar la MISMA operación — nada se reembolsará dos veces.",
+    refundPendingUnavailable:
+      "La operación pendiente no tiene identificador recuperable. Usa “Verificar en el proveedor” antes de intentarlo de nuevo.",
+    refundPendingTitle: "Reembolso pendiente de confirmación",
+    refundPendingAcknowledged: "el proveedor ya lo recibió",
+    refundPendingUnknown: "resultado desconocido",
+    refundResume: "Reanudar",
+    refundRefused: "El proveedor rechazó el reembolso. No se reembolsó nada.",
+    refundUnknown:
+      "El proveedor no informó el total reembolsado. El saldo mostrado conserva el último valor conocido; nada fue confirmado.",
     status: {
       pending: "Esperando pago",
       approved: "Aprobado",

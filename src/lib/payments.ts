@@ -40,6 +40,24 @@ export type PublicPaymentMethod = {
   currency: string;
 };
 
+/**
+ * Operação de reembolso pendente, do ponto de vista do painel (F-01).
+ *
+ * Vem do SERVIDOR (`pending_refunds`), não do navegador: depois de reload,
+ * logout ou timeout o painel retoma exatamente a mesma operação — nunca cria
+ * uma nova chave de idempotência para o mesmo dinheiro.
+ */
+export type PendingRefundView = {
+  id: string;
+  operation_id: string | null;
+  amount: number;
+  status: string;
+  provider_refund_id: string | null;
+  /** `true` quando o provedor já reconheceu o reembolso (aguarda confirmação). */
+  provider_acknowledged: boolean;
+  created_at: string;
+};
+
 export type PaymentTransaction = {
   id: string;
   order_id: string;
@@ -51,6 +69,7 @@ export type PaymentTransaction = {
   refunded_amount: number;
   created_at: string;
   updated_at: string;
+  pending_refunds?: PendingRefundView[];
 };
 
 export type ApiResult<T> = T & { success: boolean; error?: string; code?: string };
@@ -335,6 +354,18 @@ export function refundTransaction(input: {
     reused?: boolean;
     /** Operação usada pelo backend (para retry seguro). */
     operation_id?: string;
+    /** Saldo consolidado devolvido pelo backend (fonte da verdade). */
+    refunded_amount?: number;
+    remaining_amount?: number;
+    /**
+     * `true` quando o provedor EXECUTOU o reembolso e apenas a gravação local
+     * falhou. O painel NUNCA deve induzir uma nova tentativa nesse caso.
+     */
+    provider_executed?: boolean;
+    /** `true` quando repetir a MESMA operação é seguro. */
+    retryable?: boolean;
+    /** Operação pendente que o painel deve retomar (em vez de criar outra). */
+    pending_operation?: PendingRefundView;
   }>("refund", {
     body: {
       transaction_id: input.transactionId,
@@ -351,6 +382,13 @@ export function refreshPayment(transactionId: string) {
     provider_status: string | null;
     captured_amount: number;
     refunded_amount: number;
+    /**
+     * `false` quando o provedor não informou um total confiável (F-06B).
+     * Nesse caso o valor exibido preserva o que já era conhecido.
+     */
+    refunded_amount_known?: boolean;
+    /** Quantas pendências foram aprovadas pela conciliação. */
+    approved_refunds?: number;
     amount: number;
     currency: string;
     captured: boolean;

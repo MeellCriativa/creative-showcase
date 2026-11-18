@@ -363,3 +363,104 @@ test("lease de captura impede duas capturas simultâneas", () => {
   assert.equal(canClaimCapture({ now, claimedAt: now - 1_000, leaseMs: 60_000 }), false);
   assert.equal(canClaimCapture({ now, claimedAt: now - 60_000, leaseMs: 60_000 }), true);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. F-06B — total reembolsado oficial (PARTIALLY_REFUNDED)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ordem com a captura `PARTIALLY_REFUNDED`. O total oficial vive em
+ * `purchase_units[].payments.refunds[]` — a captura sozinha só diz "parcial".
+ */
+function partiallyRefundedOrder(refunds?: Array<Record<string, unknown>>) {
+  const order = capturedOrder() as Record<string, unknown>;
+  const units = order["purchase_units"] as Array<Record<string, unknown>>;
+  const unit = units[0]!;
+  const payments = unit["payments"] as Record<string, unknown>;
+  const captures = payments["captures"] as Array<Record<string, unknown>>;
+  captures[0]!["status"] = "PARTIALLY_REFUNDED";
+  if (refunds) payments["refunds"] = refunds;
+  return order;
+}
+
+function refundEntry(value: string, status = "COMPLETED"): Record<string, unknown> {
+  return { id: `REFUND-${value}`, status, amount: { currency_code: "BRL", value } };
+}
+
+test("F-06B: PARTIALLY_REFUNDED usa a lista oficial de refunds como total", () => {
+  const snapshot = paypalSnapshotFromOrder(
+    partiallyRefundedOrder([refundEntry("50.00")]),
+    ORDER_ID,
+  );
+  assert.ok(snapshot);
+  assert.equal(snapshot.status, "partially_refunded");
+  assert.equal(snapshot.refundedAmount, 50);
+  assert.equal(snapshot.refundedAmountKnown, true);
+  assert.equal(snapshot.capturedAmount, 125);
+});
+
+test("F-06B: PARTIALLY_REFUNDED sem lista oficial tem total DESCONHECIDO", () => {
+  const snapshot = paypalSnapshotFromOrder(partiallyRefundedOrder(), ORDER_ID);
+  assert.ok(snapshot);
+  assert.equal(snapshot.status, "partially_refunded");
+  // O valor 0 aqui NÃO é "zero reembolsado": é ausência de informação.
+  assert.equal(snapshot.refundedAmount, 0);
+  assert.equal(snapshot.refundedAmountKnown, false);
+});
+
+test("F-06B: lista oficial com múltiplos refunds soma todos", () => {
+  const snapshot = paypalSnapshotFromOrder(
+    partiallyRefundedOrder([refundEntry("25.00"), refundEntry("35.50")]),
+    ORDER_ID,
+  );
+  assert.ok(snapshot);
+  assert.equal(snapshot.refundedAmount, 60.5);
+  assert.equal(snapshot.refundedAmountKnown, true);
+});
+
+test("F-06B: refund pendente na lista oficial não é contado como concluído", () => {
+  const snapshot = paypalSnapshotFromOrder(
+    partiallyRefundedOrder([refundEntry("25.00"), refundEntry("35.50", "PENDING")]),
+    ORDER_ID,
+  );
+  assert.ok(snapshot);
+  assert.equal(snapshot.refundedAmount, 25);
+  assert.equal(snapshot.refundedAmountKnown, true);
+});
+
+test("F-06B: merge com total desconhecido preserva o saldo e sinaliza", () => {
+  const merged = mergeRefundState({
+    totalAmount: 125,
+    currentRefunded: 50,
+    currentStatus: "partially_refunded",
+    snapshotRefunded: 0,
+    snapshotStatus: "partially_refunded",
+    snapshotKnown: false,
+  });
+  assert.equal(merged.refundedAmount, 50, "não grava 0 por cima de 50");
+  assert.equal(merged.status, "partially_refunded");
+  assert.equal(merged.refundedAmountKnown, false);
+  assert.equal(merged.regressed, false);
+});
+
+test("F-06B: merge com total conhecido continua somando normalmente", () => {
+  const merged = mergeRefundState({
+    totalAmount: 125,
+    currentRefunded: 0,
+    currentStatus: "captured",
+    snapshotRefunded: 50,
+    snapshotStatus: "partially_refunded",
+    snapshotKnown: true,
+  });
+  assert.equal(merged.refundedAmount, 50);
+  assert.equal(merged.status, "partially_refunded");
+  assert.equal(merged.refundedAmountKnown, true);
+});
+
+test("F-06B: reembolso total por status continua com valor conhecido", () => {
+  const snapshot = paypalSnapshotFromOrder(capturedOrder({ status: "REFUNDED" }), ORDER_ID);
+  assert.ok(snapshot);
+  assert.equal(snapshot.status, "refunded");
+  assert.equal(snapshot.refundedAmount, 125);
+  assert.equal(snapshot.refundedAmountKnown, true);
+});

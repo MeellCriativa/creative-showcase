@@ -29,6 +29,7 @@ import {
   verifyProvider,
   type PaymentConnectionView,
   type PaymentProviderKey,
+  type PendingRefundView,
 } from "@/lib/payments";
 import {
   formatMoney,
@@ -254,11 +255,82 @@ function PagamentosPage() {
         toast.error(String(res.error || t("payments.refreshError")));
         return;
       }
+      if (res.refunded_amount_known === false) {
+        // F-06B: o provedor não informou o total. Nada foi confirmado e o saldo
+        // exibido é o último conhecido — o vendedor precisa saber disso.
+        toast.warning(t("payments.refundUnknown"), { duration: 12000 });
+        invalidate();
+        return;
+      }
       toast.success(
         res.captured
           ? t("payments.capturedToast")
           : t("payments.statusToast", { status: statusLabel(res.status) }),
       );
+      invalidate();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /**
+   * Envia um reembolso e trata CADA desfecho (F-01/F-06A).
+   *
+   * O `operationId` é sempre o da operação atual — retry nunca inventa uma
+   * chave nova para o mesmo dinheiro.
+   */
+  async function submitRefund(
+    transactionId: string,
+    amount: number,
+    amountMinor: number,
+    operationId: string,
+    txCurrency: string,
+  ) {
+    setBusy(`refund:${transactionId}`);
+    try {
+      const res = await refundTransaction({ transactionId, amount, operationId });
+      if (!res.success) {
+        const code = String(res.code ?? "");
+        if (res.provider_executed) {
+          // O dinheiro JÁ saiu no provedor: repetir poderia duplicar. O caminho
+          // seguro é consultar o provedor ("Verificar") para reconciliar.
+          refundOperation.current = null;
+          toast.warning(t("payments.refundProviderExecuted"), { duration: 12000 });
+          invalidate();
+          return;
+        }
+        const pending = res.pending_operation;
+        if (pending?.operation_id) {
+          // Adota a operação que o SERVIDOR já registrou — nunca cria outra.
+          refundOperation.current = {
+            transactionId,
+            amountMinor: toMinorUnits(Number(pending.amount), txCurrency),
+            operationId: String(pending.operation_id),
+          };
+          toast.warning(t("payments.refundPendingRecover"), { duration: 12000 });
+          invalidate();
+          return;
+        }
+        if (code === "operation_refused" || code === "operation_cancelled") {
+          // Operação encerrada: a próxima tentativa é uma operação NOVA.
+          refundOperation.current = null;
+        }
+        toast.error(String(res.error || t("payments.refundError")));
+        return;
+      }
+      // Concluído: a próxima solicitação é uma operação NOVA.
+      refundOperation.current = null;
+      if (res.status === "failed" || res.status === "cancelled") {
+        toast.error(t("payments.refundRefused"));
+      } else if (res.reused) {
+        toast.info(t("payments.refundReused", { amount: money(res.amount) }));
+      } else if (res.pending) {
+        toast.warning(t("payments.refundPending", { amount: money(res.amount) }), {
+          duration: 9000,
+        });
+      } else {
+        toast.success(t("payments.refundConfirmed", { amount: money(res.amount) }));
+      }
       invalidate();
     } finally {
       setBusy(null);
@@ -312,28 +384,32 @@ function PagamentosPage() {
         : newRefundOperationId();
     refundOperation.current = { transactionId, amountMinor, operationId };
 
-    setBusy(`refund:${transactionId}`);
-    try {
-      const res = await refundTransaction({ transactionId, amount, operationId });
-      if (!res.success) {
-        toast.error(String(res.error || t("payments.refundError")));
-        return;
-      }
-      // Concluído: a próxima solicitação é uma operação NOVA.
-      refundOperation.current = null;
-      if (res.reused) {
-        toast.info(t("payments.refundReused", { amount: money(res.amount) }));
-      } else if (res.pending) {
-        toast.warning(t("payments.refundPending", { amount: money(res.amount) }), {
-          duration: 9000,
-        });
-      } else {
-        toast.success(t("payments.refundConfirmed", { amount: money(res.amount) }));
-      }
-      invalidate();
-    } finally {
-      setBusy(null);
+    await submitRefund(transactionId, amount, amountMinor, operationId, txCurrency);
+  }
+
+  /**
+   * Retoma a MESMA operação pendente registrada no servidor (F-01).
+   *
+   * Sobrevive a reload/logout/timeout: o id e o valor vêm de
+   * `pending_refunds`, não do estado do navegador.
+   */
+  async function handleResumeRefund(
+    transactionId: string,
+    pending: PendingRefundView,
+    txCurrency: string,
+  ) {
+    if (!pending.operation_id) {
+      toast.error(t("payments.refundPendingUnavailable"));
+      return;
     }
+    const amount = Number(pending.amount);
+    const amountMinor = toMinorUnits(amount, txCurrency);
+    refundOperation.current = {
+      transactionId,
+      amountMinor,
+      operationId: String(pending.operation_id),
+    };
+    await submitRefund(transactionId, amount, amountMinor, String(pending.operation_id), txCurrency);
   }
 
   if (!catalog) {
@@ -421,9 +497,13 @@ function PagamentosPage() {
                   toMinorUnits(Number(tx.refunded_amount), txCurrency),
               );
               const remaining = fromMinorUnits(remainingMinor, txCurrency);
+              // F-01: pendência vem do servidor e bloqueia uma operação NOVA.
+              const pendingRefunds = tx.pending_refunds ?? [];
+              const hasPending = pendingRefunds.length > 0;
               const canRefund =
                 ["captured", "approved", "partially_refunded"].includes(tx.status) &&
-                remainingMinor > 0;
+                remainingMinor > 0 &&
+                !hasPending;
               return (
                 <li key={tx.id} className="rounded-xl border border-border px-3 py-2.5 text-xs">
                   <div className="flex items-center justify-between gap-2">
@@ -469,6 +549,34 @@ function PagamentosPage() {
                       </button>
                     )}
                   </div>
+                  {hasPending && (
+                    <div className="mt-2 space-y-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-amber-800">
+                      <p className="font-medium">{t("payments.refundPendingTitle")}</p>
+                      {pendingRefunds.map((pending) => (
+                        <div
+                          key={pending.id}
+                          className="flex items-center justify-between gap-2"
+                        >
+                          <span>
+                            {formatMoney(Number(pending.amount), txCurrency)} ·{" "}
+                            {pending.provider_acknowledged
+                              ? t("payments.refundPendingAcknowledged")
+                              : t("payments.refundPendingUnknown")}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleResumeRefund(tx.id, pending, txCurrency)}
+                            disabled={busy === `refund:${tx.id}`}
+                            className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-medium disabled:opacity-60"
+                          >
+                            {busy === `refund:${tx.id}`
+                              ? t("payments.refunding")
+                              : t("payments.refundResume")}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </li>
               );
             })}

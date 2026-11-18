@@ -15,7 +15,6 @@
 import {
   adminClient,
   claimCapture,
-  createRefundRecord,
   credentialsFromConnection,
   findActiveTransactionByOrder,
   findConnectionByExternalAccount,
@@ -172,12 +171,18 @@ export async function applyOfficialSnapshot(input: {
   }
 
   // ── Reembolsos: nunca regridem ───────────────────────────────────────────
+  // F-02: NENHUMA linha de ledger é criada aqui. O total oficial é um
+  // SNAPSHOT da transação — somá-lo a uma linha `approved` inflava o saldo.
+  // F-06B: quando o provedor não informa o total (`PARTIALLY_REFUNDED` do
+  // PayPal sem a lista de refunds), o valor local é preservado e marcado como
+  // desconhecido; nada é confirmado por engano.
   const merged = mergeRefundState({
     totalAmount: Number(input.transaction.amount),
     currentRefunded: Number(input.transaction.refunded_amount ?? 0),
     currentStatus: input.transaction.status,
     snapshotRefunded: Number(snapshot.refundedAmount ?? 0),
     snapshotStatus: snapshot.status,
+    snapshotKnown: snapshot.refundedAmountKnown ?? true,
   });
   if (merged.regressed) {
     log(input.provider, "provedor informou menos reembolso que o registrado", {
@@ -191,9 +196,10 @@ export async function applyOfficialSnapshot(input: {
     ...snapshot,
     status: merged.status,
     refundedAmount: merged.refundedAmount,
+    refundedAmountKnown: merged.refundedAmountKnown,
   };
 
-  await updateTransaction({
+  const written = await updateTransaction({
     transactionId: input.transaction.id,
     status: merged.status,
     providerStatus: snapshot.providerStatus,
@@ -203,6 +209,17 @@ export async function applyOfficialSnapshot(input: {
     // Nunca sobrescreve o id da captura com o id da ordem.
     ...(snapshot.providerPaymentId ? { providerPaymentId: snapshot.providerPaymentId } : {}),
   });
+  if (!written.ok) {
+    // F-06A: sem persistência não há confirmação. O webhook responde 500 para o
+    // provedor reenviar; o refresh do painel também reconcilia.
+    return {
+      ok: false,
+      snapshot: effectiveSnapshot,
+      reason: "local_persist_failed",
+      captured,
+      regressed: merged.regressed,
+    };
+  }
 
   await syncOrderPayment({
     orderId: input.transaction.order_id,
@@ -214,29 +231,13 @@ export async function applyOfficialSnapshot(input: {
   return { ok: true, snapshot: effectiveSnapshot, captured, regressed: merged.regressed };
 }
 
-/** Registra reembolso detectado via webhook (não solicitado pelo painel). */
-async function recordWebhookRefund(
-  provider: PaymentProviderKey,
-  transaction: TransactionRow,
-  snapshot: ProviderPaymentSnapshot,
-): Promise<void> {
-  const refunded = Number(snapshot.refundedAmount ?? 0);
-  const previous = Number(transaction.refunded_amount ?? 0);
-  const decimals = currencyDecimals(resolveStoreCurrency(transaction.currency));
-  const factor = 10 ** decimals;
-  const deltaMinor = Math.round(refunded * factor) - Math.round(previous * factor);
-  if (deltaMinor <= 0) return;
-  await createRefundRecord({
-    transactionId: transaction.id,
-    catalogId: transaction.catalog_id,
-    provider,
-    providerRefundId: null,
-    amount: deltaMinor / factor,
-    status: "approved",
-    reason: "Reembolso registrado pelo provedor.",
-    requestedBy: null,
-  });
-}
+/**
+ * F-02 (2.1.3): o webhook NÃO grava mais linhas de reembolso.
+ *
+ * O total oficial do provedor é aplicado como SNAPSHOT em
+ * `payment_transactions.refunded_amount`. Criar uma linha `approved` anônima
+ * aqui fazia o ledger somar o mesmo valor duas vezes (30 → 60).
+ */
 
 export async function handleWebhook(input: {
   provider: PaymentProviderKey;
@@ -480,13 +481,6 @@ async function processVerifiedEvent(input: {
       reason: applied.reason ?? "provider_lookup_failed",
       transaction: resolved.transaction,
     };
-  }
-
-  if (
-    applied.snapshot.status === "refunded" ||
-    applied.snapshot.status === "partially_refunded"
-  ) {
-    await recordWebhookRefund(provider, resolved.transaction, applied.snapshot);
   }
 
   return {

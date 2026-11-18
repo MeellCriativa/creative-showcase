@@ -362,6 +362,8 @@ export const mercadopagoProvider: PaymentProvider = {
       currency: String(res.body.currency_id ?? ""),
       capturedAmount: res.body.status === "approved" ? amount : 0,
       refundedAmount: refunded,
+      // O Mercado Pago informa `transaction_amount_refunded` oficialmente.
+      refundedAmountKnown: true,
       payerReference: res.body.payer?.email ?? null,
       raw: res.body,
     };

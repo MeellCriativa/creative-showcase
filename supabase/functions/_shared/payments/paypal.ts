@@ -21,6 +21,7 @@ import type {
   ProviderCredentials,
   ProviderPaymentSnapshot,
   RefundInput,
+  RefundQueryResult,
   RefundResult,
   WebhookRequest,
   WebhookVerification,
@@ -224,26 +225,58 @@ export function paypalSnapshotFromOrder(
     (unit?.["amount"] as Record<string, unknown> | undefined)?.["value"] ?? 0,
   );
 
+  // ── Total oficial de reembolsos (F-06B) ──────────────────────────────────
+  // A captura só informa `PARTIALLY_REFUNDED`; o VALOR vive em
+  // `purchase_units[].payments.refunds[]`. Sem essa lista o total é
+  // DESCONHECIDO — nunca 0 confirmado.
+  const refundsRaw = payments["refunds"];
+  const refunds = Array.isArray(refundsRaw)
+    ? (refundsRaw as Array<Record<string, unknown>>)
+    : null;
+  const refundsListed = refunds !== null;
+  let refundedFromList = 0;
+  if (refunds) {
+    for (const refund of refunds) {
+      const status = String(refund["status"] ?? "").toUpperCase();
+      if (status !== "COMPLETED") continue;
+      const value = Number(
+        (refund["amount"] as Record<string, unknown> | undefined)?.["value"] ?? 0,
+      );
+      if (Number.isFinite(value) && value > 0) refundedFromList += value;
+    }
+  }
+
   let status: PaymentStatus = mapPayPalStatus(orderStatus);
   let capturedAmount = 0;
   let refundedAmount = 0;
+  let refundedAmountKnown = false;
 
   if (capture) {
     switch (captureStatus) {
       case "COMPLETED":
         status = "captured";
         capturedAmount = captureAmount;
+        refundedAmount = refundedFromList;
+        refundedAmountKnown = true;
+        if (refundedFromList > 0) {
+          status =
+            captureAmount > 0 && refundedFromList >= captureAmount
+              ? "refunded"
+              : "partially_refunded";
+        }
         break;
       case "REFUNDED":
+        // Reembolso total é implícito pelo status da captura.
         status = "refunded";
         capturedAmount = captureAmount;
         refundedAmount = captureAmount;
+        refundedAmountKnown = true;
         break;
       case "PARTIALLY_REFUNDED":
-        // O PayPal não expõe o total reembolsado na captura; o valor já
-        // registrado é preservado (merge monotônico no webhook/painel).
         status = "partially_refunded";
         capturedAmount = captureAmount;
+        refundedAmount = refundedFromList;
+        refundedAmountKnown = refundsListed;
         break;
       case "PENDING":
         status = "pending";
@@ -271,6 +304,7 @@ export function paypalSnapshotFromOrder(
     ),
     capturedAmount,
     refundedAmount,
+    refundedAmountKnown,
     payerReference: null,
     raw: order,
   };
@@ -610,6 +644,39 @@ export const paypalProvider: PaymentProvider = {
       status: status === "COMPLETED" ? "approved" : status === "FAILED" ? "failed" : "pending",
       amount: Number(res.body?.amount?.value ?? input.amount),
       raw: res.body ?? {},
+    };
+  },
+
+  /**
+   * Consulta oficial de um reembolso já criado (F-01).
+   *
+   * Só LEITURA: a reconciliação nunca cria reembolso. Usa o token de
+   * plataforma, o mesmo que criou o reembolso no fluxo de marketplace.
+   */
+  async getRefund(
+    _credentials: ProviderCredentials,
+    providerRefundId: string,
+  ): Promise<RefundQueryResult | null> {
+    const token = await platformToken();
+    if (!token) return null;
+    const res = await ppFetch(`/v2/payments/refunds/${encodeURIComponent(providerRefundId)}`, {
+      method: "GET",
+      token,
+    });
+    if (!res.ok || !res.body) return null;
+    const status = String(res.body.status ?? "").toUpperCase();
+    return {
+      providerRefundId: res.body.id ? String(res.body.id) : providerRefundId,
+      status:
+        status === "COMPLETED"
+          ? "approved"
+          : status === "CANCELLED"
+            ? "cancelled"
+            : status === "FAILED"
+              ? "failed"
+              : "pending",
+      amount: Number(res.body.amount?.value ?? 0),
+      raw: res.body,
     };
   },
 

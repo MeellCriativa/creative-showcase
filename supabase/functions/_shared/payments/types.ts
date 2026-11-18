@@ -113,6 +113,14 @@ export type ProviderPaymentSnapshot = {
   currency: string;
   capturedAmount: number;
   refundedAmount: number;
+  /**
+   * `false` quando `refundedAmount` NÃO é um total oficial confiável.
+   *
+   * F-06B: o PayPal responde `PARTIALLY_REFUNDED` na captura sem informar o
+   * valor reembolsado. Nesse caso `refundedAmount` não pode ser tratado como 0
+   * confirmado nem usado para aprovar pendências.
+   */
+  refundedAmountKnown?: boolean;
   payerReference: string | null;
   raw: Record<string, unknown>;
 };
@@ -134,6 +142,18 @@ export type RefundInput = {
 };
 
 export type RefundResult = {
+  providerRefundId: string | null;
+  status: "pending" | "approved" | "failed" | "cancelled";
+  amount: number;
+  raw: Record<string, unknown>;
+};
+
+/**
+ * Consulta oficial de um reembolso já criado (F-01).
+ *
+ * Usada APENAS na reconciliação: nunca cria um novo reembolso.
+ */
+export type RefundQueryResult = {
   providerRefundId: string | null;
   status: "pending" | "approved" | "failed" | "cancelled";
   amount: number;
@@ -252,6 +272,17 @@ export interface PaymentProvider {
     credentials: ProviderCredentials,
     input: RefundInput,
   ): Promise<RefundResult>;
+
+  /**
+   * Consulta oficial de um reembolso já criado (F-01).
+   *
+   * Opcional: quando o provedor não expõe a consulta, a reconciliação usa o
+   * total oficial da transação. NUNCA executa um novo reembolso.
+   */
+  getRefund?(
+    credentials: ProviderCredentials,
+    providerRefundId: string,
+  ): Promise<RefundQueryResult | null>;
 
   verifyWebhook(request: WebhookRequest): Promise<WebhookVerification>;
 }

@@ -40,6 +40,17 @@ export type RefundLedgerEntry = {
   providerRefundId?: string | null;
   operationId?: string | null;
   createdAt?: string | null;
+  /**
+   * `operation` = reembolso realmente executado por uma operação.
+   * `snapshot` = espelho do total oficial do provedor, NUNCA somável.
+   *
+   * Correção da auditoria 2.1.3 (F-02): o webhook antigo gravava uma linha
+   * `approved` anônima (`provider_refund_id` e `operation_id` nulos) a cada
+   * aumento do total oficial. O ledger somava essa linha AO total oficial e o
+   * saldo dobrava (30 → 60) quando webhook e painel corriam juntos.
+   */
+  entryKind?: string | null;
+  requestedBy?: string | null;
 };
 
 /* ── Identificador da operação ───────────────────────────────────────────── */
@@ -119,6 +130,31 @@ function normalizeStatus(status: unknown): string {
   return String(status ?? "").trim().toLowerCase();
 }
 
+/**
+ * `true` quando a linha é apenas um ESPELHO do total oficial do provedor.
+ *
+ * Além da marca explícita (`entry_kind = 'snapshot'`), reconhece as linhas
+ * anônimas gravadas pelo webhook antigo: aprovadas, sem id do provedor, sem
+ * operação e sem solicitante. Elas nunca representam dinheiro adicional — o
+ * total oficial já é aplicado em `snapshotRefunded`.
+ *
+ * A assinatura estrutural é necessária para que o defeito F-02 continue
+ * corrigido mesmo antes da migration de ciclo de vida ser aplicada (código
+ * antigo + migration nova, ou migration nova + código antigo).
+ */
+export function isSnapshotEntry(entry: RefundLedgerEntry): boolean {
+  if (normalizeStatus(entry.entryKind) === "snapshot") return true;
+  const providerId = String(entry.providerRefundId ?? "").trim();
+  const operationId = String(entry.operationId ?? "").trim();
+  const requestedBy = String(entry.requestedBy ?? "").trim();
+  return (
+    !providerId &&
+    !operationId &&
+    !requestedBy &&
+    normalizeStatus(entry.status) === "approved"
+  );
+}
+
 function entryAmountMinor(entry: RefundLedgerEntry, currency: string): number {
   const value = Number(entry.amount ?? 0);
   if (!Number.isFinite(value) || value <= 0) return 0;
@@ -177,7 +213,12 @@ export function refundLedgerTotals(
     pending: [],
   };
 
-  for (const group of groupLedger(Array.isArray(ledger) ? ledger : [])) {
+  // F-02: espelhos do total oficial nunca entram na soma.
+  const operations = (Array.isArray(ledger) ? ledger : []).filter(
+    (entry) => !isSnapshotEntry(entry),
+  );
+
+  for (const group of groupLedger(operations)) {
     const approved = group.find((entry) => normalizeStatus(entry.status) === "approved");
     if (approved) {
       totals.approved.push(approved);
@@ -203,6 +244,14 @@ export type RefundState = {
   ledgerMinor: number;
   /** Total oficial informado pelo provedor (0 quando desconhecido). */
   snapshotMinor: number;
+  /**
+   * `false` quando o provedor NÃO informou um total confiável.
+   *
+   * F-06B: `PARTIALLY_REFUNDED` no PayPal sem a lista oficial de refunds não
+   * autoriza gravar `refundedAmount: 0` nem aprovar pendentes — o valor é
+   * simplesmente desconhecido.
+   */
+  snapshotKnown: boolean;
   /** Saldo reembolsado efetivo (máximo entre ledger e provedor, limitado ao total). */
   refundedMinor: number;
   remainingMinor: number;
@@ -246,6 +295,21 @@ export function computeRefundState(input: {
   currency: string | null | undefined;
   ledger: RefundLedgerEntry[];
   snapshotRefunded?: number | null;
+  /**
+   * `false` = o provedor não informou total confiável (F-06B).
+   * Padrão: conhecido quando um número foi fornecido.
+   */
+  snapshotKnown?: boolean;
+  /**
+   * Piso monotônico opcional: valor JÁ PERSISTIDO em `payment_transactions`.
+   *
+   * Evita que uma resposta incompleta do provedor (`PARTIALLY_REFUNDED` sem a
+   * lista oficial, timeout, eventual consistency) faça o saldo regredir.
+   *
+   * IMPORTANTE (F-02): este piso NUNCA é passado para a decisão de aprovação de
+   * pendências — ele não pode justificar confirmar dinheiro novo.
+   */
+  currentRefunded?: number | null;
   currentStatus: PaymentStatus;
 }): RefundState {
   const currency = resolveStoreCurrency(input.currency);
@@ -253,12 +317,20 @@ export function computeRefundState(input: {
   const totals = refundLedgerTotals(input.ledger, currency);
 
   const rawSnapshot = Number(input.snapshotRefunded ?? 0);
+  const snapshotKnown =
+    input.snapshotKnown ?? (input.snapshotRefunded !== null && input.snapshotRefunded !== undefined);
   const snapshotMinor =
-    Number.isFinite(rawSnapshot) && rawSnapshot > 0 ? toMinorUnits(rawSnapshot, currency) : 0;
+    snapshotKnown && Number.isFinite(rawSnapshot) && rawSnapshot > 0
+      ? toMinorUnits(rawSnapshot, currency)
+      : 0;
+
+  const rawCurrent = Number(input.currentRefunded ?? 0);
+  const currentMinor =
+    Number.isFinite(rawCurrent) && rawCurrent > 0 ? toMinorUnits(rawCurrent, currency) : 0;
 
   const refundedMinor = Math.min(
     totalMinor,
-    Math.max(0, Math.max(totals.approvedMinor, snapshotMinor)),
+    Math.max(0, Math.max(totals.approvedMinor, snapshotMinor, currentMinor)),
   );
   const remainingMinor = Math.max(0, totalMinor - refundedMinor);
 
@@ -267,6 +339,7 @@ export function computeRefundState(input: {
     totalMinor,
     ledgerMinor: totals.approvedMinor,
     snapshotMinor,
+    snapshotKnown,
     refundedMinor,
     remainingMinor,
     refundedAmount: fromMinorUnits(refundedMinor, currency),
@@ -295,6 +368,8 @@ export type RefundPlan =
       /** `true` quando o valor pedido era o saldo inteiro. */
       full: boolean;
       snapshotMinor: number;
+      /** `false` quando o total oficial do provedor é desconhecido. */
+      snapshotKnown: boolean;
     }
   | {
       ok: false;
@@ -327,6 +402,7 @@ export function planRefund(input: {
   requestedAmount?: number | null;
   ledger: RefundLedgerEntry[];
   snapshotRefunded?: number | null;
+  snapshotKnown?: boolean;
   currentStatus: PaymentStatus;
   operationId: unknown;
 }): RefundPlan {
@@ -344,6 +420,7 @@ export function planRefund(input: {
     currency: input.currency,
     ledger: input.ledger,
     snapshotRefunded: input.snapshotRefunded ?? null,
+    snapshotKnown: input.snapshotKnown,
     currentStatus: input.currentStatus,
   });
 
@@ -392,6 +469,7 @@ export function planRefund(input: {
     amount: fromMinorUnits(requestedMinor, state.currency),
     full: requestedMinor === state.remainingMinor,
     snapshotMinor: state.snapshotMinor,
+    snapshotKnown: state.snapshotKnown,
   };
 }
 
@@ -409,6 +487,7 @@ export function reconcilePendingRefunds(input: {
   currency: string | null | undefined;
   ledger: RefundLedgerEntry[];
   snapshotRefunded?: number | null;
+  snapshotKnown?: boolean;
   currentStatus: PaymentStatus;
 }): { approveIds: string[]; approvedMinor: number; targetMinor: number; state: RefundState } {
   const state = computeRefundState({
@@ -416,9 +495,21 @@ export function reconcilePendingRefunds(input: {
     currency: input.currency,
     ledger: input.ledger,
     snapshotRefunded: input.snapshotRefunded ?? null,
+    snapshotKnown: input.snapshotKnown,
     currentStatus: input.currentStatus,
   });
   const totals = refundLedgerTotals(input.ledger, state.currency);
+
+  // F-06B: sem total oficial confiável NADA é aprovado. Aprovar "por saldo"
+  // aqui foi exatamente o defeito que permitiu confirmar valor errado.
+  if (!state.snapshotKnown) {
+    return {
+      approveIds: [],
+      approvedMinor: totals.approvedMinor,
+      targetMinor: totals.approvedMinor,
+      state,
+    };
+  }
 
   const targetMinor = state.refundedMinor;
   let confirmed = totals.approvedMinor;

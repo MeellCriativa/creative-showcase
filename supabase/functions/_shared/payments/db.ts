@@ -609,10 +609,10 @@ export async function updateTransaction(input: {
   refundedAmount?: number;
   payerReference?: string | null;
   providerPaymentId?: string | null;
-}): Promise<void> {
+}): Promise<{ ok: boolean; error?: string }> {
   const admin = adminClient();
   const now = new Date().toISOString();
-  await admin
+  const { error } = await admin
     .from("payment_transactions")
     .update({
       status: input.status,
@@ -627,6 +627,13 @@ export async function updateTransaction(input: {
       updated_at: now,
     })
     .eq("id", input.transactionId);
+  if (error) {
+    // F-06A: quem chama PRECISA saber que a gravação falhou. Antes o erro era
+    // descartado e o painel exibia sucesso financeiro sem estado persistido.
+    console.error("[payments] updateTransaction", error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
 }
 
 /** Espelha o estado financeiro no pedido (nunca sobrescreve status logístico). */
@@ -764,6 +771,10 @@ export async function createRefundRecord(input: {
   requestedBy: string | null;
   /** Identificador da operação (R-01). Só é gravado quando a coluna existe. */
   operationId?: string | null;
+  /** F-02: `snapshot` = espelho do total oficial, nunca somável. */
+  entryKind?: "operation" | "snapshot";
+  idempotencyKey?: string | null;
+  dedupeKey?: string | null;
 }): Promise<string | null> {
   const admin = adminClient();
   const { data, error } = await admin
@@ -778,6 +789,9 @@ export async function createRefundRecord(input: {
       reason: input.reason,
       requested_by: input.requestedBy,
       ...(input.operationId ? { operation_id: input.operationId } : {}),
+      ...(input.entryKind ? { entry_kind: input.entryKind } : {}),
+      ...(input.idempotencyKey ? { idempotency_key: input.idempotencyKey } : {}),
+      ...(input.dedupeKey ? { dedupe_key: input.dedupeKey } : {}),
     })
     .select("id")
     .maybeSingle();
@@ -801,6 +815,12 @@ export type RefundRow = {
   created_at: string;
   /** Presente apenas depois da migration de operações (R-01). */
   operation_id?: string | null;
+  /** Presente apenas depois da migration de ciclo de vida (2.1.3). */
+  entry_kind?: string | null;
+  idempotency_key?: string | null;
+  dedupe_key?: string | null;
+  last_error?: string | null;
+  last_attempt_at?: string | null;
 };
 
 /** `true` quando o erro é só a coluna `operation_id` ainda não existir. */
@@ -813,6 +833,38 @@ function isMissingOperationColumn(error: {
   const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
   if (!text.includes("operation_id")) return false;
   return code === "42703" || code === "PGRST204" || /column|coluna|does not exist/.test(text);
+}
+
+/**
+ * `true` quando as colunas de ciclo de vida da 2.1.3 ainda não existem.
+ *
+ * F-06A: nesse caso o reembolso NÃO pode degradar em silêncio (sem dedupe,
+ * sem chave estável). Quem chama devolve 503 e nada é enviado ao provedor.
+ */
+function isMissingLifecycleColumn(error: {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+}): boolean {
+  const code = String(error.code ?? "").toUpperCase();
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  const names = ["idempotency_key", "dedupe_key", "entry_kind", "last_error", "last_attempt_at"];
+  if (!names.some((name) => text.includes(name))) return false;
+  return code === "42703" || code === "PGRST204" || /column|coluna|does not exist/.test(text);
+}
+
+/** Identifica qual índice único foi violado (para reconciliar sem repetir). */
+function uniqueConflict(error: {
+  message?: string | null;
+  details?: string | null;
+}): "provider_refund_id" | "pending" | "operation" | null {
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  if (text.includes("provider_refund") || text.includes("payment_refunds_provider_refund_key")) {
+    return "provider_refund_id";
+  }
+  if (text.includes("dedupe_key") || text.includes("pending_guard")) return "pending";
+  if (text.includes("operation_id") || text.includes("operation")) return "operation";
+  return null;
 }
 
 /** Todos os reembolsos da transação (base da contabilidade — R-01). */
@@ -876,7 +928,16 @@ export async function claimRefundOperation(input: {
   reason: string | null;
   requestedBy: string | null;
   operationId: string;
-}): Promise<{ row: RefundRow | null; created: boolean; error?: string }> {
+  /** Chave de idempotência do provedor — persistida ANTES da chamada (F-01). */
+  idempotencyKey?: string | null;
+  /** `transaction_id` enquanto pendente: garante UMA pendência por transação. */
+  dedupeKey?: string | null;
+}): Promise<{
+  row: RefundRow | null;
+  created: boolean;
+  code?: "operation_exists" | "pending_exists" | "schema_missing" | "error";
+  error?: string;
+}> {
   const admin = adminClient();
   const base = {
     transaction_id: input.transactionId,
@@ -887,11 +948,17 @@ export async function claimRefundOperation(input: {
     status: "pending",
     reason: input.reason,
     requested_by: input.requestedBy,
+    entry_kind: "operation",
   };
 
   const inserted = await admin
     .from("payment_refunds")
-    .insert({ ...base, operation_id: input.operationId })
+    .insert({
+      ...base,
+      operation_id: input.operationId,
+      idempotency_key: input.idempotencyKey ?? null,
+      dedupe_key: input.dedupeKey ?? null,
+    })
     .select("*")
     .maybeSingle();
 
@@ -899,25 +966,40 @@ export async function claimRefundOperation(input: {
     return { row: (inserted.data as RefundRow | null) ?? null, created: true };
   }
 
-  // Migration ainda não aplicada: segue sem operation_id (comportamento antigo,
-  // porém sem somar saldo em dobro — o ledger deduplica por id do provedor).
-  if (isMissingOperationColumn(inserted.error)) {
-    const fallback = await admin.from("payment_refunds").insert(base).select("*").maybeSingle();
-    if (fallback.error) {
-      console.error("[payments] claimRefundOperation", fallback.error.message);
-      return { row: null, created: false, error: fallback.error.message };
-    }
-    return { row: (fallback.data as RefundRow | null) ?? null, created: true };
+  // Migration ausente: falha FECHADA. Antes o código seguia sem operation_id e
+  // sem dedupe — exatamente a janela em que o reembolso podia duplicar.
+  if (
+    isMissingLifecycleColumn(inserted.error) ||
+    isMissingOperationColumn(inserted.error)
+  ) {
+    console.error("[payments] claimRefundOperation schema", inserted.error.message);
+    return {
+      row: null,
+      created: false,
+      code: "schema_missing",
+      error: inserted.error.message,
+    };
   }
 
-  // Corrida: outra requisição reservou a mesma operação.
   if (String(inserted.error.code ?? "") === "23505") {
+    const conflict = uniqueConflict(inserted.error);
+    if (conflict === "pending") {
+      const pending = await listPendingRefunds(input.transactionId);
+      const row =
+        pending.find((candidate) => candidate.entry_kind !== "snapshot") ?? pending[0] ?? null;
+      return { row, created: false, code: "pending_exists" };
+    }
     const existing = await findRefundByOperation(input.transactionId, input.operationId);
-    return { row: existing, created: false };
+    return { row: existing, created: false, code: "operation_exists" };
   }
 
   console.error("[payments] claimRefundOperation", inserted.error.message);
-  return { row: null, created: false, error: inserted.error.message };
+  return {
+    row: null,
+    created: false,
+    code: "error",
+    error: inserted.error.message,
+  };
 }
 
 /** Reembolso já registrado para o mesmo id do provedor (idempotência). */
@@ -942,28 +1024,92 @@ export async function findRefundByProviderId(
 /** Reembolsos ainda não confirmados pelo provedor. */
 export async function listPendingRefunds(transactionId: string): Promise<RefundRow[]> {
   const admin = adminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from("payment_refunds")
     .select("*")
     .eq("transaction_id", transactionId)
     .eq("status", "pending")
     .order("created_at");
+  if (error) {
+    console.error("[payments] listPendingRefunds", error.message);
+    return [];
+  }
   return (data as RefundRow[] | null) ?? [];
 }
 
+/**
+ * Pendências de um catálogo — usadas pelo painel para retomar a MESMA operação
+ * depois de reload/logout (F-01), sem depender do estado do navegador.
+ */
+export async function listPendingRefundsForCatalog(catalogId: string): Promise<RefundRow[]> {
+  if (!catalogId) return [];
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("payment_refunds")
+    .select("*")
+    .eq("catalog_id", catalogId)
+    .eq("status", "pending")
+    .order("created_at")
+    .limit(200);
+  if (error) {
+    console.error("[payments] listPendingRefundsForCatalog", error.message);
+    return [];
+  }
+  return (data as RefundRow[] | null) ?? [];
+}
+
+export type RefundUpdateResult = {
+  ok: boolean;
+  error?: string;
+  conflict?: "provider_refund_id" | "pending" | "operation" | "schema_missing";
+};
+
+/**
+ * Atualiza a linha do reembolso e DEVOLVE o resultado.
+ *
+ * F-03/F-06A: antes o erro era ignorado — a linha ficava `pending` para sempre
+ * e o painel mostrava sucesso. `clearDedupeKey` libera a guarda de ambiguidade
+ * quando a operação deixa de estar pendente.
+ */
 export async function updateRefundRecord(
   refundId: string,
-  input: { status?: string; providerRefundId?: string | null; amount?: number },
-): Promise<void> {
+  input: {
+    status?: string;
+    providerRefundId?: string | null;
+    amount?: number;
+    idempotencyKey?: string | null;
+    clearDedupeKey?: boolean;
+    lastError?: string | null;
+    lastAttemptAt?: string | null;
+  },
+): Promise<RefundUpdateResult> {
   const admin = adminClient();
-  await admin
-    .from("payment_refunds")
-    .update({
-      ...(input.status === undefined ? {} : { status: input.status }),
-      ...(input.providerRefundId === undefined
-        ? {}
-        : { provider_refund_id: input.providerRefundId }),
-      ...(input.amount === undefined ? {} : { amount: input.amount }),
-    })
-    .eq("id", refundId);
+  const patch: Record<string, unknown> = {
+    ...(input.status === undefined ? {} : { status: input.status }),
+    ...(input.providerRefundId === undefined
+      ? {}
+      : { provider_refund_id: input.providerRefundId }),
+    ...(input.amount === undefined ? {} : { amount: input.amount }),
+    ...(input.idempotencyKey === undefined ? {} : { idempotency_key: input.idempotencyKey }),
+    ...(input.clearDedupeKey ? { dedupe_key: null } : {}),
+    ...(input.lastError === undefined ? {} : { last_error: input.lastError }),
+    ...(input.lastAttemptAt === undefined ? {} : { last_attempt_at: input.lastAttemptAt }),
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await admin.from("payment_refunds").update(patch).eq("id", refundId);
+  if (error) {
+    if (isMissingLifecycleColumn(error)) {
+      return { ok: false, conflict: "schema_missing", error: error.message };
+    }
+    if (String(error.code ?? "") === "23505") {
+      return {
+        ok: false,
+        conflict: uniqueConflict(error) ?? "operation",
+        error: error.message,
+      };
+    }
+    console.error("[payments] updateRefundRecord", error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
 }
