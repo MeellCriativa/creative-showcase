@@ -9,26 +9,41 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { createIsomorphicFn } from "@tanstack/react-start";
+
 import { Toaster } from "@/components/ui/sonner";
+import { DEFAULT_LOCALE, I18nProvider, LOCALE_META, useI18n, type Locale } from "@/i18n";
+import { readServerLocale } from "@/i18n/server-locale.server";
+import { readLocaleCookie } from "@/i18n/storage";
+
+/**
+ * Idioma inicial: cookie da requisição no servidor, o mesmo cookie em
+ * `document.cookie` no cliente. Assim o HTML do SSR e a hidratação usam o
+ * mesmo idioma — sem "flash" em português e sem erro de hidratação.
+ * Nunca lê o idioma do navegador.
+ */
+const resolveInitialLocale = createIsomorphicFn()
+  .client((): Locale => readLocaleCookie() ?? DEFAULT_LOCALE)
+  .server((): Locale => readServerLocale() ?? DEFAULT_LOCALE);
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
-function NotFoundComponent() {
+function NotFoundContent() {
+  const { t } = useI18n();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Página não encontrada</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          A página que você procura não existe ou foi movida.
-        </p>
+        <h2 className="mt-4 text-xl font-semibold text-foreground">{t("common.notFoundTitle")}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{t("common.notFoundText")}</p>
         <div className="mt-6">
           <Link
             to="/"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Voltar ao início
+            {t("common.backHome")}
           </Link>
         </div>
       </div>
@@ -36,9 +51,20 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+function NotFoundComponent() {
+  // O boundary pode ser renderizado fora do provider do layout: garante idioma
+  // e troca instantânea também na 404.
+  return (
+    <I18nProvider initialLocale={readLocaleCookie() ?? DEFAULT_LOCALE}>
+      <NotFoundContent />
+    </I18nProvider>
+  );
+}
+
+function ErrorContent({ error, reset }: { error: Error; reset: () => void }) {
+  const { t } = useI18n();
   const router = useRouter();
+
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
@@ -47,11 +73,9 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Esta página não carregou
+          {t("common.errorTitle")}
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Algo deu errado. Tente novamente ou volte para o início.
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{t("common.errorText")}</p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -60,13 +84,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Tentar novamente
+            {t("common.tryAgain")}
           </button>
           <a
             href="/"
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Voltar ao início
+            {t("common.backHome")}
           </a>
         </div>
       </div>
@@ -74,7 +98,24 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  console.error(error);
+
+  return (
+    <I18nProvider initialLocale={readLocaleCookie() ?? DEFAULT_LOCALE}>
+      <ErrorContent error={error} reset={reset} />
+    </I18nProvider>
+  );
+}
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  /**
+   * Idioma inicial resolvido no servidor (cookie da requisição) e no cliente
+   * (mesmo cookie em `document.cookie`). Assim o HTML do SSR e a hidratação
+   * usam o mesmo idioma: sem "flash" em português e sem erro de hidratação.
+   * Nunca lê o idioma do navegador.
+   */
+  beforeLoad: () => ({ initialLocale: resolveInitialLocale() }),
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -109,8 +150,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  // Mesmo valor do provider (cookie) para o `<html lang>` já sair correto no
+  // SSR, sem depender do efeito que roda depois da hidratação.
+  const locale = resolveInitialLocale();
+
   return (
-    <html lang="en">
+    <html lang={LOCALE_META[locale]?.intl ?? LOCALE_META[DEFAULT_LOCALE].intl}>
       <head>
         <HeadContent />
       </head>
@@ -123,13 +168,15 @@ function RootShell({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+  const { queryClient, initialLocale } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-      <Toaster position="top-center" richColors />
+      <I18nProvider initialLocale={initialLocale}>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <Toaster position="top-center" richColors />
+      </I18nProvider>
     </QueryClientProvider>
   );
 }

@@ -158,8 +158,8 @@ test("checkout por WhatsApp continua existindo no catálogo público", () => {
   assert.match(source, /buildWhatsappMessage/);
   assert.match(source, /whatsappLink/);
   assert.match(source, /openWhatsapp/);
-  // Fallback quando o backend não registra o pedido.
-  assert.match(source, /Vamos continuar pelo WhatsApp/);
+  // Fallback quando o backend não registra o pedido (texto agora traduzido).
+  assert.match(source, /whatsappFallback/);
 });
 
 test("métodos de pagamento e entrega da Etapa 1 continuam declarados", () => {

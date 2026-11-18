@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { supabase, getSupabaseError } from "@/integrations/supabase/client";
 import { CartIcon } from "@/components/CartIcons";
 import { useAuth } from "@/hooks/useAuth";
+import { LanguageSelector, useI18n, type MessageKey } from "@/i18n";
 import {
   buildWhatsappMessage,
   finalPrice,
@@ -23,12 +24,7 @@ import {
   type ShippingQuote,
   type CustomerAddress,
 } from "@/lib/catalog";
-import {
-  formatMoney,
-  fromMinorUnits,
-  resolveStoreCurrency,
-  toMinorUnits,
-} from "@/lib/currency";
+import { formatMoney, fromMinorUnits, resolveStoreCurrency, toMinorUnits } from "@/lib/currency";
 import { quoteShipping } from "@/lib/shipping";
 import {
   createPayment,
@@ -69,9 +65,7 @@ export const Route = createFileRoute("/c/$slug")({
         { property: "og:title", content: catalog?.store_name || title },
         { property: "og:description", content: description },
         { property: "og:type", content: "website" },
-        ...(ogImage
-          ? [{ property: "og:image", content: ogImage }]
-          : []),
+        ...(ogImage ? [{ property: "og:image", content: ogImage }] : []),
         { name: "twitter:card", content: ogImage ? "summary_large_image" : "summary" },
       ],
     };
@@ -94,7 +88,50 @@ type CartItem = {
   height_cm?: number | null;
 };
 
-const filters = ["Todos", "Novidades", "Mais vendidos", "Promoções"] as const;
+/**
+ * Filtros fixos da vitrine.
+ *
+ * `id` é o valor interno usado no estado (não muda com o idioma); `key` é a
+ * chave de tradução resolvida no render.
+ */
+const FILTERS: { id: string; key: MessageKey }[] = [
+  { id: "all", key: "catalog.filters.all" },
+  { id: "new", key: "catalog.filters.new" },
+  { id: "bestsellers", key: "catalog.filters.bestsellers" },
+  { id: "sales", key: "catalog.filters.sales" },
+];
+
+/** Rótulos do sistema das formas de entrega (o valor gravado no banco não muda). */
+const DELIVERY_LABEL_KEYS: Record<string, MessageKey> = {
+  local_pickup: "catalog.deliveryMethods.localPickup",
+  local_delivery: "catalog.deliveryMethods.localDelivery",
+  melhor_envio: "catalog.deliveryMethods.melhorEnvio",
+};
+
+/** Rótulos do sistema das formas de pagamento. */
+const PAYMENT_LABEL_KEYS: Record<string, MessageKey> = {
+  pix: "catalog.paymentMethods.pix",
+  credit_card: "catalog.paymentMethods.creditCard",
+  debit_card: "catalog.paymentMethods.debitCard",
+  pix_auto: "catalog.paymentMethods.pixAuto",
+  cash: "catalog.paymentMethods.cash",
+};
+
+type Translate = (key: MessageKey, values?: Record<string, string | number>) => string;
+
+/** Rótulo traduzido de uma forma de entrega; cai no rótulo original se desconhecida. */
+function deliveryMethodLabel(key: string, t: Translate, fallback?: string | undefined) {
+  const labelKey = DELIVERY_LABEL_KEYS[key];
+  if (labelKey) return t(labelKey);
+  return fallback ?? DELIVERY_METHODS.find((d) => d.key === key)?.label ?? key;
+}
+
+/** Rótulo traduzido de uma forma de pagamento; cai no rótulo original se desconhecida. */
+function paymentMethodLabel(key: string, t: Translate, fallback?: string | undefined) {
+  const labelKey = PAYMENT_LABEL_KEYS[key];
+  if (labelKey) return t(labelKey);
+  return fallback ?? PAYMENT_METHODS.find((m) => m.key === key)?.label ?? key;
+}
 
 const LOGO_SIZES: Record<string, string> = {
   pequena: "size-12",
@@ -142,7 +179,16 @@ function clearPendingPayment() {
 function PublicCatalog() {
   const { slug } = Route.useParams();
   const { user } = useAuth();
-  const [filter, setFilter] = useState<string>("Todos");
+  const { t, tp } = useI18n();
+  /**
+   * O efeito de retorno do pagamento tem `[]` como dependência (não pode
+   * reiniciar quando o idioma muda), então lê sempre o `t` mais recente.
+   */
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+  const [filter, setFilter] = useState<string>("all");
   const [selected, setSelected] = useState<Product | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -154,13 +200,17 @@ function PublicCatalog() {
   });
   const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(null);
 
-  const { data, isLoading, error: queryError } = useQuery({
+  const {
+    data,
+    isLoading,
+    error: queryError,
+  } = useQuery({
     queryKey: ["public-catalog", slug],
     queryFn: async () => {
       const connError = getSupabaseError();
       if (connError) {
         console.error("[catalog] supabase init error:", connError);
-        throw new Error("Não foi possível conectar ao servidor. Verifique a configuração do Supabase.");
+        throw new Error(t("catalog.errors.supabaseConfig"));
       }
 
       const { data: catalog, error } = await supabase
@@ -184,11 +234,7 @@ function PublicCatalog() {
           .eq("catalog_id", catalog.id)
           .order("position")
           .order("created_at"),
-        supabase
-          .from("banners")
-          .select("*")
-          .eq("catalog_id", catalog.id)
-          .order("position"),
+        supabase.from("banners").select("*").eq("catalog_id", catalog.id).order("position"),
       ]);
       return {
         catalog: catalog as unknown as Catalog,
@@ -230,9 +276,12 @@ function PublicCatalog() {
           /* ignore */
         }
       })
-      .then(() => {}, () => {
-        /* silent */
-      });
+      .then(
+        () => {},
+        () => {
+          /* silent */
+        },
+      );
   }, [catalog, user]);
 
   useEffect(() => {
@@ -248,7 +297,10 @@ function PublicCatalog() {
       el.setAttribute("content", content);
     };
     setMeta("og:title", catalog.store_name);
-    setMeta("og:description", catalog.store_description || `Catálogo ${catalog.store_name} — Vitrine Criativa`);
+    setMeta(
+      "og:description",
+      catalog.store_description || `Catálogo ${catalog.store_name} — Vitrine Criativa`,
+    );
     if (ogImage) setMeta("og:image", ogImage);
     document.title = `${catalog.store_name} — Vitrine Criativa`;
     return () => {
@@ -309,13 +361,13 @@ function PublicCatalog() {
       if (res.success && res.settled) {
         clearPendingPayment();
         setPaymentReturn({ status: "settled", provider });
-        toast.success("Pagamento confirmado! A loja já foi avisada.");
+        toast.success(tRef.current("catalog.toast.paymentConfirmed"));
         return;
       }
       if (res.success && res.failed) {
         clearPendingPayment();
         setPaymentReturn({ status: "failed", provider });
-        toast.error("O pagamento não foi concluído. Você pode refazer o pedido.");
+        toast.error(tRef.current("catalog.toast.paymentFailed"));
         return;
       }
       if (attempts >= 10) {
@@ -354,10 +406,11 @@ function PublicCatalog() {
 
   const products = useMemo(() => {
     const all = data?.products ?? [];
-    if (filter === "Todos") return all;
-    if (filter === "Novidades") return all.filter((p) => p.is_new);
-    if (filter === "Mais vendidos") return all.filter((p) => p.is_bestseller);
-    if (filter === "Promoções") return all.filter((p) => p.sale_price != null && p.sale_price > 0);
+    // `filter` guarda o id interno do filtro (ou o id da categoria), nunca o texto.
+    if (filter === "all") return all;
+    if (filter === "new") return all.filter((p) => p.is_new);
+    if (filter === "bestsellers") return all.filter((p) => p.is_bestseller);
+    if (filter === "sales") return all.filter((p) => p.sale_price != null && p.sale_price > 0);
     return all.filter((p) => p.category_id === filter);
   }, [data, filter]);
 
@@ -376,20 +429,23 @@ function PublicCatalog() {
   );
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const addToCart = useCallback((item: CartItem) => {
-    setCart((prev) => {
-      const existing = prev.find((i) => i.key === item.key);
-      if (existing) {
-        return prev.map((i) =>
-          i.key === item.key ? { ...i, quantity: i.quantity + item.quantity } : i,
-        );
-      }
-      return [...prev, item];
-    });
-    setCartBump((b) => b + 1);
-    setSelected(null);
-    toast.success("Adicionado ao carrinho");
-  }, []);
+  const addToCart = useCallback(
+    (item: CartItem) => {
+      setCart((prev) => {
+        const existing = prev.find((i) => i.key === item.key);
+        if (existing) {
+          return prev.map((i) =>
+            i.key === item.key ? { ...i, quantity: i.quantity + item.quantity } : i,
+          );
+        }
+        return [...prev, item];
+      });
+      setCartBump((b) => b + 1);
+      setSelected(null);
+      toast.success(t("catalog.toast.addedToCart"));
+    },
+    [t],
+  );
 
   const changeQty = useCallback((key: string, delta: number) => {
     setCart((prev) =>
@@ -421,60 +477,82 @@ function PublicCatalog() {
       // Com pagamento online o WhatsApp não é obrigatório; sem ele, continua
       // sendo o canal de finalização (fluxo original preservado).
       if (!payment && !catalog.whatsapp) {
-        toast.error("Esta loja ainda não cadastrou o WhatsApp.");
+        toast.error(t("catalog.errors.storeWithoutWhatsapp"));
         return false;
       }
       if (!customerName.trim()) {
-        toast.error("Informe seu nome para continuar.");
+        toast.error(t("catalog.errors.nameRequired"));
         return false;
       }
 
       const customerLine = customerName.trim()
-        ? `Cliente: ${customerName.trim()}${customerPhone.trim() ? ` | Tel: ${customerPhone.trim()}` : ""}${note.trim() ? `\nObs: ${note.trim()}` : ""}`
+        ? `${t("catalog.whatsapp.customerLabel")}: ${customerName.trim()}${customerPhone.trim() ? ` | ${t("catalog.whatsapp.phoneLabel")}: ${customerPhone.trim()}` : ""}${note.trim() ? `\n${t("catalog.whatsapp.noteLabel")}: ${note.trim()}` : ""}`
         : note.trim() || undefined;
       const shipAddress = shipping.address;
       const localShippingCost = Math.max(0, Number(shipping.shippingCost ?? 0));
 
       /** Mensagem do WhatsApp montada localmente (também usada no fallback). */
       const buildMessage = (subtotalValue: number, totalValue: number, shippingValue: number) =>
-        buildWhatsappMessage({
-          storeName: catalog.store_name,
-          currency,
-          items: cart.map((i) => ({
-            name: i.name,
-            quantity: i.quantity,
-            unitPrice: i.unitPrice,
-            variation: i.variation,
-          })),
-          subtotal: subtotalValue,
-          total: totalValue,
-          shipping: {
-            ...(shipping.deliveryMethod ? { deliveryMethod: shipping.deliveryMethod } : {}),
-            ...(shipping.quote?.name ? { serviceName: shipping.quote.name } : {}),
-            ...(shippingValue ? { cost: shippingValue } : {}),
-            ...(shipping.quote?.delivery_text
-              ? { etaText: shipping.quote.delivery_text }
-              : shipping.deliveryMethod === "local_delivery"
-                ? { etaText: "Combino a data com você" }
+        buildWhatsappMessage(
+          {
+            storeName: catalog.store_name,
+            currency,
+            items: cart.map((i) => ({
+              name: i.name,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+              variation: i.variation,
+            })),
+            subtotal: subtotalValue,
+            total: totalValue,
+            shipping: {
+              ...(shipping.deliveryMethod ? { deliveryMethod: shipping.deliveryMethod } : {}),
+              ...(shipping.quote?.name ? { serviceName: shipping.quote.name } : {}),
+              ...(shippingValue ? { cost: shippingValue } : {}),
+              ...(shipping.quote?.delivery_text
+                ? { etaText: shipping.quote.delivery_text }
+                : shipping.deliveryMethod === "local_delivery"
+                  ? { etaText: t("catalog.whatsapp.localDeliveryEta") }
+                  : {}),
+              ...(shipAddress
+                ? {
+                    address: {
+                      street: shipAddress.street,
+                      number: shipAddress.number,
+                      complement: shipAddress.complement,
+                      district: shipAddress.district,
+                      city: shipAddress.city,
+                      state: shipAddress.state,
+                      ...(shipping.shippingZip
+                        ? { zip: shipping.shippingZip.replace(/\D/g, "") }
+                        : {}),
+                    },
+                  }
                 : {}),
-            ...(shipAddress
-              ? {
-                  address: {
-                    street: shipAddress.street,
-                    number: shipAddress.number,
-                    complement: shipAddress.complement,
-                    district: shipAddress.district,
-                    city: shipAddress.city,
-                    state: shipAddress.state,
-                    ...(shipping.shippingZip
-                      ? { zip: shipping.shippingZip.replace(/\D/g, "") }
-                      : {}),
-                  },
-                }
-              : {}),
+            },
+            note: customerLine,
           },
-          note: customerLine,
-        });
+          {
+            intro: t("catalog.whatsapp.message.intro"),
+            product: t("catalog.whatsapp.message.product"),
+            variation: t("catalog.whatsapp.message.variation"),
+            quantity: t("catalog.whatsapp.message.quantity"),
+            unitPrice: t("catalog.whatsapp.message.unitPrice"),
+            subtotal: t("catalog.whatsapp.message.subtotal"),
+            shippingDelivery: t("catalog.whatsapp.message.shippingDelivery"),
+            service: t("catalog.whatsapp.message.service"),
+            shippingCost: t("catalog.whatsapp.message.shippingCost"),
+            estimatedDelivery: t("catalog.whatsapp.message.estimatedDelivery"),
+            address: t("catalog.whatsapp.message.address"),
+            zip: t("catalog.whatsapp.message.zip"),
+            pickup: t("catalog.whatsapp.message.pickup"),
+            localDeliveryEta: t("catalog.whatsapp.message.localDeliveryEta"),
+            localDelivery: t("catalog.whatsapp.message.localDelivery"),
+            orderTotal: t("catalog.whatsapp.message.orderTotal"),
+            shippingIncluded: t("catalog.whatsapp.message.shippingIncluded"),
+            closing: t("catalog.whatsapp.message.closing"),
+          },
+        );
 
       const openWhatsapp = (message: string) => {
         const url = whatsappLink(catalog.whatsapp!, message);
@@ -516,9 +594,7 @@ function PublicCatalog() {
       });
 
       if (!created.success || !created.order_id) {
-        const reason = String(
-          created.error || "Não foi possível registrar o pedido. Tente novamente.",
-        );
+        const reason = String(created.error || t("catalog.errors.orderNotRegistered"));
         /**
          * Fallback do WhatsApp (auditoria A5).
          *
@@ -528,10 +604,9 @@ function PublicCatalog() {
          * precisa cadastrá-lo manualmente.
          */
         if (catalog.whatsapp) {
-          toast.warning(
-            `${reason} Vamos continuar pelo WhatsApp — avise a loja de que o pedido não apareceu no painel.`,
-            { duration: 12_000 },
-          );
+          toast.warning(t("catalog.errors.whatsappFallback", { reason }), {
+            duration: 12_000,
+          });
           const localTotal = fromMinorUnits(
             toMinorUnits(total, currency) + toMinorUnits(localShippingCost, currency),
             currency,
@@ -562,13 +637,9 @@ function PublicCatalog() {
         });
 
         if (!paid.success || !paid.checkout_url) {
-          toast.error(
-            String(
-              paid.error ||
-                "O pedido foi registrado, mas não foi possível abrir o pagamento. Fale com a loja.",
-            ),
-            { duration: 9000 },
-          );
+          toast.error(String(paid.error || t("catalog.errors.paymentOpenFailed")), {
+            duration: 9000,
+          });
           return false;
         }
 
@@ -606,7 +677,7 @@ function PublicCatalog() {
       setCartOpen(false);
       return true;
     },
-    [catalog, cart, currency, total],
+    [catalog, cart, currency, t, total],
   );
 
   if (isLoading) {
@@ -620,9 +691,7 @@ function PublicCatalog() {
   if (queryError) {
     return (
       <div className="app-shell grid place-items-center px-6 text-center">
-        <p className="text-sm text-muted-foreground">
-          Não foi possível carregar o catálogo. Tente novamente mais tarde.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("catalog.errors.loadCatalog")}</p>
         <p className="mt-4 w-full max-w-md break-all rounded-xl bg-muted p-3 text-xs text-muted-foreground">
           {queryError.message}
         </p>
@@ -633,7 +702,7 @@ function PublicCatalog() {
   if (!data) {
     return (
       <div className="app-shell grid place-items-center px-6 text-center">
-        <p className="text-sm text-muted-foreground">Catálogo não encontrado.</p>
+        <p className="text-sm text-muted-foreground">{t("catalog.errors.catalogNotFound")}</p>
       </div>
     );
   }
@@ -664,7 +733,7 @@ function PublicCatalog() {
 
   const paymentProviderLabel = paymentReturn?.provider
     ? PROVIDER_LABELS[paymentReturn.provider]
-    : "provedor";
+    : t("catalog.paymentReturn.providerFallback");
 
   if (!entered) {
     return (
@@ -680,8 +749,17 @@ function PublicCatalog() {
 
   return (
     <div className="app-shell pb-28" style={{ ...theme, backgroundColor: bgColor }}>
+      {/* Seletor de idioma: barra fixa no topo direito, sobre a capa e sem
+          bloquear cliques (o wrapper não captura eventos). */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-end px-4 pt-3">
+        <div className="pointer-events-auto">
+          <LanguageSelector align="end" />
+        </div>
+      </div>
+      {/* Aviso de retorno do pagamento: `pt-12` mantém o texto abaixo do
+          seletor de idioma fixo no topo. */}
       {paymentReturn && (
-        <div className="px-5 pt-4">
+        <div className="px-5 pt-12">
           <div
             className={`rounded-xl border px-4 py-3 text-sm ${
               paymentReturn.status === "settled"
@@ -698,23 +776,15 @@ function PublicCatalog() {
             {paymentReturn.status === "checking" && (
               <span className="flex items-center gap-2">
                 <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-                Confirmando seu pagamento no {paymentProviderLabel}...
+                {t("catalog.paymentReturn.checking", { provider: paymentProviderLabel })}
               </span>
             )}
             {paymentReturn.status === "settled" && (
-              <span>Pagamento confirmado! A loja já foi avisada e vai preparar seu pedido.</span>
+              <span>{t("catalog.paymentReturn.settled")}</span>
             )}
-            {paymentReturn.status === "failed" && (
-              <span>
-                O pagamento não foi concluído. Seus itens continuam no carrinho — você pode
-                tentar novamente.
-              </span>
-            )}
+            {paymentReturn.status === "failed" && <span>{t("catalog.paymentReturn.failed")}</span>}
             {paymentReturn.status === "pending" && (
-              <span>
-                Ainda não recebemos a confirmação do {paymentProviderLabel}. Assim que o
-                pagamento for aprovado a loja será avisada — não é preciso pagar de novo.
-              </span>
+              <span>{t("catalog.paymentReturn.pending", { provider: paymentProviderLabel })}</span>
             )}
           </div>
         </div>
@@ -732,10 +802,7 @@ function PublicCatalog() {
           <div className="cover-glass h-full w-full" />
         </div>
         <div className="px-5">
-          <div
-            className="-mt-10 flex items-end gap-3"
-            style={{ justifyContent: logoJustify }}
-          >
+          <div className="-mt-10 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
             <div
               className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
               style={{ backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}
@@ -764,9 +831,11 @@ function PublicCatalog() {
               className="size-5"
               color={loadedCatalog.primary_color ?? "#8b5cf6"}
             />
-            <span className="text-sm text-muted-foreground">Carrinho</span>
+            <span className="text-sm text-muted-foreground">{t("catalog.header.cart")}</span>
           </div>
-          <p className="mt-1 text-center text-sm text-muted-foreground">Peça pelo WhatsApp, sem criar conta.</p>
+          <p className="mt-1 text-center text-sm text-muted-foreground">
+            {t("catalog.header.orderHint")}
+          </p>
         </div>
       </header>
 
@@ -780,13 +849,15 @@ function PublicCatalog() {
       )}
 
       <nav className="no-scrollbar mt-5 flex gap-2 overflow-x-auto px-5">
-        {[...filters, ...categories.map((c) => c.name)].map((label, i) => {
-          const value = i < filters.length ? label : categories[i - filters.length]!.id;
-          const active = filter === value;
+        {[
+          ...FILTERS.map((f) => ({ id: f.id, label: t(f.key) })),
+          ...categories.map((c) => ({ id: c.id, label: c.name })),
+        ].map(({ id, label }) => {
+          const active = filter === id;
           return (
             <button
-              key={label + i}
-              onClick={() => setFilter(value)}
+              key={id}
+              onClick={() => setFilter(id)}
               className="shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition"
               style={
                 active
@@ -810,7 +881,7 @@ function PublicCatalog() {
       <section className="mt-5 grid grid-cols-3 gap-2 px-5">
         {products.length === 0 && (
           <p className="col-span-2 rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Nenhum produto nesta seção.
+            {t("catalog.filters.empty")}
           </p>
         )}
         {products.map((product) => (
@@ -833,7 +904,10 @@ function PublicCatalog() {
                 <p className="line-clamp-2 text-xs font-semibold text-foreground">{product.name}</p>
                 <p className="mt-0.5 text-xs">
                   {product.price_options && product.price_options.length > 0 ? (
-                    <span className="font-bold" style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}>
+                    <span
+                      className="font-bold"
+                      style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}
+                    >
                       {product.price_options.length === 1
                         ? money(product.price_options[0]!.price)
                         : `${money(Math.min(...product.price_options.map((o) => o.price)))} – ${money(Math.max(...product.price_options.map((o) => o.price)))}`}
@@ -843,7 +917,10 @@ function PublicCatalog() {
                       <span className="text-xs text-muted-foreground line-through">
                         {money(Number(product.price))}
                       </span>{" "}
-                      <span className="font-bold" style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}>
+                      <span
+                        className="font-bold"
+                        style={{ color: loadedCatalog.primary_color ?? "#8b5cf6" }}
+                      >
                         {money(Number(product.sale_price))}
                       </span>
                     </>
@@ -862,7 +939,7 @@ function PublicCatalog() {
                 className="btn-shimmer btn-elevated w-full rounded-lg py-1.5 text-xs font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
                 style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
               >
-                {product.available ? "+ Adicionar" : "Esgotado"}
+                {product.available ? t("catalog.product.add") : t("catalog.product.soldOut")}
               </button>
             </div>
           </article>
@@ -874,16 +951,22 @@ function PublicCatalog() {
         <section className="mt-8 px-5">
           <h2
             className="text-lg font-bold text-center"
-            style={{ fontFamily: getFontFamily(loadedCatalog.store_font ?? "moderna"), color: primary }}
+            style={{
+              fontFamily: getFontFamily(loadedCatalog.store_font ?? "moderna"),
+              color: primary,
+            }}
           >
-            Formas de pagamento
+            {t("catalog.paymentMethods.title")}
           </h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {(paymentMethods ?? []).map((m) => (
               <div
                 key={m.provider}
                 className="flex items-center gap-3 rounded-2xl border p-4"
-                style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
+                style={{
+                  borderColor: `${primary}20`,
+                  backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent,
+                }}
               >
                 <div
                   className="flex size-9 items-center justify-center rounded-full text-xs font-bold"
@@ -898,7 +981,10 @@ function PublicCatalog() {
               <div
                 key={m.key}
                 className="flex items-center gap-3 rounded-2xl border p-4"
-                style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
+                style={{
+                  borderColor: `${primary}20`,
+                  backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent,
+                }}
               >
                 <div
                   className="flex size-9 items-center justify-center rounded-full text-base"
@@ -910,7 +996,9 @@ function PublicCatalog() {
                   {m.key === "pix_auto" && "🔄"}
                   {m.key === "cash" && "💵"}
                 </div>
-                <span className="text-sm font-medium text-foreground">{m.label}</span>
+                <span className="text-sm font-medium text-foreground">
+                  {paymentMethodLabel(m.key, t, m.label)}
+                </span>
               </div>
             ))}
           </div>
@@ -925,9 +1013,7 @@ function PublicCatalog() {
           style={{ background: loadedCatalog.primary_color ?? "#8b5cf6" }}
         >
           <CartIcon style={loadedCatalog.cart_style ?? "carrinho"} className="size-5" />
-          <span className="text-sm font-semibold">
-            {count} {count === 1 ? "item" : "itens"}
-          </span>
+          <span className="text-sm font-semibold">{tp("common.itemsCount", count)}</span>
           <span className="font-bold">{money(total)}</span>
         </button>
       )}
@@ -949,7 +1035,9 @@ function PublicCatalog() {
           total={total}
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
           currency={currency}
-          deliveryMethods={Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []}
+          deliveryMethods={
+            Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []
+          }
           paymentMethods={paymentMethods ?? []}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
@@ -961,12 +1049,15 @@ function PublicCatalog() {
       {/* Botão flutuante WhatsApp */}
       {loadedCatalog.whatsapp && !isOwner && (
         <a
-          href={whatsappLink(loadedCatalog.whatsapp, `Olá! Vim pelo catálogo ${loadedCatalog.store_name}`)}
+          href={whatsappLink(
+            loadedCatalog.whatsapp,
+            t("catalog.whatsapp.helloStore", { store: loadedCatalog.store_name }),
+          )}
           target="_blank"
           rel="noopener noreferrer"
           className="whatsapp-float fixed bottom-6 right-6 z-40 grid size-14 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
           style={{ background: whatsappColor }}
-          aria-label="Falar no WhatsApp"
+          aria-label={t("catalog.whatsapp.contactStore")}
         >
           <svg viewBox="0 0 24 24" fill="currentColor" className="size-7">
             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
@@ -981,7 +1072,7 @@ function PublicCatalog() {
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <LayoutGrid className="size-4" />
-            Voltar ao início
+            {t("catalog.footer.backHome")}
           </button>
         </div>
       </nav>
@@ -1000,6 +1091,7 @@ function BannerCarousel({
   interval: number;
   indicators: boolean;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -1046,7 +1138,10 @@ function BannerCarousel({
   }
 
   function handleTouchEnd(e: React.TouchEvent) {
-    if (!touchRef.current) { setPaused(false); return; }
+    if (!touchRef.current) {
+      setPaused(false);
+      return;
+    }
     const dx = e.changedTouches[0]!.clientX - touchRef.current.x;
     const dy = e.changedTouches[0]!.clientY - touchRef.current.y;
     touchRef.current = null;
@@ -1109,14 +1204,14 @@ function BannerCarousel({
             <button
               onClick={() => scrollToIdx(activeIdx > 0 ? activeIdx - 1 : banners.length - 1)}
               className="absolute left-2 top-1/2 -translate-y-1/2 grid size-8 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
-              aria-label="Banner anterior"
+              aria-label={t("catalog.banner.previous")}
             >
               <ChevronLeft className="size-4" />
             </button>
             <button
               onClick={() => scrollToIdx(activeIdx < banners.length - 1 ? activeIdx + 1 : 0)}
               className="absolute right-2 top-1/2 -translate-y-1/2 grid size-8 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
-              aria-label="Próximo banner"
+              aria-label={t("catalog.banner.next")}
             >
               <ChevronLeft className="size-4 rotate-180" />
             </button>
@@ -1132,10 +1227,9 @@ function BannerCarousel({
               onClick={() => scrollToIdx(i)}
               className="inline-block size-2 rounded-full transition-colors"
               style={{
-                backgroundColor:
-                  i === activeIdx ? "var(--shop-primary)" : "var(--color-border)",
+                backgroundColor: i === activeIdx ? "var(--shop-primary)" : "var(--color-border)",
               }}
-              aria-label={`Banner ${i + 1}`}
+              aria-label={t("catalog.banner.goTo", { index: i + 1 })}
             />
           ))}
         </div>
@@ -1157,6 +1251,7 @@ function ProductSheet({
   onClose: () => void;
   onAdd: (item: CartItem) => void;
 }) {
+  const { t } = useI18n();
   const money = (value: number) => formatMoney(value, currency);
   const [quantity, setQuantity] = useState(1);
   const [choices, setChoices] = useState<Record<string, string>>({});
@@ -1168,7 +1263,7 @@ function ProductSheet({
   const hasPriceOptions = (product.price_options?.length ?? 0) > 0;
 
   const activePriceOption = hasPriceOptions
-    ? product.price_options.find((o) => o.id === selectedPriceOption) ?? null
+    ? (product.price_options.find((o) => o.id === selectedPriceOption) ?? null)
     : null;
   const price = activePriceOption ? activePriceOption.price : finalPrice(product);
 
@@ -1181,16 +1276,18 @@ function ProductSheet({
 
   function handleAdd() {
     if (hasPriceOptions && !activePriceOption) {
-      toast.error("Escolha uma opção de valor");
+      toast.error(t("catalog.product.priceChoiceRequired"));
       return;
     }
     const missing = (product.variations ?? []).find((g) => g.options.length && !choices[g.name]);
     if (missing) {
-      toast.error(`Escolha: ${missing.name}`);
+      toast.error(t("catalog.product.variationRequired", { name: missing.name }));
       return;
     }
     const variation = [
-      activePriceOption ? `Valor: ${activePriceOption.label}` : "",
+      activePriceOption
+        ? t("catalog.product.priceOptionPrefix", { label: activePriceOption.label })
+        : "",
       ...Object.entries(choices).map(([k, v]) => `${k}: ${v}`),
     ]
       .filter(Boolean)
@@ -1238,9 +1335,7 @@ function ProductSheet({
                 </div>
               </button>
             ))}
-            {images.length === 0 && (
-              <div className="aspect-square max-h-[45vh] w-full bg-muted" />
-            )}
+            {images.length === 0 && <div className="aspect-square max-h-[45vh] w-full bg-muted" />}
           </div>
 
           {/* Position indicator */}
@@ -1253,7 +1348,7 @@ function ProductSheet({
           {/* Back button */}
           <button
             onClick={onClose}
-            aria-label="Voltar"
+            aria-label={t("common.back")}
             className="absolute left-4 top-4 grid size-10 place-items-center rounded-full bg-background/90"
           >
             <ChevronLeft className="size-5" />
@@ -1278,7 +1373,9 @@ function ProductSheet({
 
           {hasPriceOptions && (
             <div className="mt-5">
-              <p className="text-sm font-semibold text-foreground">Escolha o valor</p>
+              <p className="text-sm font-semibold text-foreground">
+                {t("catalog.product.priceChoice")}
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {product.price_options.map((opt) => {
                   const active = selectedPriceOption === opt.id;
@@ -1327,13 +1424,19 @@ function ProductSheet({
           ))}
 
           <div className="mt-6 flex items-center gap-4">
-            <span className="text-sm font-semibold text-foreground">Quantidade</span>
+            <span className="text-sm font-semibold text-foreground">{t("common.quantity")}</span>
             <div className="flex items-center gap-3 rounded-full border border-border px-3 py-1.5">
-              <button onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Diminuir">
+              <button
+                onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                aria-label={t("catalog.product.decrease")}
+              >
                 <Minus className="size-4" />
               </button>
               <span className="w-6 text-center font-semibold">{quantity}</span>
-              <button onClick={() => setQuantity(quantity + 1)} aria-label="Aumentar">
+              <button
+                onClick={() => setQuantity(quantity + 1)}
+                aria-label={t("catalog.product.increase")}
+              >
                 <Plus className="size-4" />
               </button>
             </div>
@@ -1348,8 +1451,8 @@ function ProductSheet({
             style={{ background: primary }}
           >
             {product.available
-              ? `Adicionar • ${money(price * quantity)}`
-              : "Produto esgotado"}
+              ? t("catalog.product.addWithPrice", { price: money(price * quantity) })
+              : t("catalog.product.soldOutTitle")}
           </button>
         </div>
       </div>
@@ -1362,7 +1465,7 @@ function ProductSheet({
         >
           <button
             onClick={() => setZoomUrl(null)}
-            aria-label="Fechar"
+            aria-label={t("common.close")}
             className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/20 text-white backdrop-blur-sm"
           >
             <X className="size-5" />
@@ -1415,6 +1518,7 @@ function CartSheet({
     payment: { provider: PaymentProviderKey } | null,
   ) => Promise<boolean>;
 }) {
+  const { t } = useI18n();
   const money = (value: number) => formatMoney(value, currency);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -1440,8 +1544,7 @@ function CartSheet({
 
   const subtotal = total;
   const selected = quotes.find((q) => q.serviceId === selectedQuote) ?? null;
-  const shippingCost =
-    deliveryMethod === "melhor_envio" ? selected?.price ?? 0 : 0;
+  const shippingCost = deliveryMethod === "melhor_envio" ? (selected?.price ?? 0) : 0;
   const grandTotal = fromMinorUnits(
     toMinorUnits(subtotal, currency) + toMinorUnits(shippingCost, currency),
     currency,
@@ -1457,16 +1560,14 @@ function CartSheet({
 
   async function handleQuote() {
     if (!isValidCep(cep)) {
-      toast.error("Informe um CEP válido.");
+      toast.error(t("catalog.shippingErrors.invalidCep"));
       return;
     }
     const physical = items.filter((i) => i.product_type !== "digital");
     if (physical.length === 0) {
       setQuotes([]);
       setSelectedQuote("");
-      setQuoteMsg(
-        "Seus produtos são digitais e não necessitam de envio físico.",
-      );
+      setQuoteMsg(t("catalog.shippingErrors.digitalOnly"));
       return;
     }
     setQuoting(true);
@@ -1517,25 +1618,24 @@ function CartSheet({
     } else {
       setQuoteMsg(
         res.error === "not_connected"
-          ? "Esta loja ainda não ativou o envio por Correios e transportadoras."
+          ? t("catalog.shippingErrors.notConnected")
           : res.error === "needs_reconnect"
-            ? res.message ??
-              "Esta loja precisa reconectar o envio. Avise a loja para o frete voltar a funcionar."
+            ? (res.message ?? t("catalog.shippingErrors.needsReconnect"))
             : res.error === "no_origin"
-            ? res.message ??
-              "A loja ainda não configurou o endereço (CEP de origem) do remetente. Peça à loja para completar os dados do remetente no painel."
-            : res.error === "products_no_dimensions"
-              ? res.message ??
-                "A loja ainda não cadastrou peso e dimensões de alguns produtos físicos."
-              : res.error === "no_options"
-                ? res.coverage_message
-                  ? `${res.coverage_message} Não conseguimos encontrar opções para este CEP no momento.`
-                  : "Não encontramos opções de entrega para este CEP no momento. Verifique o CEP e tente novamente."
-                : res.error && res.error.length > 60
-                  ? res.error
-                  : res.error && res.error !== "no_options"
+              ? (res.message ?? t("catalog.shippingErrors.noOrigin"))
+              : res.error === "products_no_dimensions"
+                ? (res.message ?? t("catalog.shippingErrors.noDimensions"))
+                : res.error === "no_options"
+                  ? res.coverage_message
+                    ? t("catalog.shippingErrors.noOptionsWithCoverage", {
+                        coverage: res.coverage_message,
+                      })
+                    : t("catalog.shippingErrors.noOptionsRetry")
+                  : res.error && res.error.length > 60
                     ? res.error
-                    : "Não encontramos opções de entrega para este CEP no momento. Confira se o CEP está correto e tente novamente.",
+                    : res.error && res.error !== "no_options"
+                      ? res.error
+                      : t("catalog.shippingErrors.noOptionsCheck"),
       );
     }
   }
@@ -1550,7 +1650,7 @@ function CartSheet({
       if (!res.ok) return;
       const data = await res.json();
       if (data.erro) {
-        if (autoFill) toast.error("CEP não encontrado.");
+        if (autoFill) toast.error(t("catalog.shippingErrors.cepNotFound"));
         return;
       }
       if (autoFill) {
@@ -1617,7 +1717,7 @@ function CartSheet({
     // Trava anti-duplo clique: evita dois pedidos iguais.
     if (submitting) return;
     if (!customerName.trim()) {
-      toast.error("Informe seu nome para continuar.");
+      toast.error(t("catalog.errors.nameRequired"));
       return;
     }
     if (hasMelhorEnvio && deliveryMethod === "melhor_envio") {
@@ -1633,17 +1733,15 @@ function CartSheet({
         return;
       }
       if (!isValidCep(cep)) {
-        toast.error("Informe seu CEP para calcular o frete.");
+        toast.error(t("catalog.shippingErrors.cepRequired"));
         return;
       }
       if (quotes.length === 0) {
-        toast.error(
-          "Não encontramos opções de envio para este CEP. Verifique o CEP ou tente novamente.",
-        );
+        toast.error(t("catalog.shippingErrors.noOptionsFinish"));
         return;
       }
       if (!selected) {
-        toast.error("Escolha uma modalidade de entrega.");
+        toast.error(t("catalog.shippingErrors.chooseMethod"));
         return;
       }
     }
@@ -1660,10 +1758,10 @@ function CartSheet({
     <div className="fixed inset-0 z-50 flex justify-center bg-foreground/40 md:items-center md:p-6">
       <div className="flex h-full w-full max-w-[30rem] flex-col rounded-t-3xl bg-background shadow-xl md:h-auto md:max-h-[calc(100dvh-3rem)] md:max-w-[34rem] md:rounded-2xl">
         <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-5 py-4">
-          <h2 className="truncate text-lg font-bold text-foreground">Seu carrinho</h2>
+          <h2 className="truncate text-lg font-bold text-foreground">{t("catalog.cart.title")}</h2>
           <button
             onClick={onClose}
-            aria-label="Fechar"
+            aria-label={t("common.close")}
             className="grid size-9 shrink-0 place-items-center rounded-full border border-border"
           >
             <X className="size-4" />
@@ -1672,7 +1770,9 @@ function CartSheet({
 
         <div className="space-y-3 px-5 pt-5 pb-0">
           {items.length === 0 && (
-            <p className="py-10 text-center text-sm text-muted-foreground">Carrinho vazio.</p>
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {t("catalog.cart.empty")}
+            </p>
           )}
           {items.map((item) => (
             <div key={item.key} className="flex gap-3 rounded-2xl border border-border bg-card p-3">
@@ -1691,17 +1791,23 @@ function CartSheet({
                 </p>
                 <div className="mt-2 flex items-center gap-3">
                   <div className="flex items-center gap-3 rounded-full border border-border px-3 py-1">
-                    <button onClick={() => onChangeQty(item.key, -1)} aria-label="Diminuir">
+                    <button
+                      onClick={() => onChangeQty(item.key, -1)}
+                      aria-label={t("catalog.product.decrease")}
+                    >
                       <Minus className="size-3.5" />
                     </button>
                     <span className="w-5 text-center text-sm font-semibold">{item.quantity}</span>
-                    <button onClick={() => onChangeQty(item.key, 1)} aria-label="Aumentar">
+                    <button
+                      onClick={() => onChangeQty(item.key, 1)}
+                      aria-label={t("catalog.product.increase")}
+                    >
                       <Plus className="size-3.5" />
                     </button>
                   </div>
                   <button
                     onClick={() => onRemove(item.key)}
-                    aria-label="Excluir item"
+                    aria-label={t("catalog.cart.removeItem")}
                     className="text-destructive"
                   >
                     <Trash2 className="size-4" />
@@ -1718,7 +1824,7 @@ function CartSheet({
               {deliveryMethods.length > 1 && (
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-foreground">
-                    Como você quer receber seu pedido?
+                    {t("catalog.cart.deliveryQuestion")}
                   </label>
                   <div className="grid grid-cols-1 gap-2">
                     {deliveryMethods.map((m) => {
@@ -1735,7 +1841,7 @@ function CartSheet({
                           }`}
                         >
                           <span className="text-lg">{meta?.icon ?? "📦"}</span>
-                          {meta?.label ?? (m === "melhor_envio" ? "Envio" : m)}
+                          {deliveryMethodLabel(m, t, meta?.label)}
                         </button>
                       );
                     })}
@@ -1747,24 +1853,20 @@ function CartSheet({
                   <span className="text-lg">
                     {DELIVERY_METHODS.find((d) => d.key === deliveryMethod)?.icon ?? "📦"}
                   </span>
-                  {DELIVERY_METHODS.find((d) => d.key === deliveryMethod)?.label ?? deliveryMethod}
+                  {deliveryMethodLabel(deliveryMethod, t)}
                 </div>
               )}
 
               {deliveryMethod === "melhor_envio" && !hasPhysical && (
-                <p className="text-xs text-muted-foreground">
-                  Seus produtos são digitais e não necessitam de envio físico.
-                </p>
+                <p className="text-xs text-muted-foreground">{t("catalog.cart.digitalNotice")}</p>
               )}
 
               {deliveryMethod === "melhor_envio" && hasPhysical && (
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-foreground">
-                    CEP para entrega <span className="text-destructive">*</span>
+                    {t("catalog.cart.cepLabel")} <span className="text-destructive">*</span>
                   </label>
-                  <p className="text-xs text-muted-foreground">
-                    Digite seu CEP para ver o frete + total na hora.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t("catalog.cart.cepHint")}</p>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -1785,13 +1887,12 @@ function CartSheet({
                       {quoting ? (
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
-                        "Calcular frete"
-                      )}                    </button>
+                        t("catalog.cart.calculateShipping")
+                      )}
+                    </button>
                   </div>
 
-                  {quoteMsg && (
-                    <p className="text-xs text-muted-foreground">{quoteMsg}</p>
-                  )}
+                  {quoteMsg && <p className="text-xs text-muted-foreground">{quoteMsg}</p>}
 
                   {quotes.length > 0 && (
                     <div className="grid grid-cols-1 gap-2 pt-1">
@@ -1830,16 +1931,17 @@ function CartSheet({
                 </div>
               )}
 
-              {(deliveryMethod === "melhor_envio" ||
-                deliveryMethod === "local_delivery") && (
+              {(deliveryMethod === "melhor_envio" || deliveryMethod === "local_delivery") && (
                 <div className="space-y-2 border-t border-dashed border-border pt-3">
-                  <p className="text-sm font-semibold text-foreground">Endereço de entrega</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {t("catalog.cart.addressTitle")}
+                  </p>
                   <div>
                     <input
                       type="text"
                       value={address.street}
                       onChange={(e) => setAddress((p) => ({ ...p, street: e.target.value }))}
-                      placeholder="Rua / Logradouro"
+                      placeholder={t("catalog.cart.street")}
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                   </div>
@@ -1848,14 +1950,14 @@ function CartSheet({
                       type="text"
                       value={address.number}
                       onChange={(e) => setAddress((p) => ({ ...p, number: e.target.value }))}
-                      placeholder="Número"
+                      placeholder={t("catalog.cart.number")}
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                     <input
                       type="text"
                       value={address.complement}
                       onChange={(e) => setAddress((p) => ({ ...p, complement: e.target.value }))}
-                      placeholder="Complemento"
+                      placeholder={t("catalog.cart.complement")}
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                   </div>
@@ -1864,7 +1966,7 @@ function CartSheet({
                       type="text"
                       value={address.district}
                       onChange={(e) => setAddress((p) => ({ ...p, district: e.target.value }))}
-                      placeholder="Bairro"
+                      placeholder={t("catalog.cart.district")}
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                   </div>
@@ -1873,14 +1975,14 @@ function CartSheet({
                       type="text"
                       value={address.city}
                       onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
-                      placeholder="Cidade"
+                      placeholder={t("catalog.cart.city")}
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
                     <input
                       type="text"
                       value={address.state}
                       onChange={(e) => setAddress((p) => ({ ...p, state: e.target.value }))}
-                      placeholder="UF"
+                      placeholder={t("catalog.cart.state")}
                       maxLength={2}
                       className="w-16 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
@@ -1890,38 +1992,38 @@ function CartSheet({
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-foreground">
-                  Seu nome <span className="text-destructive">*</span>
+                  {t("catalog.cart.nameLabel")} <span className="text-destructive">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Ex: Maria"
+                  placeholder={t("catalog.cart.namePlaceholder")}
                   className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-semibold text-foreground">
-                  WhatsApp (opcional)
+                  {t("catalog.cart.phoneLabel")}
                 </label>
                 <input
                   type="tel"
                   inputMode="numeric"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="DDD + número"
+                  placeholder={t("catalog.cart.phonePlaceholder")}
                   className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-semibold text-foreground">
-                  Observação (opcional)
+                  {t("catalog.cart.noteLabel")}
                 </label>
                 <textarea
                   value={observation}
                   onChange={(e) => setObservation(e.target.value)}
-                  placeholder="Alguma preferência ou informação extra..."
+                  placeholder={t("catalog.cart.notePlaceholder")}
                   rows={2}
                   className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
@@ -1930,7 +2032,7 @@ function CartSheet({
               {paymentMethods.length > 0 && (
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-foreground">
-                    Como você quer pagar?
+                    {t("catalog.cart.paymentQuestion")}
                   </label>
                   <div className="grid grid-cols-1 gap-2">
                     <button
@@ -1944,9 +2046,9 @@ function CartSheet({
                     >
                       <span className="text-lg">💬</span>
                       <span>
-                        Combinar com a loja
+                        {t("catalog.cart.payWithStore")}
                         <span className="block text-xs font-normal text-muted-foreground">
-                          Pedido enviado pelo WhatsApp
+                          {t("catalog.cart.payWithStoreHint")}
                         </span>
                       </span>
                     </button>
@@ -1965,15 +2067,14 @@ function CartSheet({
                         <span>
                           {method.label}
                           <span className="block text-xs font-normal text-muted-foreground">
-                            Pagamento online em {method.currency}
+                            {t("catalog.cart.payOnlineIn", { currency: method.currency })}
                           </span>
                         </span>
                       </button>
                     ))}
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    O pagamento é confirmado automaticamente pelo provedor. Você será levado para a
-                    página segura do provedor para concluir.
+                    {t("catalog.cart.paymentNotice")}
                   </p>
                 </div>
               )}
@@ -1983,17 +2084,19 @@ function CartSheet({
 
         <div className="shrink-0 space-y-3 border-t border-border px-5 py-4">
           <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>Subtotal</span>
+            <span>{t("common.subtotal")}</span>
             <span>{money(subtotal)}</span>
           </div>
           {deliveryMethod === "melhor_envio" && (
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Frete {selected ? `(${selected.name})` : ""}</span>
+              <span>
+                {t("catalog.cart.shipping")} {selected ? `(${selected.name})` : ""}
+              </span>
               <span>{shippingCost > 0 ? money(shippingCost) : "—"}</span>
             </div>
           )}
           <div className="flex items-center justify-between text-base font-bold text-foreground">
-            <span>Total</span>
+            <span>{t("common.total")}</span>
             <span>{money(grandTotal)}</span>
           </div>
           <button
@@ -2005,11 +2108,13 @@ function CartSheet({
             {submitting && <Loader2 className="size-4 animate-spin" />}
             {submitting
               ? paymentProvider
-                ? "Abrindo pagamento..."
-                : "Registrando pedido..."
+                ? t("catalog.cart.openingPayment")
+                : t("catalog.cart.submittingOrder")
               : paymentProvider
-                ? `Pagar com ${paymentProvider === "paypal" ? "PayPal" : "Mercado Pago"}`
-                : "Finalizar pedido pelo WhatsApp"}
+                ? t("catalog.cart.payWith", {
+                    provider: paymentProvider === "paypal" ? "PayPal" : "Mercado Pago",
+                  })
+                : t("catalog.cart.finishWhatsapp")}
           </button>
         </div>
       </div>
@@ -2032,6 +2137,7 @@ function WelcomePage({
   logoJustify: string;
   onEnter: () => void;
 }) {
+  const { t } = useI18n();
   const primary = catalog.primary_color ?? "#8b5cf6";
   const accent = catalog.accent_color ?? "#f3eefc";
   const bgColor = catalog.background_color ?? "#FFFFFF";
@@ -2039,10 +2145,17 @@ function WelcomePage({
   const activePayments = Array.isArray(catalog.payment_methods)
     ? PAYMENT_METHODS.filter((m) => (catalog.payment_methods as string[]).includes(m.key))
     : [];
-  const hasOwnerInfo = catalog.owner_photo_url || catalog.owner_name || catalog.owner_bio || catalog.owner_hours;
+  const hasOwnerInfo =
+    catalog.owner_photo_url || catalog.owner_name || catalog.owner_bio || catalog.owner_hours;
 
   return (
     <div className="app-shell pb-20" style={{ ...theme, backgroundColor: bgColor }}>
+      {/* Seletor de idioma: disponível já na capa, antes de entrar no catálogo. */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-end px-4 pt-3">
+        <div className="pointer-events-auto">
+          <LanguageSelector align="end" />
+        </div>
+      </div>
       {/* ── Cover + Logo + Name ── */}
       <header className="relative">
         <div
@@ -2055,10 +2168,7 @@ function WelcomePage({
           <div className="cover-glass h-full w-full" />
         </div>
         <div className="px-5">
-          <div
-            className="-mt-12 flex items-end gap-3"
-            style={{ justifyContent: logoJustify }}
-          >
+          <div className="-mt-12 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
             <div
               className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
               style={{ backgroundColor: accent }}
@@ -2087,12 +2197,8 @@ function WelcomePage({
             </p>
           )}
           <div className="mt-3 flex items-center justify-center gap-2">
-            <CartIcon
-              style={catalog.cart_style ?? "carrinho"}
-              className="size-5"
-              color={primary}
-            />
-            <span className="text-sm text-muted-foreground">Carrinho</span>
+            <CartIcon style={catalog.cart_style ?? "carrinho"} className="size-5" color={primary} />
+            <span className="text-sm text-muted-foreground">{t("catalog.header.cart")}</span>
           </div>
         </div>
       </header>
@@ -2104,7 +2210,7 @@ function WelcomePage({
           className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
           style={{ background: primary }}
         >
-          ENTRAR PARA VER CATÁLOGO
+          {t("catalog.welcome.enter")}
         </button>
       </div>
 
@@ -2120,7 +2226,7 @@ function WelcomePage({
             <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
               <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
             </svg>
-            Siga no Instagram
+            {t("catalog.welcome.followInstagram")}
           </a>
         </div>
       )}
@@ -2129,7 +2235,10 @@ function WelcomePage({
       {catalog.whatsapp && (
         <div className="px-5 mt-3">
           <a
-            href={whatsappLink(catalog.whatsapp, `Olá! Vim pelo catálogo ${catalog.store_name}`)}
+            href={whatsappLink(
+              catalog.whatsapp,
+              t("catalog.whatsapp.helloStore", { store: catalog.store_name }),
+            )}
             target="_blank"
             rel="noopener noreferrer"
             className="btn-shimmer btn-elevated flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-semibold text-white transition-transform hover:scale-[1.02]"
@@ -2138,7 +2247,7 @@ function WelcomePage({
             <svg viewBox="0 0 24 24" fill="currentColor" className="size-5">
               <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
             </svg>
-            Falar no WhatsApp
+            {t("catalog.whatsapp.contactStore")}
           </a>
         </div>
       )}
@@ -2149,9 +2258,9 @@ function WelcomePage({
           className="text-lg font-bold text-center"
           style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
         >
-          Como funciona
+          {t("catalog.welcome.howItWorks")}
         </h2>
-          <div className="mt-4 space-y-3">
+        <div className="mt-4 space-y-3">
           <div
             className="flex items-start gap-4 rounded-2xl border p-4"
             style={{
@@ -2166,9 +2275,9 @@ function WelcomePage({
               1
             </div>
             <div>
-              <p className="font-semibold text-foreground">Escolha seu pedido</p>
+              <p className="font-semibold text-foreground">{t("catalog.welcome.step1Title")}</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Entre no catálogo e escolha os produtos que deseja comprar.
+                {t("catalog.welcome.step1Text")}
               </p>
             </div>
           </div>
@@ -2186,9 +2295,9 @@ function WelcomePage({
               2
             </div>
             <div>
-              <p className="font-semibold text-foreground">Envie pelo WhatsApp</p>
+              <p className="font-semibold text-foreground">{t("catalog.welcome.step2Title")}</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Abra o carrinho e selecione a opção para enviar o pedido diretamente pelo WhatsApp da loja.
+                {t("catalog.welcome.step2Text")}
               </p>
             </div>
           </div>
@@ -2202,14 +2311,17 @@ function WelcomePage({
             className="text-lg font-bold text-center"
             style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
           >
-            Formas de pagamento
+            {t("catalog.paymentMethods.title")}
           </h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {activePayments.map((m) => (
               <div
                 key={m.key}
                 className="flex items-center gap-3 rounded-2xl border p-4"
-                style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
+                style={{
+                  borderColor: `${primary}20`,
+                  backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent,
+                }}
               >
                 <div
                   className="flex size-9 items-center justify-center rounded-full text-base"
@@ -2221,7 +2333,9 @@ function WelcomePage({
                   {m.key === "pix_auto" && "🔄"}
                   {m.key === "cash" && "💵"}
                 </div>
-                <span className="text-sm font-medium text-foreground">{m.label}</span>
+                <span className="text-sm font-medium text-foreground">
+                  {paymentMethodLabel(m.key, t, m.label)}
+                </span>
               </div>
             ))}
           </div>
@@ -2235,16 +2349,19 @@ function WelcomePage({
             className="text-lg font-bold text-center"
             style={{ fontFamily: getFontFamily(catalog.store_font ?? "moderna"), color: primary }}
           >
-            Sobre a loja
+            {t("catalog.welcome.about")}
           </h2>
           <div
             className="mt-4 flex flex-col items-center gap-4 rounded-2xl border p-5 text-center"
-            style={{ borderColor: `${primary}20`, backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent }}
+            style={{
+              borderColor: `${primary}20`,
+              backgroundColor: bgColor === "#FFFFFF" || !bgColor ? `${primary}06` : accent,
+            }}
           >
             {catalog.owner_photo_url && (
               <img
                 src={catalog.owner_photo_url}
-                alt={catalog.owner_name ?? "Dona da loja"}
+                alt={catalog.owner_name ?? t("catalog.welcome.ownerPhotoAlt")}
                 className="size-20 rounded-full border-3 object-cover"
                 style={{ borderColor: primary }}
               />
@@ -2255,16 +2372,20 @@ function WelcomePage({
               </p>
             )}
             {catalog.owner_bio && (
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {catalog.owner_bio}
-              </p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{catalog.owner_bio}</p>
             )}
             {catalog.owner_hours && (
               <div
                 className="mt-1 flex items-center gap-2 rounded-xl px-4 py-2 text-sm text-muted-foreground"
                 style={{ background: `${primary}0A` }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4 shrink-0">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="size-4 shrink-0"
+                >
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12 6 12 12 16 14" />
                 </svg>
@@ -2278,12 +2399,15 @@ function WelcomePage({
       {/* ── WhatsApp floating (always on welcome) ── */}
       {catalog.whatsapp && (
         <a
-          href={whatsappLink(catalog.whatsapp, `Olá! Vim pelo catálogo ${catalog.store_name}`)}
+          href={whatsappLink(
+            catalog.whatsapp,
+            t("catalog.whatsapp.helloStore", { store: catalog.store_name }),
+          )}
           target="_blank"
           rel="noopener noreferrer"
           className="whatsapp-float fixed bottom-6 right-6 z-40 grid size-14 place-items-center rounded-full text-white shadow-lg transition-transform hover:scale-110 active:scale-95"
           style={{ background: whatsappColor }}
-          aria-label="Falar no WhatsApp"
+          aria-label={t("catalog.whatsapp.contactStore")}
         >
           <svg viewBox="0 0 24 24" fill="currentColor" className="size-7">
             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
@@ -2298,7 +2422,7 @@ function WelcomePage({
             className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
           >
             <LayoutGrid className="size-4" />
-            Voltar ao início
+            {t("catalog.footer.backHome")}
           </Link>
         </div>
       </nav>

@@ -3,6 +3,7 @@ import { Check, ChevronDown, Search, X } from "lucide-react";
 
 import { CURRENCIES, getCurrency, searchCurrencies, type CurrencyDef } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 type CurrencyPickerProps = {
   value: string;
@@ -30,6 +31,8 @@ function CurrencyRow({
   unavailable: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <button
       type="button"
@@ -47,8 +50,8 @@ function CurrencyRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-foreground">{def.name}</span>
         <span className="block truncate text-[11px] text-muted-foreground">
-          {def.symbol} · {def.countries[0] ?? "Internacional"}
-          {unavailable ? " · sem cotação agora" : ""}
+          {def.symbol} · {def.countries[0] ?? t("forms.currencyPicker.international")}
+          {unavailable ? ` · ${t("forms.currencyPicker.noRate")}` : ""}
         </span>
       </span>
       {selected && <Check className="size-4 shrink-0 text-primary" />}
@@ -67,6 +70,7 @@ export function CurrencyPicker({
   id,
   className,
 }: CurrencyPickerProps) {
+  const { t, tp } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -115,15 +119,17 @@ export function CurrencyPicker({
           className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 sm:items-center"
           role="dialog"
           aria-modal="true"
-          aria-label="Escolher moeda"
+          aria-label={t("forms.currencyPicker.dialogTitle")}
         >
           <div className="flex max-h-[85vh] w-full max-w-[30rem] flex-col overflow-hidden rounded-t-3xl bg-background sm:rounded-3xl">
             <div className="flex items-center justify-between px-5 pb-2 pt-4">
-              <p className="text-base font-bold text-foreground">Escolher moeda</p>
+              <p className="text-base font-bold text-foreground">
+                {t("forms.currencyPicker.dialogTitle")}
+              </p>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                aria-label="Fechar"
+                aria-label={t("forms.currencyPicker.close")}
                 className="grid size-9 place-items-center rounded-full bg-muted text-muted-foreground"
               >
                 <X className="size-4" />
@@ -137,19 +143,21 @@ export function CurrencyPicker({
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Nome, código (ISO) ou país"
+                  placeholder={t("forms.currencyPicker.searchPlaceholder")}
                   className="w-full bg-transparent py-3 text-sm outline-none"
                 />
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                {results.length} de {CURRENCIES.length} moedas
+                {tp("forms.currencyPicker.results", results.length, {
+                  total: CURRENCIES.length,
+                })}
               </p>
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 pb-6">
               {results.length === 0 && (
                 <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  Nenhuma moeda encontrada.
+                  {t("forms.currencyPicker.empty")}
                 </p>
               )}
               {results.map((def) => (

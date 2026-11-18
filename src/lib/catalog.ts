@@ -212,7 +212,10 @@ export function formatBRL(value: number) {
  * Formata um valor na moeda da loja. Mantém `formatBRL` para
  * retrocompatibilidade, mas todo código novo deve usar `formatMoney`.
  */
-export function formatCatalogMoney(value: number, catalog: { currency?: string | null } | null | undefined) {
+export function formatCatalogMoney(
+  value: number,
+  catalog: { currency?: string | null } | null | undefined,
+) {
   return formatMoney(Number.isFinite(value) ? value : 0, resolveStoreCurrency(catalog?.currency));
 }
 
@@ -263,90 +266,153 @@ export async function uploadImage(file: File, userId: string) {
   return data.signedUrl;
 }
 
-export function buildWhatsappMessage(opts: {
-  storeName: string;
-  items: { name: string; quantity: number; unitPrice: number; variation?: string | undefined }[];
-  total: number;
-  /** Moeda da loja (ISO 4217). Padrão: BRL. */
-  currency?: string | null;
-  note?: string | undefined;
-  shipping?: {
-    deliveryMethod?: string;
-    serviceName?: string;
-    cost?: number;
-    etaText?: string;
-    address?: {
-      street?: string;
-      number?: string;
-      complement?: string;
-      district?: string;
-      city?: string;
-      state?: string;
-      zip?: string;
-      recipient?: string;
-    };
-  } | undefined;
-  subtotal?: number | undefined;
-}) {
-  const lines: string[] = ["Olá! Gostaria de fazer este pedido pelo seu catálogo:", ""];
+/**
+ * Rótulos do texto fixo da mensagem de pedido enviada ao WhatsApp.
+ *
+ * A mensagem é montada pelo sistema (nomes de produtos, valores e dados do
+ * vendedor continuam intactos); apenas esses rótulos mudam com o idioma.
+ */
+export type WhatsappMessageLabels = {
+  intro: string;
+  product: string;
+  variation: string;
+  quantity: string;
+  unitPrice: string;
+  subtotal: string;
+  shippingDelivery: string;
+  service: string;
+  shippingCost: string;
+  estimatedDelivery: string;
+  address: string;
+  zip: string;
+  pickup: string;
+  /** Usa `{{eta}}` para o prazo informado pela loja. */
+  localDeliveryEta: string;
+  localDelivery: string;
+  orderTotal: string;
+  shippingIncluded: string;
+  closing: string;
+};
+
+/** Rótulos em português (comportamento original, usado como padrão). */
+export const DEFAULT_WHATSAPP_LABELS: WhatsappMessageLabels = {
+  intro: "Olá! Gostaria de fazer este pedido pelo seu catálogo:",
+  product: "Produto",
+  variation: "Variação",
+  quantity: "Quantidade",
+  unitPrice: "Valor unitário",
+  subtotal: "Subtotal",
+  shippingDelivery: "📦 Entrega: Envio (Correios e transportadoras)",
+  service: "Modalidade",
+  shippingCost: "Frete",
+  estimatedDelivery: "Prazo estimado",
+  address: "Endereço",
+  zip: "CEP",
+  pickup: "🏪 Entrega: Retirada no local",
+  localDeliveryEta: "🛵 Entrega local: {{eta}}",
+  localDelivery: "🛵 Entrega: local",
+  orderTotal: "Total do pedido",
+  shippingIncluded: "(já incluso o valor do frete)",
+  closing: "Gostaria de finalizar meu pedido. \u{1F49C}",
+};
+
+export function buildWhatsappMessage(
+  opts: {
+    storeName: string;
+    items: { name: string; quantity: number; unitPrice: number; variation?: string | undefined }[];
+    total: number;
+    /** Moeda da loja (ISO 4217). Padrão: BRL. */
+    currency?: string | null;
+    note?: string | undefined;
+    shipping?:
+      | {
+          deliveryMethod?: string;
+          serviceName?: string;
+          cost?: number;
+          etaText?: string;
+          address?: {
+            street?: string;
+            number?: string;
+            complement?: string;
+            district?: string;
+            city?: string;
+            state?: string;
+            zip?: string;
+            recipient?: string;
+          };
+        }
+      | undefined;
+    subtotal?: number | undefined;
+  },
+  /** Rótulos traduzidos do texto fixo (padrão: português). */
+  labels?: Partial<WhatsappMessageLabels>,
+) {
+  const L = { ...DEFAULT_WHATSAPP_LABELS, ...(labels ?? {}) };
+  const lines: string[] = [L.intro, ""];
   const money = (value: number) => formatMoney(value, resolveStoreCurrency(opts.currency));
   for (const item of opts.items) {
-    lines.push(`Produto: ${item.name}`);
-    if (item.variation) lines.push(`Variação: ${item.variation}`);
-    lines.push(`Quantidade: ${item.quantity}`);
-    lines.push(`Valor unitário: ${money(item.unitPrice)}`);
-    lines.push(`Subtotal: ${money(item.unitPrice * item.quantity)}`);
+    lines.push(`${L.product}: ${item.name}`);
+    if (item.variation) lines.push(`${L.variation}: ${item.variation}`);
+    lines.push(`${L.quantity}: ${item.quantity}`);
+    lines.push(`${L.unitPrice}: ${money(item.unitPrice)}`);
+    lines.push(`${L.subtotal}: ${money(item.unitPrice * item.quantity)}`);
     lines.push("");
   }
   const subtotal =
-    opts.subtotal != null ? opts.subtotal : opts.items.reduce((s, it) => s + it.unitPrice * it.quantity, 0);
-  lines.push(`Subtotal: ${money(subtotal)}`);
+    opts.subtotal != null
+      ? opts.subtotal
+      : opts.items.reduce((s, it) => s + it.unitPrice * it.quantity, 0);
+  lines.push(`${L.subtotal}: ${money(subtotal)}`);
 
   const ship = opts.shipping;
   if (ship?.deliveryMethod === "melhor_envio") {
     lines.push("");
-    lines.push("📦 Entrega: Envio (Correios e transportadoras)");
-    if (ship.serviceName) lines.push(`Modalidade: ${ship.serviceName}`);
-    if (ship.cost != null) lines.push(`Frete: ${money(ship.cost)}`);
-    if (ship.etaText) lines.push(`Prazo estimado: ${ship.etaText}`);
+    lines.push(L.shippingDelivery);
+    if (ship.serviceName) lines.push(`${L.service}: ${ship.serviceName}`);
+    if (ship.cost != null) lines.push(`${L.shippingCost}: ${money(ship.cost)}`);
+    if (ship.etaText) lines.push(`${L.estimatedDelivery}: ${ship.etaText}`);
     const a = ship.address;
     if (a?.street || a?.city) {
       lines.push("");
-      lines.push("Endereço:");
+      lines.push(`${L.address}:`);
       if (a.recipient) lines.push(a.recipient);
-      lines.push(`${[a.street, a.number].filter(Boolean).join(", ")}${a.complement ? ` - ${a.complement}` : ""}`);
+      lines.push(
+        `${[a.street, a.number].filter(Boolean).join(", ")}${a.complement ? ` - ${a.complement}` : ""}`,
+      );
       lines.push([a.district, a.city, a.state].filter(Boolean).join(" - "));
-      if (a.zip) lines.push(`CEP: ${a.zip}`);
+      if (a.zip) lines.push(`${L.zip}: ${a.zip}`);
     }
   } else if (ship?.deliveryMethod === "local_pickup") {
     lines.push("");
-    lines.push("🏪 Entrega: Retirada no local");
+    lines.push(L.pickup);
   } else if (ship?.deliveryMethod === "local_delivery") {
-    if (ship?.etaText) lines.push(`🛵 Entrega local: ${ship.etaText}`);
-    else lines.push("🛵 Entrega: local");
-    if (ship?.cost != null) lines.push(`Frete: ${money(ship.cost)}`);
+    if (ship?.etaText) lines.push(L.localDeliveryEta.replace("{{eta}}", ship.etaText));
+    else lines.push(L.localDelivery);
+    if (ship?.cost != null) lines.push(`${L.shippingCost}: ${money(ship.cost)}`);
     const a = ship?.address;
     if (a?.street || a?.city) {
       lines.push("");
-      lines.push("Endereço:");
+      lines.push(`${L.address}:`);
       if (a.recipient) lines.push(a.recipient);
-      lines.push(`${[a.street, a.number].filter(Boolean).join(", ")}${a.complement ? ` - ${a.complement}` : ""}`);
+      lines.push(
+        `${[a.street, a.number].filter(Boolean).join(", ")}${a.complement ? ` - ${a.complement}` : ""}`,
+      );
       lines.push([a.district, a.city, a.state].filter(Boolean).join(" - "));
-      if (a.zip) lines.push(`CEP: ${a.zip}`);
+      if (a.zip) lines.push(`${L.zip}: ${a.zip}`);
     }
   }
 
   lines.push("");
-  lines.push(`Total do pedido: ${money(opts.total)}`);
+  lines.push(`${L.orderTotal}: ${money(opts.total)}`);
   if (ship?.cost != null && ship.cost > 0) {
-    lines.push("(já incluso o valor do frete)");
+    lines.push(L.shippingIncluded);
   }
   lines.push("");
   if (opts.note?.trim()) {
     lines.push(`${opts.note.trim()}`);
     lines.push("");
   }
-  lines.push("Gostaria de finalizar meu pedido. \u{1F49C}");
+  lines.push(L.closing);
   return lines.join("\n");
 }
 

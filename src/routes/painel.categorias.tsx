@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useCategories, useMyCatalog } from "@/hooks/useCatalog";
+import { useI18n } from "@/i18n";
 import type { Category } from "@/lib/catalog";
 
 export const Route = createFileRoute("/painel/categorias")({
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/painel/categorias")({
 });
 
 function CategoriasPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: catalog } = useMyCatalog(user?.id);
@@ -34,7 +36,7 @@ function CategoriasPage() {
     });
     setBusy(false);
     if (error) {
-      toast.error("Não foi possível criar a categoria.");
+      toast.error(t("categories.errors.createFailed"));
       return;
     }
     setName("");
@@ -43,7 +45,7 @@ function CategoriasPage() {
 
   async function remove(id: string) {
     const { error } = await supabase.from("categories").delete().eq("id", id);
-    if (error) toast.error("Erro ao excluir.");
+    if (error) toast.error(t("categories.errors.deleteFailed"));
     else void refresh();
   }
 
@@ -65,23 +67,21 @@ function CategoriasPage() {
 
   return (
     <div className="px-5 pb-10 pt-10">
-      <h1 className="text-2xl font-bold text-foreground">Categorias</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Organize seus produtos em grupos, como “Agendas” ou “Papelaria”.
-      </p>
+      <h1 className="text-2xl font-bold text-foreground">{t("categories.title")}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("categories.subtitle")}</p>
 
       <form onSubmit={addCategory} className="mt-6 flex gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Nome da categoria"
+          placeholder={t("categories.namePlaceholder")}
           className="min-w-0 flex-1 rounded-2xl border border-input bg-card px-4 py-3 text-base outline-none focus:border-primary"
         />
         <button
           type="submit"
           disabled={busy}
           className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground disabled:opacity-60"
-          aria-label="Adicionar categoria"
+          aria-label={t("categories.add")}
         >
           {busy ? <Loader2 className="size-5 animate-spin" /> : <Plus className="size-5" />}
         </button>
@@ -91,7 +91,7 @@ function CategoriasPage() {
         {isLoading && <Loader2 className="mx-auto size-5 animate-spin text-primary" />}
         {categories?.length === 0 && (
           <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            Nenhuma categoria ainda.
+            {t("categories.empty")}
           </p>
         )}
         {categories?.map((cat, index) => (
@@ -101,13 +101,13 @@ function CategoriasPage() {
           >
             <p className="truncate font-medium text-foreground">{cat.name}</p>
             <div className="flex shrink-0 items-center gap-1">
-              <IconBtn label="Subir" onClick={() => move(categories, index, -1)}>
+              <IconBtn label={t("categories.moveUp")} onClick={() => move(categories, index, -1)}>
                 <ArrowUp className="size-4" />
               </IconBtn>
-              <IconBtn label="Descer" onClick={() => move(categories, index, 1)}>
+              <IconBtn label={t("categories.moveDown")} onClick={() => move(categories, index, 1)}>
                 <ArrowDown className="size-4" />
               </IconBtn>
-              <IconBtn label="Excluir" onClick={() => remove(cat.id)} danger>
+              <IconBtn label={t("categories.delete")} onClick={() => remove(cat.id)} danger>
                 <Trash2 className="size-4" />
               </IconBtn>
             </div>
@@ -144,11 +144,10 @@ function IconBtn({
 }
 
 export function EmptyCatalog() {
+  const { t } = useI18n();
   return (
     <div className="px-5 pt-16 text-center">
-      <p className="text-sm text-muted-foreground">
-        Crie seu catálogo na aba Início antes de continuar.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("categories.emptyCatalog")}</p>
     </div>
   );
 }

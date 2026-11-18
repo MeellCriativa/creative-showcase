@@ -9,6 +9,7 @@ import { ImageUploader } from "@/components/ImageUploader";
 import { useAuth } from "@/hooks/useAuth";
 import { useCategories, useMyCatalog, useProducts } from "@/hooks/useCatalog";
 import { useMetaConnection, useMetaMappings } from "@/hooks/useMetaCatalog";
+import { useI18n } from "@/i18n";
 import { type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
 import { formatMoney, getCurrencySymbol, resolveStoreCurrency } from "@/lib/currency";
 import { EmptyCatalog } from "./painel.categorias";
@@ -57,6 +58,7 @@ const emptyDraft: Draft = {
 };
 
 function ProdutosPage() {
+  const { t, tp } = useI18n();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: catalog } = useMyCatalog(user?.id);
@@ -71,14 +73,15 @@ function ProdutosPage() {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["products", catalog?.id] });
 
-  const metaConnected = metaConn?.sync_status === "connected" || metaConn?.sync_status === "syncing";
+  const metaConnected =
+    metaConn?.sync_status === "connected" || metaConn?.sync_status === "syncing";
   const mappingsByProduct = new Map((metaMappings ?? []).map((m) => [m.product_id, m.sync_state]));
 
   if (!catalog || !user) return <EmptyCatalog />;
 
   async function remove(id: string) {
     const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) toast.error("Erro ao excluir produto.");
+    if (error) toast.error(t("products.errors.deleteFailed"));
     else void refresh();
   }
 
@@ -120,14 +123,16 @@ function ProdutosPage() {
     <div className="px-5 pb-10 pt-10">
       <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-bold text-foreground">Produtos</h1>
-          <p className="text-sm text-muted-foreground">{products?.length ?? 0} cadastrados</p>
+          <h1 className="truncate text-2xl font-bold text-foreground">{t("products.title")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {tp("products.count", products?.length ?? 0)}
+          </p>
         </div>
         <button
           onClick={() => setDraft({ ...emptyDraft })}
           className="flex shrink-0 items-center gap-1.5 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
         >
-          <Plus className="size-4" /> Novo
+          <Plus className="size-4" /> {t("products.newButton")}
         </button>
       </header>
 
@@ -135,83 +140,100 @@ function ProdutosPage() {
         {isLoading && <Loader2 className="mx-auto size-5 animate-spin text-primary" />}
         {products?.length === 0 && (
           <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Nenhum produto ainda. Toque em “Novo” para começar.
+            {t("products.empty", { action: t("products.newButton") })}
           </p>
         )}
-        {products?.map((product, index) => (
-          <article
-            key={product.id}
-            className="flex gap-3 rounded-2xl border border-border bg-card p-3"
-          >
-            <div className="size-16 shrink-0 overflow-hidden rounded-xl bg-muted">
-              {product.images?.[0] && (
-                <img src={product.images[0]} alt={product.name} className="h-full w-full object-cover" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <p className="truncate font-semibold text-foreground">{product.name}</p>
-                {metaConnected && (
-                  <span
-                    className={`inline-block size-2 shrink-0 rounded-full ${
-                      mappingsByProduct.get(product.id) === "synced"
-                        ? "bg-green-500"
-                        : mappingsByProduct.get(product.id) === "error"
-                          ? "bg-red-500"
-                          : mappingsByProduct.get(product.id) === "deleted"
-                            ? "bg-orange-400"
-                            : "bg-gray-300"
-                    }`}
-                    title={
-                      mappingsByProduct.get(product.id) === "synced"
-                        ? "Sincronizado"
-                        : mappingsByProduct.get(product.id) === "error"
-                          ? "Erro na sincronização"
-                          : mappingsByProduct.get(product.id) === "deleted"
-                            ? "Marcado para remoção"
-                            : "Pendente"
-                    }
+        {products?.map((product, index) => {
+          const syncState = mappingsByProduct.get(product.id);
+          const syncTitle =
+            syncState === "synced"
+              ? t("products.sync.synced")
+              : syncState === "error"
+                ? t("products.sync.error")
+                : syncState === "deleted"
+                  ? t("products.sync.deleted")
+                  : t("products.sync.pending");
+          return (
+            <article
+              key={product.id}
+              className="flex gap-3 rounded-2xl border border-border bg-card p-3"
+            >
+              <div className="size-16 shrink-0 overflow-hidden rounded-xl bg-muted">
+                {product.images?.[0] && (
+                  <img
+                    src={product.images[0]}
+                    alt={product.name}
+                    className="h-full w-full object-cover"
                   />
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">
-                {product.price_options && product.price_options.length > 0 ? (
-                  <span className="font-semibold text-primary">
-                    {product.price_options.map((o) => money(o.price)).join(" / ")}
-                  </span>
-                ) : product.sale_price ? (
-                  <>
-                    <span className="line-through">{money(Number(product.price))}</span>{" "}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="truncate font-semibold text-foreground">{product.name}</p>
+                  {metaConnected && (
+                    <span
+                      className={`inline-block size-2 shrink-0 rounded-full ${
+                        syncState === "synced"
+                          ? "bg-green-500"
+                          : syncState === "error"
+                            ? "bg-red-500"
+                            : syncState === "deleted"
+                              ? "bg-orange-400"
+                              : "bg-gray-300"
+                      }`}
+                      title={syncTitle}
+                    />
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {product.price_options && product.price_options.length > 0 ? (
                     <span className="font-semibold text-primary">
-                      {money(Number(product.sale_price))}
+                      {product.price_options.map((o) => money(o.price)).join(" / ")}
                     </span>
-                  </>
-                ) : (
-                  money(Number(product.price))
+                  ) : product.sale_price ? (
+                    <>
+                      <span className="line-through">{money(Number(product.price))}</span>{" "}
+                      <span className="font-semibold text-primary">
+                        {money(Number(product.sale_price))}
+                      </span>
+                    </>
+                  ) : (
+                    money(Number(product.price))
+                  )}
+                </p>
+                {!product.available && (
+                  <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                    {t("products.outOfStock")}
+                  </span>
                 )}
-              </p>
-              {!product.available && (
-                <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                  Esgotado
-                </span>
-              )}
-              <div className="mt-2 flex gap-1">
-                <SmallBtn label="Subir" onClick={() => move(products, index, -1)}>
-                  <ArrowUp className="size-3.5" />
-                </SmallBtn>
-                <SmallBtn label="Descer" onClick={() => move(products, index, 1)}>
-                  <ArrowDown className="size-3.5" />
-                </SmallBtn>
-                <SmallBtn label="Editar" onClick={() => edit(product)}>
-                  <Pencil className="size-3.5" />
-                </SmallBtn>
-                <SmallBtn label="Excluir" onClick={() => remove(product.id)} danger>
-                  <Trash2 className="size-3.5" />
-                </SmallBtn>
+                <div className="mt-2 flex gap-1">
+                  <SmallBtn
+                    label={t("products.actions.moveUp")}
+                    onClick={() => move(products, index, -1)}
+                  >
+                    <ArrowUp className="size-3.5" />
+                  </SmallBtn>
+                  <SmallBtn
+                    label={t("products.actions.moveDown")}
+                    onClick={() => move(products, index, 1)}
+                  >
+                    <ArrowDown className="size-3.5" />
+                  </SmallBtn>
+                  <SmallBtn label={t("products.actions.edit")} onClick={() => edit(product)}>
+                    <Pencil className="size-3.5" />
+                  </SmallBtn>
+                  <SmallBtn
+                    label={t("products.actions.delete")}
+                    onClick={() => remove(product.id)}
+                    danger
+                  >
+                    <Trash2 className="size-3.5" />
+                  </SmallBtn>
+                </div>
               </div>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
 
       {draft && (
@@ -278,6 +300,7 @@ function ProductEditor({
   onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const { t } = useI18n();
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft({ ...draft, [key]: value });
 
@@ -291,16 +314,14 @@ function ProductEditor({
     const isPhysical = draft.product_type !== "digital";
     if (isPhysical) {
       const dims = {
-        "peso (em gramas)": draft.weight_grams,
-        "comprimento (em cm)": draft.length_cm,
-        "largura (em cm)": draft.width_cm,
-        "altura (em cm)": draft.height_cm,
+        [t("products.validation.weightGrams")]: draft.weight_grams,
+        [t("products.validation.lengthCm")]: draft.length_cm,
+        [t("products.validation.widthCm")]: draft.width_cm,
+        [t("products.validation.heightCm")]: draft.height_cm,
       };
       const missing = Object.entries(dims).find(([, v]) => !String(v).trim());
       if (missing) {
-        toast.error(
-          `Produto físico precisa do campo: ${missing[0]}. Preencha para calcular o frete.`,
-        );
+        toast.error(t("products.errors.physicalMissingField", { field: missing[0] }));
         return;
       }
     }
@@ -319,20 +340,24 @@ function ProductEditor({
       is_new: draft.is_new,
       is_bestseller: draft.is_bestseller,
       product_type: isPhysical ? "fisico" : "digital",
-      weight_grams: isPhysical && draft.weight_grams ? Number(draft.weight_grams.replace(",", ".")) : null,
+      weight_grams:
+        isPhysical && draft.weight_grams ? Number(draft.weight_grams.replace(",", ".")) : null,
       length_cm: isPhysical && draft.length_cm ? Number(draft.length_cm.replace(",", ".")) : null,
       width_cm: isPhysical && draft.width_cm ? Number(draft.width_cm.replace(",", ".")) : null,
       height_cm: isPhysical && draft.height_cm ? Number(draft.height_cm.replace(",", ".")) : null,
     };
     const { error } = draft.id
-      ? await supabase.from("products").update(payload as any).eq("id", draft.id)
+      ? await supabase
+          .from("products")
+          .update(payload as any)
+          .eq("id", draft.id)
       : await supabase.from("products").insert({ ...payload, position: nextPosition } as any);
     setSaving(false);
     if (error) {
-      toast.error("Não foi possível salvar o produto.");
+      toast.error(t("products.errors.saveFailed"));
       return;
     }
-    toast.success("Produto salvo!");
+    toast.success(t("products.saved"));
     onSaved();
   }
 
@@ -341,11 +366,11 @@ function ProductEditor({
       <div className="mt-10 flex w-full max-w-[30rem] flex-col rounded-t-3xl bg-background">
         <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-5 py-4">
           <h2 className="truncate text-lg font-bold text-foreground">
-            {draft.id ? "Editar produto" : "Novo produto"}
+            {draft.id ? t("products.editor.titleEdit") : t("products.editor.titleNew")}
           </h2>
           <button
             onClick={() => setDraft(null)}
-            aria-label="Fechar"
+            aria-label={t("products.editor.close")}
             className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-muted-foreground"
           >
             <X className="size-4" />
@@ -354,28 +379,30 @@ function ProductEditor({
 
         <form onSubmit={save} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
           <div>
-            <label className="text-sm font-semibold text-foreground">Fotos</label>
+            <label className="text-sm font-semibold text-foreground">
+              {t("products.editor.photos")}
+            </label>
             <div className="mt-2">
               <ImageUploader
                 userId={userId}
                 value={draft.images}
                 onChange={(v) => set("images", v)}
                 max={30}
-                label="Foto"
+                label={t("products.editor.photo")}
               />
             </div>
           </div>
 
           <input
             required
-            placeholder="Nome do produto"
+            placeholder={t("products.editor.namePlaceholder")}
             value={draft.name}
             onChange={(e) => set("name", e.target.value)}
             className="input-base"
           />
 
           <textarea
-            placeholder="Descrição"
+            placeholder={t("products.editor.descriptionPlaceholder")}
             rows={3}
             value={draft.description}
             onChange={(e) => set("description", e.target.value)}
@@ -385,14 +412,14 @@ function ProductEditor({
           <div className="grid grid-cols-2 gap-3">
             <input
               inputMode="decimal"
-              placeholder={`Preço (${currency})`}
+              placeholder={t("products.editor.pricePlaceholder", { currency })}
               value={draft.price}
               onChange={(e) => set("price", e.target.value)}
               className="input-base"
             />
             <input
               inputMode="decimal"
-              placeholder={`Promocional (${currency})`}
+              placeholder={t("products.editor.salePricePlaceholder", { currency })}
               value={draft.sale_price}
               onChange={(e) => set("sale_price", e.target.value)}
               className="input-base"
@@ -401,17 +428,16 @@ function ProductEditor({
 
           <div className="rounded-2xl border border-border p-4">
             <p className="text-sm font-semibold text-foreground">
-              Valores do produto ({currency})
+              {t("products.editor.priceOptionsTitle", { currency })}
             </p>
             <p className="text-xs text-muted-foreground">
-              Adicione opções de preço (ex.: Mini {getCurrencySymbol(currency)}25, Médio{" "}
-              {getCurrencySymbol(currency)}35, Grande {getCurrencySymbol(currency)}50)
+              {t("products.editor.priceOptionsHint", { symbol: getCurrencySymbol(currency) })}
             </p>
             <div className="mt-3 space-y-2">
               {draft.price_options.map((opt, index) => (
                 <div key={opt.id} className="flex items-center gap-2">
                   <input
-                    placeholder="Nome (ex.: Mini)"
+                    placeholder={t("products.editor.optionNamePlaceholder")}
                     value={opt.label}
                     onChange={(e) => {
                       const next = draft.price_options.map((o, i) =>
@@ -423,7 +449,7 @@ function ProductEditor({
                   />
                   <input
                     inputMode="decimal"
-                    placeholder="Preço"
+                    placeholder={t("products.editor.optionPricePlaceholder")}
                     value={opt.price === 0 ? "" : String(opt.price)}
                     onChange={(e) => {
                       const val = Number(e.target.value.replace(",", ".")) || 0;
@@ -436,9 +462,12 @@ function ProductEditor({
                   />
                   <button
                     type="button"
-                    aria-label="Remover valor"
+                    aria-label={t("products.editor.removeOption")}
                     onClick={() =>
-                      set("price_options", draft.price_options.filter((_, i) => i !== index))
+                      set(
+                        "price_options",
+                        draft.price_options.filter((_, i) => i !== index),
+                      )
                     }
                     className="grid size-9 shrink-0 place-items-center rounded-xl border border-border text-destructive"
                   >
@@ -457,7 +486,7 @@ function ProductEditor({
               }
               className="mt-3 w-full rounded-xl border border-dashed border-border py-2.5 text-sm font-semibold text-muted-foreground"
             >
-              + Adicionar valor
+              {t("products.editor.addOption")}
             </button>
           </div>
 
@@ -466,7 +495,7 @@ function ProductEditor({
             onChange={(e) => set("category_id", e.target.value)}
             className="input-base"
           >
-            <option value="">Sem categoria</option>
+            <option value="">{t("products.editor.noCategory")}</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -475,7 +504,9 @@ function ProductEditor({
           </select>
 
           <div className="rounded-2xl border border-border p-4">
-            <p className="text-sm font-semibold text-foreground">Tipo de produto</p>
+            <p className="text-sm font-semibold text-foreground">
+              {t("products.editor.productType")}
+            </p>
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -486,7 +517,7 @@ function ProductEditor({
                     : "border-border bg-card text-muted-foreground"
                 }`}
               >
-                📦 Físico
+                {t("products.editor.physical")}
               </button>
               <button
                 type="button"
@@ -497,42 +528,42 @@ function ProductEditor({
                     : "border-border bg-card text-muted-foreground"
                 }`}
               >
-                ✨ Digital
+                {t("products.editor.digital")}
               </button>
             </div>
           </div>
 
           {draft.product_type !== "digital" && (
             <div className="rounded-2xl border border-border p-4">
-              <p className="text-sm font-semibold text-foreground">Dados de envio</p>
-              <p className="text-xs text-muted-foreground">
-                Usados para calcular o frete com Correios e transportadoras (via Melhor Envio).
+              <p className="text-sm font-semibold text-foreground">
+                {t("products.editor.shippingTitle")}
               </p>
+              <p className="text-xs text-muted-foreground">{t("products.editor.shippingHint")}</p>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <input
                   inputMode="decimal"
-                  placeholder="Peso (gramas)"
+                  placeholder={t("products.editor.weightPlaceholder")}
                   value={draft.weight_grams}
                   onChange={(e) => set("weight_grams", e.target.value)}
                   className="input-base"
                 />
                 <input
                   inputMode="decimal"
-                  placeholder="Comprimento (cm)"
+                  placeholder={t("products.editor.lengthPlaceholder")}
                   value={draft.length_cm}
                   onChange={(e) => set("length_cm", e.target.value)}
                   className="input-base"
                 />
                 <input
                   inputMode="decimal"
-                  placeholder="Largura (cm)"
+                  placeholder={t("products.editor.widthPlaceholder")}
                   value={draft.width_cm}
                   onChange={(e) => set("width_cm", e.target.value)}
                   className="input-base"
                 />
                 <input
                   inputMode="decimal"
-                  placeholder="Altura (cm)"
+                  placeholder={t("products.editor.heightPlaceholder")}
                   value={draft.height_cm}
                   onChange={(e) => set("height_cm", e.target.value)}
                   className="input-base"
@@ -542,21 +573,23 @@ function ProductEditor({
           )}
 
           <div className="rounded-2xl border border-border p-4">
-            <p className="text-sm font-semibold text-foreground">Variações</p>
-            <p className="text-xs text-muted-foreground">Tamanho, cor, modelo, sabor…</p>
+            <p className="text-sm font-semibold text-foreground">
+              {t("products.editor.variationsTitle")}
+            </p>
+            <p className="text-xs text-muted-foreground">{t("products.editor.variationsHint")}</p>
             <div className="mt-3 space-y-3">
               {draft.variations.map((group, index) => (
                 <div key={index} className="space-y-2 rounded-xl bg-muted/60 p-3">
                   <div className="flex gap-2">
                     <input
-                      placeholder="Tipo (ex.: Tamanho)"
+                      placeholder={t("products.editor.variationTypePlaceholder")}
                       value={group.name}
                       onChange={(e) => updateVariation(index, { name: e.target.value })}
                       className="input-base min-w-0 flex-1 py-2.5 text-sm"
                     />
                     <button
                       type="button"
-                      aria-label="Remover variação"
+                      aria-label={t("products.editor.removeVariation")}
                       onClick={() =>
                         set(
                           "variations",
@@ -569,7 +602,7 @@ function ProductEditor({
                     </button>
                   </div>
                   <input
-                    placeholder="Opções separadas por vírgula (P, M, G)"
+                    placeholder={t("products.editor.variationOptionsPlaceholder")}
                     value={group.options.join(", ")}
                     onChange={(e) =>
                       updateVariation(index, {
@@ -589,18 +622,22 @@ function ProductEditor({
               onClick={() => set("variations", [...draft.variations, { name: "", options: [] }])}
               className="mt-3 w-full rounded-xl border border-dashed border-border py-2.5 text-sm font-semibold text-muted-foreground"
             >
-              + Adicionar variação
+              {t("products.editor.addVariation")}
             </button>
           </div>
 
           <Toggle
-            label="Produto disponível"
+            label={t("products.editor.available")}
             checked={draft.available}
             onChange={(v) => set("available", v)}
           />
-          <Toggle label="Novidade" checked={draft.is_new} onChange={(v) => set("is_new", v)} />
           <Toggle
-            label="Mais vendido"
+            label={t("products.editor.isNew")}
+            checked={draft.is_new}
+            onChange={(v) => set("is_new", v)}
+          />
+          <Toggle
+            label={t("products.editor.bestseller")}
             checked={draft.is_bestseller}
             onChange={(v) => set("is_bestseller", v)}
           />
@@ -611,7 +648,7 @@ function ProductEditor({
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground disabled:opacity-60"
           >
             {saving && <Loader2 className="size-4 animate-spin" />}
-            Salvar produto
+            {t("products.editor.save")}
           </button>
         </form>
       </div>

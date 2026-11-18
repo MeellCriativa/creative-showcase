@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Heart, MessageCircle, Palette, ShoppingBag, Sparkles } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
+import { LanguageSelector, useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -22,40 +23,57 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const features = [
-  { icon: ShoppingBag, title: "Catálogo próprio", text: "Produtos, fotos, preços e variações." },
-  { icon: Palette, title: "Sua identidade", text: "Logo, capa e cores da sua marca." },
-  { icon: MessageCircle, title: "Pedido no zap", text: "Mensagem pronta, é só enviar." },
-];
-
 function Home() {
   const { session } = useAuth();
+  const { t } = useI18n();
+
+  const features = [
+    {
+      icon: ShoppingBag,
+      title: t("home.features.catalogTitle"),
+      text: t("home.features.catalogText"),
+    },
+    {
+      icon: Palette,
+      title: t("home.features.identityTitle"),
+      text: t("home.features.identityText"),
+    },
+    {
+      icon: MessageCircle,
+      title: t("home.features.whatsappTitle"),
+      text: t("home.features.whatsappText"),
+    },
+  ];
 
   return (
     <main className="app-shell relative overflow-hidden px-5 pb-14 pt-12">
       <div className="pointer-events-none absolute -left-24 -top-24 size-64 rounded-full bg-accent blur-3xl" />
 
+      <div className="relative flex items-center justify-end">
+        <LanguageSelector />
+      </div>
+
       <div className="relative">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-foreground">
-          <Sparkles className="size-3.5" /> feito para vender pelo celular
+          <Sparkles className="size-3.5" />
+          {t("home.badge")}
         </span>
 
         <h1 className="mt-5 text-[2.6rem] leading-[1.05] font-bold text-foreground">
-          Vitrine
+          {t("home.brandFirst")}
           <br />
-          <span className="text-primary">Criativa</span>
+          <span className="text-primary">{t("home.brandSecond")}</span>
         </h1>
 
         <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
-          Crie seu catálogo digital, personalize sua vitrine e compartilhe um único link. Seus
-          clientes escolhem os produtos e o pedido chega prontinho no seu WhatsApp.
+          {t("home.heroDescription")}
         </p>
 
         <Link
           to={session ? "/painel" : "/auth"}
           className="btn-float mt-7 flex w-full items-center justify-center gap-2 bg-primary px-5 py-4 text-base font-semibold text-primary-foreground"
         >
-          {session ? "Ir para o meu painel" : "Começar agora"}
+          {session ? t("home.goToPanel") : t("home.startNow")}
           <ArrowRight className="size-5" />
         </Link>
 
@@ -83,7 +101,7 @@ function Home() {
         </div>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          Seu cliente não precisa criar conta para comprar.
+          {t("home.noAccountNeeded")}
         </p>
       </div>
     </main>

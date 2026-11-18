@@ -7,16 +7,14 @@ import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
 import { useCurrencyRates, useRefreshCurrencyRates } from "@/hooks/useRates";
+import { useI18n } from "@/i18n";
 import {
-  buildConversionCopyText,
   CURRENCIES,
   convertAmount,
   formatMoney,
   formatRate,
-  formatUpdatedAt,
   getCurrency,
   parseAmount,
-  RATE_DISCLAIMER,
   resolveStoreCurrency,
 } from "@/lib/currency";
 
@@ -71,6 +69,7 @@ export const Route = createFileRoute("/painel/conversor")({
 });
 
 function ConversorPage() {
+  const { t, tp, formatDate } = useI18n();
   const { user } = useAuth();
   const { data: catalog } = useMyCatalog(user?.id);
   const storeCurrency = resolveStoreCurrency(catalog?.currency);
@@ -101,6 +100,24 @@ function ConversorPage() {
   const providerLabel = ratesQuery.data?.providerLabel ?? null;
   const apiError = ratesQuery.data && !ratesQuery.data.ok ? ratesQuery.data.error : null;
 
+  /**
+   * Data/hora da cotação no idioma atual, no mesmo fuso da fonte (o instante
+   * recebido não muda). O fuso fixo mantém o texto igual no servidor e no
+   * navegador, sem diferença na hidratação.
+   */
+  function formatRateDate(iso: string | null | undefined): string {
+    if (!iso) return "—";
+    const formatted = formatDate(iso, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    });
+    return formatted || "—";
+  }
+
   function swap() {
     setFrom(to);
     setTo(from);
@@ -115,14 +132,17 @@ function ConversorPage() {
 
   async function copyResult() {
     if (!conversion) return;
-    const text = buildConversionCopyText(conversion, updatedAt);
-    const ok = await writeToClipboard(text);
+    const lines = [`${formatMoney(conversion.value, conversion.to)} (${conversion.to})`];
+    lines.push(`1 ${conversion.from} = ${formatRate(conversion.rate, conversion.to)}`);
+    if (updatedAt) lines.push(t("converter.copyReference", { date: formatRateDate(updatedAt) }));
+    lines.push(t("converter.disclaimer"));
+    const ok = await writeToClipboard(lines.join("\n"));
     if (ok) {
       setCopied(true);
-      toast.success("Resultado copiado!");
+      toast.success(t("converter.copySuccess"));
       setTimeout(() => setCopied(false), 2000);
     } else {
-      toast.error("Não foi possível copiar. Selecione o valor manualmente.");
+      toast.error(t("converter.copyError"));
     }
   }
 
@@ -130,23 +150,21 @@ function ConversorPage() {
     try {
       const result = await refresh.mutateAsync();
       if (result.stale) {
-        toast.warning("Sem conexão com a fonte de cotações. Mostrando a última cotação conhecida.");
+        toast.warning(t("converter.offlineWarning"));
       } else if (result.ok) {
-        toast.success("Cotação atualizada!");
+        toast.success(t("converter.refreshSuccess"));
       } else {
-        toast.error("Não foi possível atualizar a cotação agora.");
+        toast.error(t("converter.refreshError"));
       }
     } catch {
-      toast.error("Não foi possível atualizar a cotação agora.");
+      toast.error(t("converter.refreshError"));
     }
   }
 
   return (
     <div className="px-5 pb-10 pt-10">
-      <h1 className="text-2xl font-bold text-foreground">Conversor de moedas</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Converta valores para decidir quanto cobrar em outra moeda.
-      </p>
+      <h1 className="text-2xl font-bold text-foreground">{t("converter.title")}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("converter.subtitle")}</p>
 
       {catalog && (
         <button
@@ -155,14 +173,17 @@ function ConversorPage() {
           className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[11px] font-semibold text-primary"
         >
           <Info className="size-3.5" />
-          Sua loja vende em {storeCurrency} ({getCurrency(storeCurrency).name})
+          {t("converter.storeCurrency", {
+            code: storeCurrency,
+            name: getCurrency(storeCurrency).name,
+          })}
         </button>
       )}
 
       {/* ── Valor ── */}
       <div className="mt-5 rounded-2xl border border-border bg-card p-5">
         <label htmlFor="conversor-valor" className="text-sm font-medium text-foreground">
-          Valor
+          {t("converter.amountLabel")}
         </label>
         <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-input bg-background px-3">
           <span className="shrink-0 text-sm font-semibold text-muted-foreground">
@@ -173,17 +194,19 @@ function ConversorPage() {
             inputMode="decimal"
             value={amountInput}
             onChange={(e) => setAmountInput(e.target.value)}
-            placeholder="0,00"
+            placeholder={t("converter.amountPlaceholder")}
             className="w-full bg-transparent py-3.5 text-2xl font-bold text-foreground outline-none"
           />
         </div>
         {amountInput.trim() !== "" && amount == null && (
-          <p className="mt-1.5 text-xs text-red-500">Digite um valor numérico válido.</p>
+          <p className="mt-1.5 text-xs text-red-500">{t("converter.invalidAmount")}</p>
         )}
         {amount != null && (
           <p className="mt-1.5 text-xs text-muted-foreground">
             {formatMoney(amount, from)} ·{" "}
-            {fromDef.decimals === 0 ? "sem casas decimais" : `${fromDef.decimals} casas decimais`}
+            {fromDef.decimals === 0
+              ? t("converter.noDecimals")
+              : tp("converter.decimals", fromDef.decimals)}
           </p>
         )}
       </div>
@@ -196,7 +219,7 @@ function ConversorPage() {
         <div className="grid gap-4">
           <CurrencyPicker
             id="conversor-origem"
-            label="De"
+            label={t("converter.sourceLabel")}
             value={from}
             onChange={setFrom}
             unavailableCodes={unavailableCodes}
@@ -205,14 +228,14 @@ function ConversorPage() {
           <button
             type="button"
             onClick={swap}
-            aria-label="Inverter moedas"
+            aria-label={t("converter.swap")}
             className="mx-auto grid size-11 place-items-center rounded-full border border-border bg-background text-primary transition active:scale-95"
           >
             <ArrowLeftRight className="size-5" />
           </button>
           <CurrencyPicker
             id="conversor-destino"
-            label="Para"
+            label={t("converter.targetLabel")}
             value={to}
             onChange={setTo}
             disabledCodes={[from]}
@@ -225,23 +248,20 @@ function ConversorPage() {
       {/* ── Resultado ── */}
       <div className="mt-4 overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/12 via-accent to-background p-5">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-primary">
-          Resultado
+          {t("converter.result")}
         </p>
 
         {ratesQuery.isLoading ? (
           <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Carregando cotação...
+            <Loader2 className="size-4 animate-spin" /> {t("converter.loadingRates")}
           </div>
         ) : apiError ? (
           <div className="mt-3 space-y-2">
             <p className="flex items-start gap-2 text-sm font-semibold text-red-600">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              Cotação indisponível agora.
+              {t("converter.ratesUnavailable")}
             </p>
-            <p className="text-xs text-muted-foreground">
-              Tente novamente em alguns instantes. Nenhum valor aproximado é exibido para não
-              induzir a erro.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("converter.ratesUnavailableHint")}</p>
             <button
               type="button"
               onClick={refreshRates}
@@ -253,7 +273,7 @@ function ConversorPage() {
               ) : (
                 <RefreshCw className="size-3.5" />
               )}
-              Tentar novamente
+              {t("common.tryAgain")}
             </button>
           </div>
         ) : conversion ? (
@@ -266,7 +286,7 @@ function ConversorPage() {
             </p>
             {toDef.decimals === 0 && (
               <p className="mt-1 text-[11px] text-muted-foreground">
-                {toDef.code} não usa casas decimais — o resultado foi arredondado.
+                {t("converter.noDecimalsNote", { code: toDef.code })}
               </p>
             )}
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -276,7 +296,7 @@ function ConversorPage() {
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground"
               >
                 {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                {copied ? "Copiado!" : "Copiar resultado"}
+                {copied ? t("converter.copied") : t("converter.copyResult")}
               </button>
               <button
                 type="button"
@@ -289,15 +309,15 @@ function ConversorPage() {
                 ) : (
                   <RefreshCw className="size-4" />
                 )}
-                Atualizar cotação
+                {t("converter.refreshRates")}
               </button>
             </div>
           </>
         ) : (
           <p className="mt-3 text-sm text-muted-foreground">
             {amount == null
-              ? "Digite um valor para converter."
-              : `Sem cotação disponível para ${from} → ${to} no momento.`}
+              ? t("converter.enterAmount")
+              : t("converter.noRateForPair", { from, to })}
           </p>
         )}
       </div>
@@ -305,32 +325,38 @@ function ConversorPage() {
       {/* ── Cotação utilizada ── */}
       {conversion && rates && (
         <div className="mt-4 rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs font-semibold text-foreground">Cotação utilizada</p>
+          <p className="text-xs font-semibold text-foreground">{t("converter.rateUsed")}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            1 {conversion.from} = {formatRate(conversion.rate, conversion.to)}
+            {t("converter.rateLine", {
+              from: conversion.from,
+              rate: formatRate(conversion.rate, conversion.to),
+            })}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            1 {conversion.to} = {formatRate(1 / conversion.rate, conversion.from)}
+            {t("converter.rateLine", {
+              from: conversion.to,
+              rate: formatRate(1 / conversion.rate, conversion.from),
+            })}
           </p>
           <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
             <p>
-              Cotação de referência: {formatUpdatedAt(updatedAt)}
+              {t("converter.referenceRate", { date: formatRateDate(updatedAt) })}
               {providerLabel ? ` · ${providerLabel}` : ""}
             </p>
-            <p>Verificada em: {formatUpdatedAt(fetchedAt)}</p>
-            {ratesQuery.data?.cached && <p>Valor servido do cache do backend.</p>}
+            <p>{t("converter.checkedAt", { date: formatRateDate(fetchedAt) })}</p>
+            {ratesQuery.data?.cached && <p>{t("converter.fromCache")}</p>}
           </div>
           {stale && (
             <p className="mt-2 flex items-start gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              Esta cotação é antiga: a fonte de dados está indisponível no momento.
+              {t("converter.staleWarning")}
             </p>
           )}
         </div>
       )}
 
       <p className="mt-4 rounded-2xl bg-muted px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-        {RATE_DISCLAIMER}
+        {t("converter.disclaimer")}
       </p>
     </div>
   );
