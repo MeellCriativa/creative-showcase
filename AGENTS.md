@@ -29,6 +29,7 @@
 - User requires: always commit and push without asking
 - **Push auth gotcha**: `gh` is logged in as `geansilveiraprodartivs-tech` (no push rights) and its credential helper overrides git. A plain `git push` fails 403. Push with the `agendacreator-pro` credential stored in Windows Credential Manager: `git -c credential.https://github.com.helper=manager push https://agendacreator-pro@github.com/MeellCriativa/creative-showcase.git main`
 - **Melhor Envio tokens**: `status` now validates/refreshes the token; any call (incl. public `quote`) auto-refreshes if within the 45d refresh window. If a store is fully idle >45d both tokens die → owner must reconnect OAuth in `/painel/envio` (panel shows "Conexão expirada"). On refresh failure the account is auto-marked `connected=false`.
+- **PRODUÇÃO — pedidos não eram gravados (18/11)**: a política RLS `orders_anon_insert` foi removida (execução parcial da migration `20261115090000`) e a Edge Function `payments` nunca foi publicada → checkout caía em erro/WhatsApp sem gravar pedido. O checkout agora detecta backend ausente (`isPaymentsBackendUnavailable`) e grava direto em `orders` (`insertOrderDirectly`). **Falta rodar** `supabase/fixes/20261118_restore_orders_anon_insert.sql` no SQL Editor para a política voltar (sem ela o insert anônimo falha com `new row violates row-level security policy`).
 
 ## Work State
 

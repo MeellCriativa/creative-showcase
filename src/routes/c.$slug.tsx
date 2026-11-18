@@ -562,12 +562,66 @@ function PublicCatalog() {
       };
 
       /**
-       * O pedido é criado SEMPRE no backend (`payments?action=create_order`).
+       * A função `payments` pode ainda não estar publicada no projeto Supabase.
+       * Nesse caso (404 / função inexistente / rede) o pedido NÃO pode ser
+       * perdido: ele é gravado direto no Supabase, exatamente como antes da
+       * etapa de pagamentos, e o WhatsApp continua sendo aberto.
        *
-       * O navegador envia apenas produto + quantidade + variação escolhida.
-       * Preços, disponibilidade, moeda, frete (re-cotado) e total são
-       * recalculados a partir do banco — nada aqui é confiado como verdade.
+       * Falhas de validação do backend (estoque, produto inexistente, etc.)
+       * NÃO entram aqui — essas precisam ser mostradas ao comprador.
        */
+      const isPaymentsBackendUnavailable = (result: { error?: string; code?: string }) => {
+        const message = String(result.error ?? "");
+        return (
+          result.code === "NOT_FOUND" ||
+          /status 404|not found|function was not found|erro de rede ao chamar o servidor/i.test(
+            message,
+          )
+        );
+      };
+
+      /** Gravação direta (comportamento anterior à etapa 2). */
+      const insertOrderDirectly = async (): Promise<boolean> => {
+        const { error } = await supabase.from("orders").insert({
+          catalog_id: catalog.id,
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim() || null,
+          items: cart.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            variation: i.variation,
+            weight_grams: i.weight_grams ?? null,
+            length_cm: i.length_cm ?? null,
+            width_cm: i.width_cm ?? null,
+            height_cm: i.height_cm ?? null,
+          })),
+          note: note.trim() || null,
+          subtotal: total,
+          total: fromMinorUnits(
+            toMinorUnits(total, currency) + toMinorUnits(localShippingCost, currency),
+            currency,
+          ),
+          status: "novo",
+          currency,
+          delivery_method: shipping.deliveryMethod || null,
+          shipping_zip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
+          shipping_service: shipping.quote?.serviceId || null,
+          shipping_service_name: shipping.quote?.name || null,
+          shipping_cost: localShippingCost || null,
+          shipping_eta_days: shipping.quote?.delivery_min ?? null,
+          shipping_eta_text: shipping.quote?.delivery_text || null,
+          customer_street: shipAddress?.street || null,
+          customer_number: shipAddress?.number || null,
+          customer_complement: shipAddress?.complement || null,
+          customer_district: shipAddress?.district || null,
+          customer_city: shipAddress?.city || null,
+          customer_state: shipAddress?.state || null,
+        } as never);
+        if (error) console.error("[checkout] gravação direta do pedido falhou:", error);
+        return !error;
+      };
+
       const created = await createSecureOrder({
         catalogId: catalog.id,
         customerName: customerName.trim(),
@@ -595,6 +649,26 @@ function PublicCatalog() {
 
       if (!created.success || !created.order_id) {
         const reason = String(created.error || t("catalog.errors.orderNotRegistered"));
+
+        /**
+         * Backend de pagamentos ausente: grava o pedido direto no Supabase
+         * (comportamento anterior à etapa 2) e segue para o WhatsApp, para que
+         * o pedido continue aparecendo no painel do vendedor.
+         */
+        if (isPaymentsBackendUnavailable(created)) {
+          const registered = await insertOrderDirectly();
+          if (registered) {
+            const localTotal = fromMinorUnits(
+              toMinorUnits(total, currency) + toMinorUnits(localShippingCost, currency),
+              currency,
+            );
+            if (catalog.whatsapp) openWhatsapp(buildMessage(total, localTotal, localShippingCost));
+            setCart([]);
+            setCartOpen(false);
+            return true;
+          }
+        }
+
         /**
          * Fallback do WhatsApp (auditoria A5).
          *

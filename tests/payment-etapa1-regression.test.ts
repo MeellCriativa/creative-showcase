@@ -162,6 +162,17 @@ test("checkout por WhatsApp continua existindo no catálogo público", () => {
   assert.match(source, /whatsappFallback/);
 });
 
+test("pedido continua sendo gravado mesmo sem a função `payments` publicada", () => {
+  const source = readFile("src/routes/c.$slug.tsx");
+  // Detecta backend de pagamentos ausente (404 / função não encontrada / rede).
+  assert.match(source, /isPaymentsBackendUnavailable/);
+  assert.match(source, /status 404\|not found\|function was not found/);
+  // E grava o pedido direto na tabela `orders` (comportamento da Etapa 1).
+  assert.match(source, /insertOrderDirectly/);
+  assert.match(source, /\.from\("orders"\)\.insert\(/);
+  assert.match(source, /status: "novo"/);
+});
+
 test("métodos de pagamento e entrega da Etapa 1 continuam declarados", () => {
   const catalog = readFile("src/lib/catalog.ts");
   for (const key of [
