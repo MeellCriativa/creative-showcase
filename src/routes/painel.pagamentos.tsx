@@ -213,7 +213,11 @@ function PagamentosPage() {
         toast.error(String(res.error || "Não foi possível atualizar o pagamento."));
         return;
       }
-      toast.success(`Status: ${describePaymentStatus(res.status)}`);
+      toast.success(
+        res.captured
+          ? "Pagamento capturado e confirmado no provedor."
+          : `Status: ${describePaymentStatus(res.status)}`,
+      );
       invalidate();
     } finally {
       setBusy(null);
@@ -243,7 +247,18 @@ function PagamentosPage() {
         toast.error(String(res.error || "Não foi possível reembolsar."));
         return;
       }
-      toast.success(`Reembolso solicitado: ${money(res.amount)} (${res.status}).`);
+      if (res.reused) {
+        toast.info(
+          `Já existe um reembolso pendente de ${money(res.amount)}. Aguarde a confirmação do provedor.`,
+        );
+      } else if (res.pending) {
+        toast.warning(
+          `Reembolso de ${money(res.amount)} enviado ao provedor e aguardando confirmação. O saldo só muda quando for aprovado.`,
+          { duration: 9000 },
+        );
+      } else {
+        toast.success(`Reembolso de ${money(res.amount)} confirmado.`);
+      }
       invalidate();
     } finally {
       setBusy(null);

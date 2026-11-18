@@ -109,19 +109,51 @@ function hmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
+/**
+ * Segredo dedicado da assinatura de `state` (OAuth).
+ *
+ * Auditoria M7: a assinatura reutilizava a chave AES dos tokens. Um vazamento
+ * de um dos dois comprometia o outro. Com `PAYMENT_STATE_SECRET` separado, cada
+ * finalidade tem sua própria chave.
+ */
 export function stateSecret(): string | null {
-  return readEnv("PAYMENT_STATE_SECRET") ?? readEnv("PAYMENT_TOKEN_ENCRYPTION_KEY");
+  return readEnv("PAYMENT_STATE_SECRET");
+}
+
+/** `true` quando a plataforma configurou um segredo dedicado para o `state`. */
+export function stateSecretIsDedicated(): boolean {
+  return !!readEnv("PAYMENT_STATE_SECRET");
+}
+
+/**
+ * Chave efetiva da assinatura.
+ *
+ * Sem `PAYMENT_STATE_SECRET`, deriva uma chave diferente da chave de
+ * criptografia (SHA-256 de um prefixo de domínio + chave). Assim, mesmo no modo
+ * de compatibilidade, HMAC e AES nunca usam o mesmo material.
+ */
+export async function resolveStateSecret(): Promise<string | null> {
+  const dedicated = readEnv("PAYMENT_STATE_SECRET");
+  if (dedicated) return dedicated;
+  const fallback = readEnv("PAYMENT_TOKEN_ENCRYPTION_KEY");
+  if (!fallback) return null;
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(`payments-state-v1:${fallback}`),
+  );
+  return toBase64Url(new Uint8Array(digest));
 }
 
 /** Assina o payload do `state` do OAuth: `<b64url(json)>.<b64url(hmac)>`. */
 export async function signState(
   payload: Record<string, unknown>,
-  secret: string | null = stateSecret(),
+  secret: string | null = null,
 ): Promise<string | null> {
-  if (!secret) return null;
+  const key = secret ?? (await resolveStateSecret());
+  if (!key) return null;
   const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
-  const key = await hmacKey(secret);
-  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
+  const hmac = await hmacKey(key);
+  const sig = await crypto.subtle.sign("HMAC", hmac, encoder.encode(body));
   return `${body}.${toBase64Url(new Uint8Array(sig))}`;
 }
 
@@ -131,18 +163,21 @@ export async function signState(
  */
 export async function verifyState(
   state: string | null | undefined,
-  secret: string | null = stateSecret(),
+  secret: string | null = null,
   now: number = Date.now(),
 ): Promise<Record<string, unknown> | null> {
-  if (!state || !secret) return null;
+  if (!state) return null;
+  // Mesma chave usada em `signState`: segredo dedicado ou chave derivada.
+  const key = secret ?? (await resolveStateSecret());
+  if (!key) return null;
   const parts = state.split(".");
   if (parts.length !== 2) return null;
   const [body, signature] = parts as [string, string];
   try {
-    const key = await hmacKey(secret);
+    const hmac = await hmacKey(key);
     const ok = await crypto.subtle.verify(
       "HMAC",
-      key,
+      hmac,
       fromBase64Url(signature),
       encoder.encode(body),
     );

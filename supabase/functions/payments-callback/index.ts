@@ -15,6 +15,7 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import {
   adminClient,
+  consumeOAuthState,
   getCatalog,
   markConnectionState,
   saveConnection,
@@ -82,6 +83,15 @@ serve(async (req) => {
     const catalogId = String(payload.catalog_id ?? "");
     const userId = String(payload.user_id ?? "");
     if (!catalogId || !userId) return redirectError(provider, "invalid_state_payload");
+
+    // ── 1.1 Nonce de uso único (auditoria M8) ──────────────────────────────
+    // Mesmo que o `state` seja reutilizado dentro da validade, só a primeira
+    // troca é aceita.
+    const nonce = String(payload.nonce ?? "");
+    if (!nonce) return redirectError(provider, "missing_nonce");
+    if (!(await consumeOAuthState(nonce))) {
+      return redirectError(provider, "state_already_used");
+    }
 
     // ── 2. O vendedor cancelou/negou a autorização na origem ───────────────
     if (providerError) {

@@ -184,6 +184,11 @@ export type CreatePaymentResult = {
   status: string;
   currency: string;
   total: number;
+  /**
+   * `true` quando o backend reaproveitou uma cobrança ainda ativa do pedido
+   * (clique duplo, retry, outra aba). Nesse caso a URL é a mesma de antes.
+   */
+  reused?: boolean;
 };
 
 export function createPayment(input: {
@@ -211,13 +216,35 @@ export type PaymentStatusResult = {
   currency: string;
   payment_status: string;
   payment_provider: PaymentProviderKey | null;
+  transaction_id: string | null;
+  /** `true` quando esta consulta disparou uma captura oficial (PayPal). */
+  captured: boolean;
+  /** Pagamento concluído (não precisa mais esperar o webhook). */
+  settled: boolean;
+  /** Pagamento recusado/cancelado — o comprador deve refazer o pedido. */
+  failed: boolean;
 };
 
-export function getPaymentStatus(input: { orderId: string; checkoutToken: string }) {
+/**
+ * Consulta o estado financeiro do pedido.
+ *
+ * `refresh: true` pede uma verificação oficial ao provedor (usado quando o
+ * comprador volta do checkout): sem isso, ele poderia ver "aguardando" até o
+ * webhook chegar.
+ */
+export function getPaymentStatus(input: {
+  orderId: string;
+  checkoutToken: string;
+  refresh?: boolean;
+}) {
   return call<PaymentStatusResult>("payment_status", {
     method: "GET",
     auth: false,
-    query: { order_id: input.orderId, token: input.checkoutToken },
+    query: {
+      order_id: input.orderId,
+      token: input.checkoutToken,
+      ...(input.refresh ? { refresh: "1" } : {}),
+    },
   });
 }
 
@@ -277,7 +304,16 @@ export function refundTransaction(input: {
   amount?: number;
   reason?: string;
 }) {
-  return call<{ status: string; amount: number; provider_refund_id: string | null }>("refund", {
+  return call<{
+    status: string;
+    amount: number;
+    provider_refund_id: string | null;
+    payment_status: string;
+    /** Reembolso aguardando confirmação do provedor (não altera o saldo). */
+    pending: boolean;
+    /** `true` quando o pedido já tinha esse reembolso pendente. */
+    reused?: boolean;
+  }>("refund", {
     body: {
       transaction_id: input.transactionId,
       ...(input.amount === undefined ? {} : { amount: input.amount }),
@@ -294,6 +330,7 @@ export function refreshPayment(transactionId: string) {
     refunded_amount: number;
     amount: number;
     currency: string;
+    captured: boolean;
   }>("refresh_payment", {
     body: { transaction_id: transactionId },
   });

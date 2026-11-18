@@ -1,1 +1,31 @@
 project_id = "wdcufpvlbisnqtvmbyso"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# verify_jwt = false APENAS nos endpoints que recebem chamadas sem JWT:
+#
+#   payments             → ações públicas do comprador (methods, create_order,
+#                          create_payment, payment_status). As ações do vendedor
+#                          continuam exigindo JWT, validado em código por
+#                          `verifyUser` + `getOwnedCatalog`.
+#   payments-callback    → retorno do OAuth do provedor (redirect do navegador,
+#                          sem header Authorization; protegido por `state`
+#                          assinado + nonce de uso único).
+#   webhooks-mercadopago → chamada servidor-a-servidor do provedor, autenticada
+#                          por `x-signature` (HMAC-SHA256).
+#   webhooks-paypal      → chamada servidor-a-servidor do provedor, autenticada
+#                          por `paypal-transmission-*` (verificação de assinatura).
+#
+# Qualquer outra função mantém o padrão (verify_jwt = true).
+# ─────────────────────────────────────────────────────────────────────────────
+
+[functions.payments]
+verify_jwt = false
+
+[functions.payments-callback]
+verify_jwt = false
+
+[functions.webhooks-mercadopago]
+verify_jwt = false
+
+[functions.webhooks-paypal]
+verify_jwt = false

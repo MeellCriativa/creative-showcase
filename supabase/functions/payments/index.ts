@@ -17,14 +17,21 @@ import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import {
   adminClient,
+  consumeCheckoutSession,
   createRefundRecord,
   createTransaction,
   deleteConnection,
+  findActiveTransactionByOrder,
+  findRefundByProviderId,
+  findTransactionByOrder,
   getCatalog,
   getConnection,
   getOwnedCatalog,
+  listPendingRefunds,
   markConnectionState,
+  saveOAuthState,
   syncOrderPayment,
+  updateRefundRecord,
   updateTransaction,
   validateCheckoutSession,
   verifyUser,
@@ -44,6 +51,14 @@ import {
 import { signState, encryptionConfigured, readEnv } from "../_shared/payments/crypto.ts";
 import { checkCurrencySupport } from "../_shared/payments/currencies.ts";
 import { createSecureOrder } from "../_shared/payments/orders.ts";
+import { applyOfficialSnapshot } from "../_shared/payments/webhooks.ts";
+import { clientFingerprint, enforceRateLimit } from "../_shared/payments/ratelimit.ts";
+import {
+  mergeRefundState,
+  paymentAttemptDecision,
+  providerLookupId,
+} from "../_shared/payments/lifecycle.ts";
+import { currencyDecimals } from "../_shared/payments/money.ts";
 import { resolveStoreCurrency, toMinorUnits } from "../../../src/lib/currency.ts";
 import type { PaymentProviderKey } from "../_shared/payments/types.ts";
 
@@ -55,12 +70,25 @@ class HttpError extends Error {
   }
 }
 
-function jsonRes(body: unknown, status = 200): Response {
+function jsonRes(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json", ...extraHeaders },
   });
 }
+
+/**
+ * Limites por ação pública (auditoria A6).
+ *
+ * O checkout continua funcionando em pico: os limites são por cliente e por
+ * janela, e `create_payment` só é atingido por tentativa repetida.
+ */
+const PUBLIC_RATE_LIMITS: Record<string, { windowMs: number; max: number }> = {
+  methods: { windowMs: 60_000, max: 120 },
+  create_order: { windowMs: 10 * 60_000, max: 30 },
+  create_payment: { windowMs: 10 * 60_000, max: 20 },
+  payment_status: { windowMs: 60_000, max: 120 },
+};
 
 function stateExpiryMs(): number {
   return 15 * 60 * 1000;
@@ -101,6 +129,26 @@ serve(async (req) => {
 
     const publicActions = ["methods", "create_order", "create_payment", "payment_status"];
     if (publicActions.includes(action)) {
+      const limit = PUBLIC_RATE_LIMITS[action];
+      if (limit) {
+        const decision = await enforceRateLimit({
+          bucket: `${action}:${clientFingerprint(req)}`,
+          windowMs: limit.windowMs,
+          max: limit.max,
+        });
+        if (!decision.allowed) {
+          const retrySeconds = Math.max(1, Math.ceil(decision.retryAfterMs / 1000));
+          return jsonRes(
+            {
+              success: false,
+              error: "Muitas tentativas em pouco tempo. Aguarde alguns instantes.",
+              code: "rate_limited",
+            },
+            429,
+            { "Retry-After": String(retrySeconds) },
+          );
+        }
+      }
       return await handlePublic(action, { req, url, body });
     }
     if (!user) return jsonRes({ success: false, error: "Unauthorized" }, 401);
@@ -241,7 +289,7 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
   const admin = adminClient();
   const { data: orderData } = await admin
     .from("orders")
-    .select("id, catalog_id, total, subtotal, currency, payment_status, payment_provider, items, customer_name")
+    .select("id, catalog_id, total, subtotal, shipping_cost, currency, payment_status, payment_provider, items, customer_name")
     .eq("id", orderId)
     .maybeSingle();
   if (!orderData) throw new HttpError(404, "Pedido não encontrado.");
@@ -251,6 +299,7 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     catalog_id: string;
     total: number;
     subtotal: number | null;
+    shipping_cost: number | null;
     currency: string | null;
     payment_status: string;
     payment_provider: string | null;
@@ -298,17 +347,60 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     throw new HttpError(400, "Pedido sem valor válido para pagamento.");
   }
 
+  // ── Uma única cobrança ativa por pedido (auditoria A4) ──────────────────
+  const active = await findActiveTransactionByOrder(order.id, provider);
+  const attempt = paymentAttemptDecision({
+    hasValidToken: true,
+    sessionConsumed: !!session.consumed,
+    hasActiveTransaction: !!active,
+  });
+  if (attempt === "reject_consumed") {
+    throw new HttpError(409, "Esta sessão de checkout já foi utilizada. Refaça o pedido.");
+  }
+  if (attempt === "reuse" && active) {
+    if (active.checkout_url) {
+      return jsonRes({
+        success: true,
+        provider,
+        checkout_url: active.checkout_url,
+        transaction_id: active.id,
+        status: active.status,
+        currency: active.currency,
+        total: Number(active.amount),
+        reused: true,
+      });
+    }
+    throw new HttpError(409, "Já existe um pagamento em andamento para este pedido.");
+  }
+
+  // Cobrança viva em OUTRO provedor também bloqueia: o pedido não pode ser
+  // pago duas vezes (um link do Mercado Pago e um do PayPal ao mesmo tempo).
+  const activeOther = await findActiveTransactionByOrder(order.id, null);
+  if (activeOther) {
+    throw new HttpError(
+      409,
+      "Este pedido já tem um pagamento em andamento. Conclua ou aguarde a expiração antes de tentar outro método.",
+    );
+  }
+
   const fallbackReturn = `${allowedOrigin()}/c/${catalog.slug}?payment=return&order=${order.id}`;
   const returnUrl = safeReturnUrl(ctx.body.return_url as string, fallbackReturn);
   const cancelUrl = safeReturnUrl(ctx.body.cancel_url as string, fallbackReturn);
 
-  const items = Array.isArray(order.items) && order.items.length > 0
-    ? order.items.map((item) => ({
+  // Frete oficial do pedido: vai cobrado junto com os itens (auditoria C3).
+  const shippingAmount = Math.max(0, Number(order.shipping_cost ?? 0));
+  const sourceItems = Array.isArray(order.items) ? order.items : [];
+  const items = sourceItems.length > 0
+    ? sourceItems.map((item) => ({
         name: String(item.name ?? "Item"),
         quantity: Number(item.quantity ?? 1),
         unitPrice: Number(item.unitPrice ?? 0),
       }))
-    : [{ name: `Pedido ${order.id.slice(0, 8)}`, quantity: 1, unitPrice: orderTotal }];
+    : [{
+        name: `Pedido ${order.id.slice(0, 8)}`,
+        quantity: 1,
+        unitPrice: Math.max(0, orderTotal - shippingAmount),
+      }];
 
   const result = await providerImpl.createPayment(loaded.credentials, {
     catalogId: catalog.id,
@@ -317,6 +409,7 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     currency,
     description: `Pedido ${order.id.slice(0, 8)} — ${catalog.store_name}`,
     items,
+    shippingAmount,
     returnUrl,
     cancelUrl,
     externalReference: order.id,
@@ -343,10 +436,35 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     metadata: { source: "checkout", order_total_minor: toMinorUnits(orderTotal, currency) },
   });
 
+  if (!transaction) {
+    // Corrida perdida: outro clique registrou a transação entre a consulta e o
+    // INSERT (índice único de transação ativa por pedido). Devolve a que existe.
+    const raced = await findActiveTransactionByOrder(order.id, null);
+    if (raced?.checkout_url) {
+      return jsonRes({
+        success: true,
+        provider: raced.provider,
+        checkout_url: raced.checkout_url,
+        transaction_id: raced.id,
+        status: raced.status,
+        currency: raced.currency,
+        total: Number(raced.amount),
+        reused: true,
+      });
+    }
+    throw new HttpError(409, "Já existe um pagamento em andamento para este pedido.");
+  }
+
   await admin
     .from("orders")
     .update({ payment_provider: provider, payment_status: "pending" })
     .eq("id", order.id);
+
+  // ── Token de checkout é de uso único (auditoria A3) ─────────────────────
+  const consumed = await consumeCheckoutSession(order.id, token);
+  if (!consumed.ok) {
+    console.warn("[payments] sessão não consumida:", consumed.reason);
+  }
 
   return jsonRes({
     success: true,
@@ -364,7 +482,9 @@ async function paymentStatusAction(ctx: PublicCtx): Promise<Response> {
   const token = String(ctx.url.searchParams.get("token") ?? ctx.body.checkout_token ?? "").trim();
   if (!orderId) throw new HttpError(400, "order_id é obrigatório.");
 
-  const session = await validateCheckoutSession(orderId, token);
+  // O token consumido continua servindo para CONSULTAR (o pagamento já foi
+  // iniciado); ele não serve mais para criar outra cobrança.
+  const session = await validateCheckoutSession(orderId, token, { allowConsumed: true });
   if (!session.ok) throw new HttpError(403, session.reason ?? "Sessão inválida.");
 
   const admin = adminClient();
@@ -375,13 +495,54 @@ async function paymentStatusAction(ctx: PublicCtx): Promise<Response> {
     .maybeSingle();
   if (!data) throw new HttpError(404, "Pedido não encontrado.");
 
+  const provider = isProviderKey(data.payment_provider) ? data.payment_provider : null;
+  let transaction: TransactionRow | null = null;
+  if (provider) {
+    transaction =
+      (await findActiveTransactionByOrder(orderId, provider)) ??
+      (await findTransactionByOrder(orderId, provider));
+  }
+
+  // ── Confirmação no retorno do comprador (auditoria M6) ─────────────────
+  // `refresh=1` faz uma consulta oficial sob demanda: o comprador que volta do
+  // provedor vê o estado real, sem esperar o webhook.
+  const wantsRefresh =
+    ctx.url.searchParams.get("refresh") === "1" || ctx.body.refresh === true;
+  let status = String(data.payment_status ?? "pending");
+  let captured = false;
+  if (wantsRefresh && transaction && provider) {
+    const providerPaymentId = providerLookupId({
+      provider,
+      providerPaymentId: transaction.provider_payment_id,
+      providerOrderId: transaction.provider_order_id,
+    });
+    if (providerPaymentId) {
+      const applied = await applyOfficialSnapshot({
+        provider,
+        transaction,
+        providerPaymentId,
+        captureIfAuthorized: true,
+      });
+      if (applied.ok && applied.snapshot) {
+        status = applied.snapshot.status;
+        captured = applied.captured ?? false;
+      }
+    }
+  }
+
   return jsonRes({
     success: true,
     order_id: data.id,
     total: Number(data.total ?? 0),
     currency: resolveStoreCurrency(data.currency as string | null),
-    payment_status: data.payment_status,
+    payment_status: status,
     payment_provider: data.payment_provider,
+    transaction_id: transaction?.id ?? null,
+    captured,
+    settled: ["captured", "approved", "refunded", "partially_refunded", "disputed"].includes(
+      status,
+    ),
+    failed: ["failed", "cancelled"].includes(status),
   });
 }
 
@@ -424,15 +585,26 @@ async function connectAction(ctx: OwnerCtx): Promise<Response> {
     throw new HttpError(503, providerImpl.setupMessage() ?? "Provedor não configurado.");
   }
 
+  // Nonce de uso único (auditoria M8): o `state` continua assinado e expirando,
+  // mas agora também precisa existir e estar livre em `payment_oauth_states`.
+  const nonce = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + stateExpiryMs()).toISOString();
   const state = await signState({
     catalog_id: catalog.id,
     user_id: ctx.userId,
     provider,
     env: providerEnvironment(provider),
-    nonce: crypto.randomUUID(),
+    nonce,
     exp: Date.now() + stateExpiryMs(),
   });
   if (!state) throw new HttpError(503, "Não foi possível assinar a autorização (state).");
+  await saveOAuthState({
+    nonce,
+    catalogId: catalog.id,
+    provider,
+    userId: ctx.userId,
+    expiresAt,
+  });
 
   const authorizeUrl = await providerImpl.buildAuthorizeUrl({
     state,
@@ -561,7 +733,7 @@ async function transactionsAction(ctx: OwnerCtx): Promise<Response> {
 
   return jsonRes({
     success: true,
-    transactions: (data ?? []).map((row) => ({
+    transactions: (data ?? []).map((row: Record<string, any>) => ({
       id: row.id,
       order_id: row.order_id,
       provider: row.provider,
@@ -621,6 +793,22 @@ async function refundAction(ctx: OwnerCtx): Promise<Response> {
     throw new HttpError(400, "O valor excede o saldo reembolsável deste pagamento.");
   }
 
+  // ── Idempotência do reembolso (auditoria M3) ───────────────────────────
+  // Um reembolso pendente do mesmo valor é devolvido, não recriado.
+  const pendingRefunds = await listPendingRefunds(transaction.id);
+  const samePending = pendingRefunds.find(
+    (row) => Math.abs(Number(row.amount) - requested) < 1e-6,
+  );
+  if (samePending) {
+    return jsonRes({
+      success: true,
+      status: "pending",
+      amount: Number(samePending.amount),
+      provider_refund_id: samePending.provider_refund_id,
+      reused: true,
+    });
+  }
+
   const loaded = await loadCredentials(catalogId, provider);
   if (!loaded.credentials) {
     throw new HttpError(409, loaded.reason ?? "Conexão do provedor inválida.");
@@ -639,30 +827,45 @@ async function refundAction(ctx: OwnerCtx): Promise<Response> {
     reason: (ctx.body.reason as string) ?? null,
   });
 
-  await createRefundRecord({
-    transactionId: transaction.id,
-    catalogId,
-    provider,
-    providerRefundId: result.providerRefundId,
-    amount: result.amount,
-    status: result.status,
-    reason: (ctx.body.reason as string) ?? null,
-    requestedBy: ctx.userId,
-  });
+  // Mesmo reembolso devolvido pelo provedor (retry) não gera novo registro.
+  const existingRefund = result.providerRefundId
+    ? await findRefundByProviderId(provider, result.providerRefundId)
+    : null;
+  if (!existingRefund) {
+    await createRefundRecord({
+      transactionId: transaction.id,
+      catalogId,
+      provider,
+      providerRefundId: result.providerRefundId,
+      amount: result.amount,
+      status: result.status,
+      reason: (ctx.body.reason as string) ?? null,
+      requestedBy: ctx.userId,
+    });
+  }
 
-  if (result.status === "approved" || result.status === "pending") {
-    const newRefunded = Math.round((refunded + result.amount) * 100) / 100;
-    const newStatus = newRefunded >= amount - 0.001 ? "refunded" : "partially_refunded";
+  // Só reembolso APROVADO altera o saldo (pendente fica registrado e é
+  // conciliado depois — auditoria M5).
+  let finalStatus = transaction.status;
+  if (result.status === "approved") {
+    const merged = mergeRefundState({
+      totalAmount: amount,
+      currentRefunded: refunded,
+      currentStatus: transaction.status,
+      snapshotRefunded: refunded + result.amount,
+      snapshotStatus: "captured",
+    });
+    finalStatus = merged.status;
     await updateTransaction({
       transactionId: transaction.id,
-      status: newStatus,
+      status: merged.status,
       providerStatus: transaction.provider_status,
-      refundedAmount: newRefunded,
+      refundedAmount: merged.refundedAmount,
     });
     await syncOrderPayment({
       orderId: transaction.order_id,
       provider,
-      status: newStatus,
+      status: merged.status,
       transactionId: transaction.id,
     });
   }
@@ -672,6 +875,8 @@ async function refundAction(ctx: OwnerCtx): Promise<Response> {
     status: result.status,
     amount: result.amount,
     provider_refund_id: result.providerRefundId,
+    payment_status: finalStatus,
+    pending: result.status === "pending",
   });
 }
 
@@ -683,40 +888,44 @@ async function refreshPaymentAction(ctx: OwnerCtx): Promise<Response> {
     ctx.userId,
     transactionId,
   );
-  const loaded = await loadCredentials(catalogId, provider);
-  if (!loaded.credentials) {
-    throw new HttpError(409, loaded.reason ?? "Conexão do provedor inválida.");
-  }
-  const providerImpl = getProvider(provider)!;
-  const paymentId = transaction.provider_order_id ?? transaction.provider_payment_id ?? "";
+
+  // Consulta oficial usando o id correto (pagamento no MP, ordem no PayPal) e
+  // captura a ordem PayPal quando ela ainda está apenas autorizada.
+  const paymentId = providerLookupId({
+    provider,
+    providerPaymentId: transaction.provider_payment_id,
+    providerOrderId: transaction.provider_order_id,
+  });
   if (!paymentId) throw new HttpError(409, "Pagamento ainda não identificado no provedor.");
 
-  const snapshot = await providerImpl.getPayment(loaded.credentials, paymentId);
-  if (!snapshot) throw new HttpError(502, "O provedor não retornou o pagamento.");
-
-  await updateTransaction({
-    transactionId: transaction.id,
-    status: snapshot.status,
-    providerStatus: snapshot.providerStatus,
-    capturedAmount: snapshot.capturedAmount,
-    refundedAmount: snapshot.refundedAmount,
-    payerReference: snapshot.payerReference,
-    providerPaymentId: snapshot.providerPaymentId,
-  });
-  await syncOrderPayment({
-    orderId: transaction.order_id,
+  const applied = await applyOfficialSnapshot({
     provider,
-    status: snapshot.status,
-    transactionId: transaction.id,
+    transaction,
+    providerPaymentId: paymentId,
+    captureIfAuthorized: true,
   });
+  if (!applied.ok || !applied.snapshot) {
+    throw new HttpError(502, applied.reason ?? "O provedor não retornou o pagamento.");
+  }
+  void catalogId;
+
+  // ── Conciliação de reembolsos pendentes (auditoria M5) ─────────────────
+  const refundedNow = Number(applied.snapshot.refundedAmount ?? 0);
+  const refundedBefore = Number(transaction.refunded_amount ?? 0);
+  if (refundedNow > refundedBefore + 1e-9) {
+    for (const pending of await listPendingRefunds(transaction.id)) {
+      await updateRefundRecord(pending.id, { status: "approved" });
+    }
+  }
 
   return jsonRes({
     success: true,
-    status: snapshot.status,
-    provider_status: snapshot.providerStatus,
-    captured_amount: snapshot.capturedAmount,
-    refunded_amount: snapshot.refundedAmount,
-    amount: snapshot.amount,
-    currency: snapshot.currency,
+    status: applied.snapshot.status,
+    provider_status: applied.snapshot.providerStatus,
+    captured_amount: applied.snapshot.capturedAmount,
+    refunded_amount: applied.snapshot.refundedAmount,
+    amount: applied.snapshot.amount,
+    currency: applied.snapshot.currency,
+    captured: applied.captured ?? false,
   });
 }

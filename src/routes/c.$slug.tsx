@@ -33,7 +33,9 @@ import { quoteShipping } from "@/lib/shipping";
 import {
   createPayment,
   createSecureOrder,
+  getPaymentStatus,
   listPaymentMethods,
+  PROVIDER_LABELS,
   type PaymentProviderKey,
   type PublicPaymentMethod,
 } from "@/lib/payments";
@@ -100,6 +102,43 @@ const LOGO_SIZES: Record<string, string> = {
   grande: "size-36",
 };
 
+/** Pedido aguardando confirmação no retorno do provedor. */
+const PENDING_PAYMENT_KEY = "vc_pending_payment";
+
+type PaymentReturnState = {
+  status: "checking" | "settled" | "failed" | "pending";
+  provider: PaymentProviderKey | null;
+};
+
+type PendingPayment = {
+  orderId: string;
+  token: string;
+  provider?: PaymentProviderKey;
+  at?: number;
+};
+
+function readPendingPayment(): PendingPayment | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_PAYMENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingPayment;
+    if (!parsed?.orderId || !parsed?.token) return null;
+    // Descarta pedidos antigos (24h) para não consultar token expirado.
+    if (parsed.at && Date.now() - parsed.at > 24 * 60 * 60 * 1000) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingPayment() {
+  try {
+    sessionStorage.removeItem(PENDING_PAYMENT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function PublicCatalog() {
   const { slug } = Route.useParams();
   const { user } = useAuth();
@@ -108,7 +147,12 @@ function PublicCatalog() {
   const [cartOpen, setCartOpen] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartBump, setCartBump] = useState(0);
-  const [entered, setEntered] = useState(false);
+  // Quem volta do checkout não deve ver a capa de boas-vindas de novo.
+  const [entered, setEntered] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("payment") === "return";
+  });
+  const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(null);
 
   const { data, isLoading, error: queryError } = useQuery({
     queryKey: ["public-catalog", slug],
@@ -215,6 +259,82 @@ function PublicCatalog() {
   }, [catalog]);
 
   /**
+   * Confirmação no retorno do comprador (auditoria M6).
+   *
+   * Ao voltar do PayPal/Mercado Pago a página consulta o status oficial —
+   * inclusive pedindo uma verificação ao provedor (`refresh=1`) — em vez de
+   * esperar o webhook. Se o webhook já chegou, a primeira consulta resolve.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment") !== "return") return;
+
+    const orderFromUrl = params.get("order") ?? "";
+    const stored = readPendingPayment();
+    const orderId = orderFromUrl || stored?.orderId || "";
+    const token = stored?.token ?? "";
+    const provider =
+      ((stored?.provider ?? params.get("provider")) as PaymentProviderKey | null) ?? null;
+
+    // Limpa a URL para um refresh não reabrir o polling.
+    try {
+      const clean = new URL(window.location.href);
+      ["payment", "provider", "order"].forEach((key) => clean.searchParams.delete(key));
+      window.history.replaceState({}, "", clean.pathname + clean.search);
+    } catch {
+      /* ignore */
+    }
+
+    if (!orderId || !token) {
+      setPaymentReturn({ status: "pending", provider });
+      return;
+    }
+
+    setPaymentReturn({ status: "checking", provider });
+    let cancelled = false;
+    let timer = 0;
+    let attempts = 0;
+
+    const tick = async () => {
+      attempts += 1;
+      // Primeira consulta e depois a cada 3ª: verificação oficial sob demanda.
+      const res = await getPaymentStatus({
+        orderId,
+        checkoutToken: token,
+        refresh: attempts === 1 || attempts % 3 === 0,
+      });
+      if (cancelled) return;
+
+      if (res.success && res.settled) {
+        clearPendingPayment();
+        setPaymentReturn({ status: "settled", provider });
+        toast.success("Pagamento confirmado! A loja já foi avisada.");
+        return;
+      }
+      if (res.success && res.failed) {
+        clearPendingPayment();
+        setPaymentReturn({ status: "failed", provider });
+        toast.error("O pagamento não foi concluído. Você pode refazer o pedido.");
+        return;
+      }
+      if (attempts >= 10) {
+        // Não descartamos o token: o webhook pode chegar depois e a próxima
+        // visita confirma o pagamento.
+        setPaymentReturn({ status: "pending", provider });
+        return;
+      }
+      timer = window.setTimeout(tick, 3000);
+    };
+
+    timer = window.setTimeout(tick, 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  /**
    * Métodos de pagamento online realmente habilitados nesta loja.
    *
    * A lista vem do backend (que confere conexão do vendedor + moeda). Se nada
@@ -231,21 +351,6 @@ function PublicCatalog() {
       return res.success && Array.isArray(res.methods) ? res.methods : [];
     },
   });
-
-  /** Aviso pós-pagamento: nunca confirma nada só pelo retorno do navegador. */
-  const [paymentReturn, setPaymentReturn] = useState<{ provider: string; orderId: string } | null>(null);
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("payment") !== "return") return;
-    const provider = params.get("provider") ?? "";
-    const orderId = params.get("order") ?? "";
-    setPaymentReturn({ provider, orderId });
-    const clean = new URL(window.location.href);
-    clean.searchParams.delete("payment");
-    clean.searchParams.delete("provider");
-    clean.searchParams.delete("order");
-    window.history.replaceState({}, "", clean.pathname + (clean.search ? clean.search : ""));
-  }, []);
 
   const products = useMemo(() => {
     const all = data?.products ?? [];
@@ -324,6 +429,60 @@ function PublicCatalog() {
         return false;
       }
 
+      const customerLine = customerName.trim()
+        ? `Cliente: ${customerName.trim()}${customerPhone.trim() ? ` | Tel: ${customerPhone.trim()}` : ""}${note.trim() ? `\nObs: ${note.trim()}` : ""}`
+        : note.trim() || undefined;
+      const shipAddress = shipping.address;
+      const localShippingCost = Math.max(0, Number(shipping.shippingCost ?? 0));
+
+      /** Mensagem do WhatsApp montada localmente (também usada no fallback). */
+      const buildMessage = (subtotalValue: number, totalValue: number, shippingValue: number) =>
+        buildWhatsappMessage({
+          storeName: catalog.store_name,
+          currency,
+          items: cart.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            variation: i.variation,
+          })),
+          subtotal: subtotalValue,
+          total: totalValue,
+          shipping: {
+            ...(shipping.deliveryMethod ? { deliveryMethod: shipping.deliveryMethod } : {}),
+            ...(shipping.quote?.name ? { serviceName: shipping.quote.name } : {}),
+            ...(shippingValue ? { cost: shippingValue } : {}),
+            ...(shipping.quote?.delivery_text
+              ? { etaText: shipping.quote.delivery_text }
+              : shipping.deliveryMethod === "local_delivery"
+                ? { etaText: "Combino a data com você" }
+                : {}),
+            ...(shipAddress
+              ? {
+                  address: {
+                    street: shipAddress.street,
+                    number: shipAddress.number,
+                    complement: shipAddress.complement,
+                    district: shipAddress.district,
+                    city: shipAddress.city,
+                    state: shipAddress.state,
+                    ...(shipping.shippingZip
+                      ? { zip: shipping.shippingZip.replace(/\D/g, "") }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+          note: customerLine,
+        });
+
+      const openWhatsapp = (message: string) => {
+        const url = whatsappLink(catalog.whatsapp!, message);
+        const opened = window.open(url, "_blank");
+        // Alguns navegadores bloqueiam window.open após uma chamada assíncrona.
+        if (!opened) window.location.href = url;
+      };
+
       /**
        * O pedido é criado SEMPRE no backend (`payments?action=create_order`).
        *
@@ -357,27 +516,49 @@ function PublicCatalog() {
       });
 
       if (!created.success || !created.order_id) {
-        toast.error(
-          String(created.error || "Não foi possível registrar o pedido. Tente novamente."),
-          { duration: 9000 },
+        const reason = String(
+          created.error || "Não foi possível registrar o pedido. Tente novamente.",
         );
+        /**
+         * Fallback do WhatsApp (auditoria A5).
+         *
+         * Se o backend não registrar o pedido, o comprador não pode ficar
+         * travado. Abrimos o WhatsApp com a mensagem montada localmente e
+         * deixamos explícito que o pedido NÃO entrou no painel — o vendedor
+         * precisa cadastrá-lo manualmente.
+         */
+        if (catalog.whatsapp) {
+          toast.warning(
+            `${reason} Vamos continuar pelo WhatsApp — avise a loja de que o pedido não apareceu no painel.`,
+            { duration: 12_000 },
+          );
+          const localTotal = fromMinorUnits(
+            toMinorUnits(total, currency) + toMinorUnits(localShippingCost, currency),
+            currency,
+          );
+          openWhatsapp(buildMessage(total, localTotal, localShippingCost));
+          setCart([]);
+          setCartOpen(false);
+          return true;
+        }
+        toast.error(reason, { duration: 9000 });
         return false;
       }
 
       // Valores oficiais devolvidos pelo backend.
-      const serverCurrency = resolveStoreCurrency(created.currency ?? currency);
       const subtotal = Number(created.subtotal ?? 0);
       const grandTotal = Number(created.total ?? 0);
       const serverShipping = Number(created.shipping_cost ?? 0);
 
       // ── Pagamento online ────────────────────────────────────────────────
       if (payment) {
+        const returnUrl = `${window.location.origin}/c/${catalog.slug}?payment=return&provider=${payment.provider}&order=${created.order_id}`;
         const paid = await createPayment({
           orderId: created.order_id,
           checkoutToken: created.checkout_token,
           provider: payment.provider,
-          returnUrl: `${window.location.origin}/c/${catalog.slug}?payment=return&provider=${payment.provider}&order=${created.order_id}`,
-          cancelUrl: `${window.location.origin}/c/${catalog.slug}?payment=return&provider=${payment.provider}&order=${created.order_id}`,
+          returnUrl,
+          cancelUrl: returnUrl,
         });
 
         if (!paid.success || !paid.checkout_url) {
@@ -391,6 +572,27 @@ function PublicCatalog() {
           return false;
         }
 
+        /**
+         * Guarda o token do pedido para o retorno do provedor.
+         *
+         * O token é de uso único: depois de criar a cobrança ele não serve mais
+         * para pagar, mas continua servindo para CONSULTAR o status — é assim
+         * que a página confirma o pagamento quando o comprador volta.
+         */
+        try {
+          sessionStorage.setItem(
+            PENDING_PAYMENT_KEY,
+            JSON.stringify({
+              orderId: created.order_id,
+              token: created.checkout_token,
+              provider: payment.provider,
+              at: Date.now(),
+            }),
+          );
+        } catch {
+          /* navegador sem sessionStorage: o polling simplesmente não roda */
+        }
+
         setCart([]);
         setCartOpen(false);
         window.location.href = String(paid.checkout_url);
@@ -398,60 +600,13 @@ function PublicCatalog() {
       }
 
       // ── Finalização pelo WhatsApp (fluxo preservado) ────────────────────
-      const customerLine = customerName.trim()
-        ? `Cliente: ${customerName.trim()}${customerPhone.trim() ? ` | Tel: ${customerPhone.trim()}` : ""}${note.trim() ? `\nObs: ${note.trim()}` : ""}`
-        : note.trim() || undefined;
-
-      const shipAddress = shipping.address;
-      const message = buildWhatsappMessage({
-        storeName: catalog.store_name,
-        currency: serverCurrency,
-        items: cart.map((i) => ({
-          name: i.name,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          variation: i.variation,
-        })),
-        subtotal,
-        total: grandTotal,
-        shipping: {
-          ...(shipping.deliveryMethod ? { deliveryMethod: shipping.deliveryMethod } : {}),
-          ...(shipping.quote?.name ? { serviceName: shipping.quote.name } : {}),
-          ...(serverShipping ? { cost: serverShipping } : {}),
-          ...(shipping.quote?.delivery_text
-            ? { etaText: shipping.quote.delivery_text }
-            : shipping.deliveryMethod === "local_delivery"
-              ? { etaText: "Combino a data com você" }
-              : {}),
-          ...(shipAddress
-            ? {
-                address: {
-                  street: shipAddress.street,
-                  number: shipAddress.number,
-                  complement: shipAddress.complement,
-                  district: shipAddress.district,
-                  city: shipAddress.city,
-                  state: shipAddress.state,
-                  ...(shipping.shippingZip
-                    ? { zip: shipping.shippingZip.replace(/\D/g, "") }
-                    : {}),
-                },
-              }
-            : {}),
-        },
-        note: customerLine,
-      });
-
-      const url = whatsappLink(catalog.whatsapp!, message);
-      const opened = window.open(url, "_blank");
-      // Alguns navegadores bloqueiam window.open após uma chamada assíncrona.
-      if (!opened) window.location.href = url;
+      openWhatsapp(buildMessage(subtotal, grandTotal, serverShipping));
 
       setCart([]);
       setCartOpen(false);
       return true;
     },
-    [catalog, cart, currency],
+    [catalog, cart, currency, total],
   );
 
   if (isLoading) {
@@ -507,6 +662,10 @@ function PublicCatalog() {
     "--shop-bg": bgColor,
   } as React.CSSProperties;
 
+  const paymentProviderLabel = paymentReturn?.provider
+    ? PROVIDER_LABELS[paymentReturn.provider]
+    : "provedor";
+
   if (!entered) {
     return (
       <WelcomePage
@@ -521,6 +680,45 @@ function PublicCatalog() {
 
   return (
     <div className="app-shell pb-28" style={{ ...theme, backgroundColor: bgColor }}>
+      {paymentReturn && (
+        <div className="px-5 pt-4">
+          <div
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              paymentReturn.status === "settled"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                : paymentReturn.status === "failed"
+                  ? "border-red-300 bg-red-50 text-red-900"
+                  : paymentReturn.status === "pending"
+                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                    : "border-primary/30 bg-primary/5 text-foreground"
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {paymentReturn.status === "checking" && (
+              <span className="flex items-center gap-2">
+                <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+                Confirmando seu pagamento no {paymentProviderLabel}...
+              </span>
+            )}
+            {paymentReturn.status === "settled" && (
+              <span>Pagamento confirmado! A loja já foi avisada e vai preparar seu pedido.</span>
+            )}
+            {paymentReturn.status === "failed" && (
+              <span>
+                O pagamento não foi concluído. Seus itens continuam no carrinho — você pode
+                tentar novamente.
+              </span>
+            )}
+            {paymentReturn.status === "pending" && (
+              <span>
+                Ainda não recebemos a confirmação do {paymentProviderLabel}. Assim que o
+                pagamento for aprovado a loja será avisada — não é preciso pagar de novo.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       <header className="relative">
         <div
           className="h-36 w-full bg-cover bg-center"
@@ -571,29 +769,6 @@ function PublicCatalog() {
           <p className="mt-1 text-center text-sm text-muted-foreground">Peça pelo WhatsApp, sem criar conta.</p>
         </div>
       </header>
-
-      {paymentReturn && (
-        <div
-          className="mx-5 mt-4 rounded-2xl border px-4 py-3 text-sm"
-          style={{ borderColor: `${primary}30`, backgroundColor: `${primary}08` }}
-        >
-          <p className="font-semibold text-foreground">Pagamento enviado</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Estamos aguardando a confirmação do{" "}
-            {paymentReturn.provider === "paypal" ? "PayPal" : "Mercado Pago"}. A loja é avisada
-            automaticamente assim que o pagamento for aprovado — você não precisa fazer mais nada.
-            Se o status não mudar, fale com a loja pelo WhatsApp.
-          </p>
-          <button
-            type="button"
-            onClick={() => setPaymentReturn(null)}
-            className="mt-2 text-xs font-semibold"
-            style={{ color: primary }}
-          >
-            Entendi
-          </button>
-        </div>
-      )}
 
       {loadedCatalog.banner_enabled && banners.length > 0 && (
         <BannerCarousel

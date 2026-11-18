@@ -143,13 +143,18 @@ export async function saveConnection(input: {
   }
   const admin = adminClient();
   const now = new Date().toISOString();
+  // Correção da auditoria (M2): `connected` era sempre `true`, mesmo quando o
+  // status era `pending`/`expired`. Agora é derivado do status — é ele que
+  // libera o checkout.
+  const status = input.status ?? "connected";
+  const connected = status === "connected";
   const { error } = await admin.from("payment_connections").upsert(
     {
       catalog_id: input.catalogId,
       provider: input.provider,
       environment: input.environment,
-      status: input.status ?? "connected",
-      connected: true,
+      status,
+      connected,
       external_account_id: input.credentials.externalAccountId || null,
       external_account_label: input.credentials.externalAccountLabel || null,
       merchant_id: input.credentials.merchantId,
@@ -159,8 +164,7 @@ export async function saveConnection(input: {
       token_expires_at: input.credentials.expiresAt,
       capabilities: input.credentials.capabilities,
       last_verified_at: now,
-      connected_at: now,
-      disconnected_at: null,
+      ...(connected ? { connected_at: now, disconnected_at: null } : {}),
       updated_at: now,
     },
     { onConflict: "catalog_id,provider" },
@@ -229,6 +233,29 @@ export async function deleteConnection(
     .eq("provider", provider);
 }
 
+/**
+ * Localiza a loja dona de uma conta do provedor.
+ *
+ * Correção da auditoria (C1): o webhook do Mercado Pago só traz `user_id` (a
+ * conta do vendedor). Sem esta busca não há como saber qual token usar para
+ * consultar o pagamento.
+ */
+export async function findConnectionByExternalAccount(
+  provider: PaymentProviderKey,
+  externalAccountId: string,
+): Promise<ConnectionRow | null> {
+  const id = String(externalAccountId ?? "").trim();
+  if (!id) return null;
+  const admin = adminClient();
+  const { data } = await admin
+    .from("payment_connections")
+    .select("*")
+    .eq("provider", provider)
+    .eq("external_account_id", id)
+    .maybeSingle();
+  return (data as ConnectionRow | null) ?? null;
+}
+
 /* ── Sessões de checkout ─────────────────────────────────────────────────── */
 
 export async function createCheckoutSession(
@@ -248,11 +275,12 @@ export async function createCheckoutSession(
   return token;
 }
 
-/** Valida o token do comprador. Não consome (o pagamento pode ser retentado). */
+/** Valida o token do comprador. */
 export async function validateCheckoutSession(
   orderId: string,
   token: string,
-): Promise<{ ok: boolean; reason?: string }> {
+  options: { allowConsumed?: boolean } = {},
+): Promise<{ ok: boolean; reason?: string; consumed?: boolean }> {
   if (!orderId || !token) return { ok: false, reason: "Sessão de checkout ausente." };
   const hash = await sha256Hex(token);
   const admin = adminClient();
@@ -263,11 +291,92 @@ export async function validateCheckoutSession(
     .eq("token_hash", hash)
     .maybeSingle();
   if (!data) return { ok: false, reason: "Sessão de checkout inválida." };
-  if (data.consumed_at) return { ok: false, reason: "Sessão de checkout já utilizada." };
   if (new Date(data.expires_at as string).getTime() < Date.now()) {
     return { ok: false, reason: "Sessão de checkout expirada. Refaça o pedido." };
   }
+  const consumed = !!data.consumed_at;
+  if (consumed && !options.allowConsumed) {
+    return { ok: false, consumed: true, reason: "Sessão de checkout já utilizada." };
+  }
+  return { ok: true, consumed };
+}
+
+/**
+ * Marca a sessão como usada (uma única vez).
+ *
+ * Correção da auditoria (A3): o token nunca era consumido, então o mesmo link
+ * podia iniciar pagamentos indefinidamente. A marcação é condicional
+ * (`consumed_at is null`), portanto duas requisições simultâneas não passam.
+ */
+export async function consumeCheckoutSession(
+  orderId: string,
+  token: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!orderId || !token) return { ok: false, reason: "Sessão de checkout ausente." };
+  const hash = await sha256Hex(token);
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("order_checkout_sessions")
+    .update({ consumed_at: new Date().toISOString() })
+    .eq("order_id", orderId)
+    .eq("token_hash", hash)
+    .is("consumed_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("[payments] consumeCheckoutSession", error.message);
+    return { ok: false, reason: "Não foi possível validar a sessão de checkout." };
+  }
+  if (!data) return { ok: false, reason: "Sessão de checkout já utilizada ou expirada." };
   return { ok: true };
+}
+
+/* ── Nonces de OAuth (uso único) ─────────────────────────────────────────── */
+
+/**
+ * Guarda o nonce do `state` para uso único.
+ *
+ * Correção da auditoria (M8): o `state` assinado expirava, mas podia ser
+ * reapresentado quantas vezes quisesse dentro da validade. Agora cada nonce só
+ * pode ser trocado por credenciais uma vez.
+ */
+export async function saveOAuthState(input: {
+  nonce: string;
+  catalogId: string;
+  provider: PaymentProviderKey;
+  userId: string;
+  expiresAt: string;
+}): Promise<void> {
+  const admin = adminClient();
+  const { error } = await admin.from("payment_oauth_states").insert({
+    nonce: input.nonce,
+    catalog_id: input.catalogId,
+    provider: input.provider,
+    user_id: input.userId,
+    expires_at: input.expiresAt,
+  });
+  if (error) console.error("[payments] saveOAuthState", error.message);
+}
+
+/** Consome o nonce. `false` = já usado, inexistente ou expirado. */
+export async function consumeOAuthState(nonce: string): Promise<boolean> {
+  const id = String(nonce ?? "").trim();
+  if (!id) return false;
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("payment_oauth_states")
+    .update({ consumed_at: new Date().toISOString() })
+    .eq("nonce", id)
+    .is("consumed_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .select("nonce")
+    .maybeSingle();
+  if (error) {
+    console.error("[payments] consumeOAuthState", error.message);
+    return false;
+  }
+  return !!data;
 }
 
 /* ── Transações ──────────────────────────────────────────────────────────── */
@@ -364,6 +473,134 @@ export async function findTransactionByOrder(
   return (data as TransactionRow | null) ?? null;
 }
 
+export async function findTransactionByProviderOrder(
+  provider: PaymentProviderKey,
+  providerOrderId: string,
+): Promise<TransactionRow | null> {
+  const admin = adminClient();
+  const { data } = await admin
+    .from("payment_transactions")
+    .select("*")
+    .eq("provider", provider)
+    .eq("provider_order_id", providerOrderId)
+    .maybeSingle();
+  return (data as TransactionRow | null) ?? null;
+}
+
+/** Status em que a cobrança ainda pode evoluir (não é terminal). */
+export const ACTIVE_TRANSACTION_STATUSES: readonly PaymentStatus[] = [
+  "pending",
+  "authorized",
+];
+
+/**
+ * Transação ainda "viva" do pedido.
+ *
+ * Correção da auditoria (A4): sem isso, cada clique em "pagar" criava outra
+ * cobrança para o mesmo pedido — duas preferências abertas, dois pagamentos
+ * possíveis.
+ *
+ * `provider` nulo consulta qualquer provedor: um pedido não pode ter duas
+ * cobranças vivas, nem de provedores diferentes.
+ */
+export async function findActiveTransactionByOrder(
+  orderId: string,
+  provider: PaymentProviderKey | null = null,
+): Promise<TransactionRow | null> {
+  const admin = adminClient();
+  let query = admin
+    .from("payment_transactions")
+    .select("*")
+    .eq("order_id", orderId)
+    .in("status", ACTIVE_TRANSACTION_STATUSES as unknown as string[]);
+  if (provider) query = query.eq("provider", provider);
+  const { data } = await query
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as TransactionRow | null) ?? null;
+}
+
+/**
+ * Reserva exclusiva da captura (lease).
+ *
+ * Correção da auditoria (M9): dois webhooks simultâneos podiam capturar a mesma
+ * ordem. A captura é idempotente no provedor, mas o lease evita chamadas
+ * duplicadas e mantém o estado local coerente.
+ */
+export async function claimCapture(
+  transactionId: string,
+  leaseMs: number,
+): Promise<boolean> {
+  const admin = adminClient();
+  const now = Date.now();
+  const { data } = await admin
+    .from("payment_transactions")
+    .select("capture_claimed_at")
+    .eq("id", transactionId)
+    .maybeSingle();
+  const claimedAt = data?.capture_claimed_at
+    ? new Date(data.capture_claimed_at as string).getTime()
+    : null;
+  if (claimedAt !== null && Number.isFinite(claimedAt) && now - claimedAt < leaseMs) {
+    return false;
+  }
+  const { error } = await admin
+    .from("payment_transactions")
+    .update({ capture_claimed_at: new Date(now).toISOString() })
+    .eq("id", transactionId);
+  if (error) {
+    console.error("[payments] claimCapture", error.message);
+    return false;
+  }
+  return true;
+}
+
+export async function releaseCapture(transactionId: string): Promise<void> {
+  const admin = adminClient();
+  await admin
+    .from("payment_transactions")
+    .update({ capture_claimed_at: null })
+    .eq("id", transactionId);
+}
+
+/**
+ * Registra divergência entre o valor/moeda do pedido e o confirmado pelo
+ * provedor. Nunca corrige o valor do pedido — apenas deixa rastro auditável.
+ */
+export async function flagDivergence(input: {
+  transactionId: string;
+  orderId: string;
+  expectedAmount: number;
+  receivedAmount: number;
+  expectedCurrency: string;
+  receivedCurrency: string;
+}): Promise<void> {
+  const admin = adminClient();
+  const { data } = await admin
+    .from("payment_transactions")
+    .select("metadata")
+    .eq("id", input.transactionId)
+    .maybeSingle();
+  const metadata = (data?.metadata ?? {}) as Record<string, unknown>;
+  const divergences = Array.isArray(metadata["divergences"])
+    ? (metadata["divergences"] as unknown[])
+    : [];
+  const entry = {
+    at: new Date().toISOString(),
+    order_id: input.orderId,
+    expected_amount: input.expectedAmount,
+    received_amount: input.receivedAmount,
+    expected_currency: input.expectedCurrency,
+    received_currency: input.receivedCurrency,
+  };
+  const next = [...divergences.slice(-19), entry];
+  await admin
+    .from("payment_transactions")
+    .update({ metadata: { ...metadata, divergences: next } })
+    .eq("id", input.transactionId);
+}
+
 export async function updateTransaction(input: {
   transactionId: string;
   status: PaymentStatus;
@@ -412,10 +649,22 @@ export async function syncOrderPayment(input: {
 
 /* ── Eventos (idempotência) ──────────────────────────────────────────────── */
 
+export type RecordEventResult = {
+  inserted: boolean;
+  id: string | null;
+  /** `true` quando o evento já existia (constraint única). */
+  duplicate: boolean;
+  /** Erro real de banco — NUNCA deve ser confundido com duplicata. */
+  error?: string;
+};
+
 /**
- * Registra o evento. Retorna `{ inserted: false }` quando o mesmo evento já foi
- * recebido (constraint única por provedor + id) — o webhook responde 200 e não
- * reprocessa nada.
+ * Registra o evento verificado.
+ *
+ * Correção da auditoria (A1): qualquer erro era devolvido como "duplicata",
+ * então uma falha de banco fazia o evento ser descartado em silêncio. Agora só
+ * o código 23505 é duplicata; o resto é erro de verdade (o webhook responde
+ * 500 e o provedor reenvia).
  */
 export async function recordEvent(input: {
   provider: PaymentProviderKey;
@@ -425,7 +674,7 @@ export async function recordEvent(input: {
   payload: Record<string, unknown>;
   transactionId?: string | null;
   orderId?: string | null;
-}): Promise<{ inserted: boolean; id: string | null }> {
+}): Promise<RecordEventResult> {
   const admin = adminClient();
   const { data, error } = await admin
     .from("payment_events")
@@ -441,14 +690,41 @@ export async function recordEvent(input: {
     .select("id")
     .maybeSingle();
   if (error) {
-    // 23505 = unique_violation → evento duplicado.
     if ((error as { code?: string }).code === "23505") {
-      return { inserted: false, id: null };
+      return { inserted: false, id: null, duplicate: true };
     }
     console.error("[payments] recordEvent", error.message);
-    return { inserted: false, id: null };
+    return { inserted: false, id: null, duplicate: false, error: error.message };
   }
-  return { inserted: true, id: (data?.id as string) ?? null };
+  return { inserted: true, id: (data?.id as string) ?? null, duplicate: false };
+}
+
+export type EventRow = {
+  id: string;
+  provider: PaymentProviderKey;
+  provider_event_id: string;
+  event_type: string | null;
+  signature_valid: boolean;
+  processed: boolean;
+  processing_error: string | null;
+  processed_at: string | null;
+  attempts: number;
+  transaction_id: string | null;
+  order_id: string | null;
+};
+
+export async function getEvent(
+  provider: PaymentProviderKey,
+  eventId: string,
+): Promise<EventRow | null> {
+  const admin = adminClient();
+  const { data } = await admin
+    .from("payment_events")
+    .select("*")
+    .eq("provider", provider)
+    .eq("provider_event_id", eventId)
+    .maybeSingle();
+  return (data as EventRow | null) ?? null;
 }
 
 export async function finishEvent(
@@ -458,12 +734,19 @@ export async function finishEvent(
 ): Promise<void> {
   if (!eventRowId) return;
   const admin = adminClient();
+  const { data } = await admin
+    .from("payment_events")
+    .select("attempts")
+    .eq("id", eventRowId)
+    .maybeSingle();
+  const attempts = Number(data?.attempts ?? 0) + 1;
   await admin
     .from("payment_events")
     .update({
       processed,
       processing_error: error ?? null,
       processed_at: new Date().toISOString(),
+      attempts,
     })
     .eq("id", eventRowId);
 }
@@ -479,16 +762,83 @@ export async function createRefundRecord(input: {
   status: "pending" | "approved" | "failed" | "cancelled";
   reason: string | null;
   requestedBy: string | null;
-}): Promise<void> {
+}): Promise<string | null> {
   const admin = adminClient();
-  await admin.from("payment_refunds").insert({
-    transaction_id: input.transactionId,
-    catalog_id: input.catalogId,
-    provider: input.provider,
-    provider_refund_id: input.providerRefundId,
-    amount: input.amount,
-    status: input.status,
-    reason: input.reason,
-    requested_by: input.requestedBy,
-  });
+  const { data, error } = await admin
+    .from("payment_refunds")
+    .insert({
+      transaction_id: input.transactionId,
+      catalog_id: input.catalogId,
+      provider: input.provider,
+      provider_refund_id: input.providerRefundId,
+      amount: input.amount,
+      status: input.status,
+      reason: input.reason,
+      requested_by: input.requestedBy,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.error("[payments] createRefundRecord", error.message);
+    return null;
+  }
+  return (data?.id as string) ?? null;
+}
+
+export type RefundRow = {
+  id: string;
+  transaction_id: string;
+  catalog_id: string;
+  provider: PaymentProviderKey;
+  provider_refund_id: string | null;
+  amount: number;
+  status: string;
+  reason: string | null;
+  requested_by: string | null;
+  created_at: string;
+};
+
+/** Reembolso já registrado para o mesmo id do provedor (idempotência). */
+export async function findRefundByProviderId(
+  provider: PaymentProviderKey,
+  providerRefundId: string,
+): Promise<RefundRow | null> {
+  const id = String(providerRefundId ?? "").trim();
+  if (!id) return null;
+  const admin = adminClient();
+  const { data } = await admin
+    .from("payment_refunds")
+    .select("*")
+    .eq("provider", provider)
+    .eq("provider_refund_id", id)
+    .maybeSingle();
+  return (data as RefundRow | null) ?? null;
+}
+
+/** Reembolsos ainda não confirmados pelo provedor. */
+export async function listPendingRefunds(transactionId: string): Promise<RefundRow[]> {
+  const admin = adminClient();
+  const { data } = await admin
+    .from("payment_refunds")
+    .select("*")
+    .eq("transaction_id", transactionId)
+    .eq("status", "pending")
+    .order("created_at");
+  return (data as RefundRow[] | null) ?? [];
+}
+
+export async function updateRefundRecord(
+  refundId: string,
+  input: { status?: string; providerRefundId?: string | null },
+): Promise<void> {
+  const admin = adminClient();
+  await admin
+    .from("payment_refunds")
+    .update({
+      ...(input.status === undefined ? {} : { status: input.status }),
+      ...(input.providerRefundId === undefined
+        ? {}
+        : { provider_refund_id: input.providerRefundId }),
+    })
+    .eq("id", refundId);
 }

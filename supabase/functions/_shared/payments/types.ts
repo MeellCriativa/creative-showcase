@@ -74,6 +74,16 @@ export type CreatePaymentInput = {
   currency: string;
   description: string;
   items: Array<{ name: string; quantity: number; unitPrice: number }>;
+  /**
+   * Frete oficial do pedido (re-cotado no backend).
+   *
+   * Correção da auditoria (C3): o Checkout Pro cobrava apenas `sum(items)`,
+   * então todo pedido com frete era cobrado a menos. O valor agora vai para o
+   * provedor (`shipments.cost` no Mercado Pago, `amount.breakdown.shipping` no
+   * PayPal) e precisa fechar exatamente com `amount`.
+   */
+  shippingAmount: number;
+  shippingLabel?: string | null;
   returnUrl: string;
   cancelUrl: string;
   externalReference: string;
@@ -90,7 +100,12 @@ export type CreatePaymentResult = {
 };
 
 export type ProviderPaymentSnapshot = {
-  providerPaymentId: string;
+  /**
+   * Id do PAGAMENTO/captura no provedor (é ele que o reembolso usa).
+   * `null` quando o provedor ainda não gerou captura (PayPal autorizado).
+   */
+  providerPaymentId: string | null;
+  /** Id da ORDEM/preferência — no PayPal é o id consultável. */
   providerOrderId: string | null;
   status: PaymentStatus;
   providerStatus: string | null;
@@ -132,6 +147,30 @@ export type WebhookRequest = {
   headers: Record<string, string>;
   rawBody: string;
   query: Record<string, string>;
+};
+
+/** Recurso notificado por um webhook (o que o provedor mandou, sem confirmação). */
+export type NotificationResource = {
+  type: string;
+  id: string;
+  /**
+   * `true` quando o id notificado já é um id de pagamento (e não de
+   * preferência/ordem). Define se a consulta oficial pode usar o id direto.
+   */
+  isPaymentResource: boolean;
+};
+
+/**
+ * Resultado da consulta oficial de uma notificação.
+ *
+ * Correção da auditoria (C1): o Mercado Pago manda apenas `{ type, data: { id } }`
+ * — sem `external_reference`. A referência do pedido só aparece consultando a
+ * API oficial, e é isso que este método faz.
+ */
+export type NotificationResolution = {
+  externalReference: string | null;
+  providerPaymentId: string | null;
+  providerStatus: string | null;
 };
 
 export interface PaymentProvider {
@@ -185,6 +224,15 @@ export interface PaymentProvider {
     credentials: ProviderCredentials,
     providerPaymentId: string,
   ): Promise<ProviderPaymentSnapshot | null>;
+
+  /**
+   * Consulta oficial de uma notificação de webhook para descobrir a referência
+   * do pedido (quando o payload não traz `external_reference`).
+   */
+  resolveNotification(
+    credentials: ProviderCredentials,
+    resource: NotificationResource,
+  ): Promise<NotificationResolution | null>;
 
   capture(
     credentials: ProviderCredentials,

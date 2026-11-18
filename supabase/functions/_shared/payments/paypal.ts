@@ -10,9 +10,12 @@
  * reporta `configured = false` e nada é simulado.
  */
 import { readEnv } from "./crypto.ts";
+import { providerAmountString, currencyDecimals } from "./money.ts";
+import { computeChargeSplit } from "./lifecycle.ts";
 import type {
   CreatePaymentInput,
   CreatePaymentResult,
+  NotificationResolution,
   PaymentProvider,
   PaymentStatus,
   ProviderCredentials,
@@ -129,6 +132,148 @@ export function mapPayPalStatus(status: string | null | undefined): PaymentStatu
 
 function money(value: number): string {
   return Number(value).toFixed(2);
+}
+
+/**
+ * Monta a ordem de checkout do PayPal.
+ *
+ * O total inclui o frete e o `breakdown` deixa explícito quanto é item e quanto
+ * é envio — se `itens + frete` não fechar com o total do pedido, recusamos.
+ */
+export function buildOrderBody(
+  input: CreatePaymentInput,
+  merchantId: string,
+): Record<string, unknown> {
+  const charge = computeChargeSplit({
+    items: input.items.map((item) => ({
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+    })),
+    shippingAmount: Number(input.shippingAmount ?? 0),
+    expectedTotal: Number(input.amount),
+    decimals: currencyDecimals(input.currency),
+  });
+  if (!charge.ok) {
+    throw new Error(`Cobrança recusada: ${charge.reason}`);
+  }
+
+  const amount: Record<string, unknown> = {
+    currency_code: input.currency,
+    value: providerAmountString(charge.total, input.currency),
+  };
+  if (charge.shippingMinor > 0) {
+    amount.breakdown = {
+      item_total: {
+        currency_code: input.currency,
+        value: providerAmountString(charge.itemTotal, input.currency),
+      },
+      shipping: {
+        currency_code: input.currency,
+        value: providerAmountString(charge.shipping, input.currency),
+      },
+    };
+  }
+
+  return {
+    intent: "CAPTURE",
+    purchase_units: [
+      {
+        reference_id: input.orderId,
+        custom_id: input.externalReference,
+        invoice_id: input.orderId.replace(/-/g, "").slice(0, 40),
+        description: String(input.description).slice(0, 127),
+        amount,
+        payee: { merchant_id: merchantId },
+      },
+    ],
+    application_context: {
+      brand_name: "Vitrine Criativa",
+      shipping_preference: "NO_SHIPPING",
+      user_action: "PAY_NOW",
+      return_url: input.returnUrl,
+      cancel_url: input.cancelUrl,
+    },
+  };
+}
+
+/**
+ * Converte uma ordem do PayPal em snapshot financeiro.
+ *
+ * Correção da auditoria (C5): antes o status vinha só da ORDEM (`COMPLETED`) e
+ * `refundedAmount` era sempre `0`, então qualquer consulta apagava o reembolso
+ * já registrado e permitia reembolsar o mesmo valor duas vezes. Agora o status
+ * vem da CAPTURA (que é quem carrega `REFUNDED`/`PARTIALLY_REFUNDED`).
+ */
+export function paypalSnapshotFromOrder(
+  order: Record<string, unknown> | null | undefined,
+  providerPaymentId: string,
+): ProviderPaymentSnapshot | null {
+  if (!order || typeof order !== "object") return null;
+  const units = order["purchase_units"];
+  const unit = Array.isArray(units) ? (units[0] as Record<string, unknown>) : null;
+  const payments = (unit?.["payments"] ?? {}) as Record<string, unknown>;
+  const captures = payments["captures"];
+  const capture = Array.isArray(captures) ? (captures[0] as Record<string, unknown>) : null;
+
+  const orderStatus = String(order["status"] ?? "");
+  const captureStatus = String(capture?.["status"] ?? "").toUpperCase();
+  const captureAmount = Number(
+    (capture?.["amount"] as Record<string, unknown> | undefined)?.["value"] ?? 0,
+  );
+  const unitAmount = Number(
+    (unit?.["amount"] as Record<string, unknown> | undefined)?.["value"] ?? 0,
+  );
+
+  let status: PaymentStatus = mapPayPalStatus(orderStatus);
+  let capturedAmount = 0;
+  let refundedAmount = 0;
+
+  if (capture) {
+    switch (captureStatus) {
+      case "COMPLETED":
+        status = "captured";
+        capturedAmount = captureAmount;
+        break;
+      case "REFUNDED":
+        status = "refunded";
+        capturedAmount = captureAmount;
+        refundedAmount = captureAmount;
+        break;
+      case "PARTIALLY_REFUNDED":
+        // O PayPal não expõe o total reembolsado na captura; o valor já
+        // registrado é preservado (merge monotônico no webhook/painel).
+        status = "partially_refunded";
+        capturedAmount = captureAmount;
+        break;
+      case "PENDING":
+        status = "pending";
+        break;
+      case "DECLINED":
+      case "FAILED":
+        status = "failed";
+        break;
+      default:
+        break;
+    }
+  }
+
+  return {
+    // Só a captura é um pagamento reembolsável; sem captura, nada é gravado.
+    providerPaymentId: capture?.["id"] ? String(capture["id"]) : null,
+    providerOrderId: order["id"] ? String(order["id"]) : providerPaymentId,
+    status,
+    providerStatus: captureStatus || orderStatus || null,
+    amount: unitAmount || captureAmount,
+    currency: String(
+      (unit?.["amount"] as Record<string, unknown> | undefined)?.["currency_code"] ??
+        (capture?.["amount"] as Record<string, unknown> | undefined)?.["currency_code"] ??
+        "",
+    ),
+    capturedAmount,
+    refundedAmount,
+    payerReference: null,
+    raw: order,
+  };
 }
 
 export const paypalProvider: PaymentProvider = {
@@ -328,30 +473,17 @@ export const paypalProvider: PaymentProvider = {
     const merchantId = credentials.merchantId;
     if (!merchantId) throw new Error("Merchant ID do vendedor ausente.");
 
+    const body = buildOrderBody(input, merchantId);
+
     const res = await ppFetch("/v2/checkout/orders", {
       method: "POST",
       token,
-      headers: { "PayPal-Partner-Attribution-Id": partnerAttributionId ?? "" },
-      body: JSON.stringify({
-        intent: "CAPTURE",
-        purchase_units: [
-          {
-            reference_id: input.orderId,
-            custom_id: input.externalReference,
-            invoice_id: input.orderId.replace(/-/g, "").slice(0, 40),
-            description: input.description.slice(0, 127),
-            amount: { currency_code: input.currency, value: money(input.amount) },
-            payee: { merchant_id: merchantId },
-          },
-        ],
-        application_context: {
-          brand_name: "Vitrine Criativa",
-          shipping_preference: "NO_SHIPPING",
-          user_action: "PAY_NOW",
-          return_url: input.returnUrl,
-          cancel_url: input.cancelUrl,
-        },
-      }),
+      headers: {
+        "PayPal-Partner-Attribution-Id": partnerAttributionId ?? "",
+        // Idempotência: repetir a criação do mesmo pedido devolve a mesma ordem.
+        "PayPal-Request-Id": `order-${input.orderId}`,
+      },
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -382,23 +514,40 @@ export const paypalProvider: PaymentProvider = {
       token,
     });
     if (!res.ok || !res.body) return null;
-    const unit = Array.isArray(res.body.purchase_units) ? res.body.purchase_units[0] : null;
-    const capture = unit?.payments?.captures?.[0];
-    const amount = Number(unit?.amount?.value ?? capture?.amount?.value ?? 0);
+    return paypalSnapshotFromOrder(res.body, providerPaymentId);
+  },
+
+  async resolveNotification(
+    _credentials: ProviderCredentials,
+    resource: { type: string; id: string },
+  ): Promise<NotificationResolution | null> {
+    const id = String(resource.id ?? "").trim();
+    if (!id) return null;
+    const token = await platformToken();
+    if (!token) return null;
+    const res = await ppFetch(`/v2/checkout/orders/${encodeURIComponent(id)}`, {
+      method: "GET",
+      token,
+    });
+    if (!res.ok || !res.body) return null;
+    const units = res.body.purchase_units;
+    const unit = Array.isArray(units) ? units[0] : null;
     return {
-      providerPaymentId,
-      providerOrderId: res.body.id ?? providerPaymentId,
-      status: mapPayPalStatus(res.body.status),
+      externalReference: unit?.custom_id ?? unit?.reference_id ?? null,
+      providerPaymentId: String(res.body.id ?? id),
       providerStatus: res.body.status ?? null,
-      amount,
-      currency: unit?.amount?.currency_code ?? capture?.amount?.currency_code ?? "",
-      capturedAmount: capture ? Number(capture.amount?.value ?? 0) : 0,
-      refundedAmount: 0,
-      payerReference: null,
-      raw: res.body,
     };
   },
 
+  /**
+   * Captura a ordem aprovada.
+   *
+   * Correção da auditoria (C4): a captura existia mas nunca era chamada, então
+   * todo pagamento PayPal ficava `authorized` e o dinheiro nunca era capturado.
+   * `PayPal-Request-Id` fixo garante que duas capturas concorrentes não gerem
+   * duas capturas: a segunda recebe a mesma captura (ou `ORDER_ALREADY_CAPTURED`,
+   * tratado como sucesso consultando a ordem).
+   */
   async capture(
     _credentials: ProviderCredentials,
     providerPaymentId: string,
@@ -407,26 +556,23 @@ export const paypalProvider: PaymentProvider = {
     if (!token) return null;
     const res = await ppFetch(
       `/v2/checkout/orders/${encodeURIComponent(providerPaymentId)}/capture`,
-      { method: "POST", token, body: JSON.stringify({}) },
+      {
+        method: "POST",
+        token,
+        headers: { "PayPal-Request-Id": `capture-${providerPaymentId}` },
+        body: JSON.stringify({}),
+      },
     );
     if (!res.ok) {
+      const issue = String(res.body?.details?.[0]?.issue ?? res.body?.name ?? "");
+      if (issue === "ORDER_ALREADY_CAPTURED" || res.status === 422) {
+        // Já capturado (retry/duplo clique): devolve o estado real da ordem.
+        return paypalProvider.getPayment(_credentials, providerPaymentId);
+      }
       console.error("[paypal] capture", res.status, JSON.stringify(res.body));
       return null;
     }
-    const unit = Array.isArray(res.body?.purchase_units) ? res.body.purchase_units[0] : null;
-    const capture = unit?.payments?.captures?.[0];
-    return {
-      providerPaymentId: capture?.id ?? providerPaymentId,
-      providerOrderId: res.body?.id ?? providerPaymentId,
-      status: mapPayPalStatus(res.body?.status),
-      providerStatus: res.body?.status ?? null,
-      amount: Number(capture?.amount?.value ?? unit?.amount?.value ?? 0),
-      currency: capture?.amount?.currency_code ?? unit?.amount?.currency_code ?? "",
-      capturedAmount: Number(capture?.amount?.value ?? 0),
-      refundedAmount: 0,
-      payerReference: null,
-      raw: res.body ?? {},
-    };
+    return paypalSnapshotFromOrder(res.body, providerPaymentId);
   },
 
   async refund(
@@ -442,11 +588,14 @@ export const paypalProvider: PaymentProvider = {
       const rawCapture = (order?.raw as any)?.purchase_units?.[0]?.payments?.captures?.[0];
       if (rawCapture?.id) captureId = rawCapture.id;
     }
+    const amount = providerAmountString(input.amount, input.currency);
     const res = await ppFetch(`/v2/payments/captures/${encodeURIComponent(captureId)}/refunds`, {
       method: "POST",
       token,
+      // Mesma chave para o mesmo reembolso → o PayPal devolve o mesmo refund.
+      headers: { "PayPal-Request-Id": `refund-${captureId}-${amount}` },
       body: JSON.stringify({
-        amount: { value: money(input.amount), currency_code: input.currency },
+        amount: { value: amount, currency_code: input.currency },
         ...(input.reason ? { note_to_payer: input.reason.slice(0, 255) } : {}),
       }),
     });

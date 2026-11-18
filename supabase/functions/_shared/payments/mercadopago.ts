@@ -9,9 +9,13 @@
  * Split 1:N não é implementado (exigiria habilitação específica na conta).
  */
 import { readEnv } from "./crypto.ts";
+import { addAmounts, currencyDecimals, providerAmount } from "./money.ts";
+import { computeChargeSplit } from "./lifecycle.ts";
+import { selectPaymentFromMerchantOrder } from "./resolution.ts";
 import type {
   CreatePaymentInput,
   CreatePaymentResult,
+  NotificationResolution,
   PaymentProvider,
   PaymentStatus,
   ProviderCredentials,
@@ -41,7 +45,7 @@ function config() {
 
 async function mpFetch(
   path: string,
-  init: RequestInit & { token?: string } = {},
+  init: RequestInit & { token?: string | null } = {},
 ): Promise<{ ok: boolean; status: number; body: any }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -102,8 +106,75 @@ export function mapMercadoPagoStatus(
   }
 }
 
-function money(value: number): number {
-  return Number(Number(value).toFixed(2));
+/** Endpoint público que recebe as notificações (precisa de verify_jwt = false). */
+export function mpNotificationUrl(supabaseUrl: string): string {
+  return `${String(supabaseUrl ?? "").replace(/\/+$/, "")}/functions/v1/webhooks-mercadopago`;
+}
+
+/**
+ * Monta o corpo da preferência do Checkout Pro.
+ *
+ * Correção da auditoria (C3): o frete (`shipments.cost`) passou a ser enviado.
+ * Se `itens + frete` não fechar exatamente com o total oficial do pedido, a
+ * cobrança é recusada — nunca cobramos um valor diferente do pedido.
+ */
+export function buildPreferenceBody(
+  input: CreatePaymentInput,
+  notificationUrl: string,
+): Record<string, unknown> {
+  const decimals = currencyDecimals(input.currency);
+  const charge = computeChargeSplit({
+    items: input.items.map((item) => ({
+      quantity: Number(item.quantity),
+      unitPrice: Number(item.unitPrice),
+    })),
+    shippingAmount: Number(input.shippingAmount ?? 0),
+    expectedTotal: Number(input.amount),
+    decimals,
+  });
+  if (!charge.ok) {
+    throw new Error(`Cobrança recusada: ${charge.reason}`);
+  }
+
+  return {
+    items: input.items.map((item, index) => ({
+      id: `${input.orderId}-${index}`,
+      title: String(item.name).slice(0, 250),
+      description: String(input.description).slice(0, 250),
+      quantity: Number(item.quantity),
+      currency_id: input.currency,
+      unit_price: providerAmount(item.unitPrice, input.currency),
+    })),
+    // Frete cobrado à parte, como o Mercado Pago espera no Checkout Pro.
+    ...(charge.shippingMinor > 0
+      ? { shipments: { cost: charge.shipping, mode: "not_specified" } }
+      : {}),
+    external_reference: input.externalReference,
+    notification_url: notificationUrl,
+    back_urls: {
+      success: input.returnUrl,
+      pending: input.returnUrl,
+      failure: input.cancelUrl,
+    },
+    auto_return: "approved",
+    statement_descriptor: "VITRINE CRIATIVA",
+    metadata: {
+      order_id: input.orderId,
+      catalog_id: input.catalogId,
+      order_total: charge.total,
+      shipping_cost: charge.shipping,
+    },
+    // Split 1:1 → nenhum marketplace_fee é enviado. O token é do vendedor,
+    // portanto 100% do valor é liquidado na conta dele.
+  };
+}
+
+/** Soma itens + frete (usada nos testes e na conferência de valores). */
+export function mpChargeTotal(input: CreatePaymentInput): number {
+  return addAmounts(
+    [...input.items.map((item) => Number(item.unitPrice) * Number(item.quantity)), Number(input.shippingAmount ?? 0)],
+    input.currency,
+  );
 }
 
 export const mercadopagoProvider: PaymentProvider = {
@@ -244,33 +315,7 @@ export const mercadopagoProvider: PaymentProvider = {
     input: CreatePaymentInput,
   ): Promise<CreatePaymentResult> {
     const supabaseUrl = readEnv("SUPABASE_URL") ?? "";
-    const notificationUrl = `${supabaseUrl}/functions/v1/webhooks-mercadopago`;
-    const body = {
-      items: input.items.map((item, index) => ({
-        id: `${input.orderId}-${index}`,
-        title: item.name.slice(0, 250),
-        description: input.description.slice(0, 250),
-        quantity: item.quantity,
-        currency_id: input.currency,
-        unit_price: money(item.unitPrice),
-      })),
-      external_reference: input.externalReference,
-      notification_url: notificationUrl,
-      back_urls: {
-        success: input.returnUrl,
-        pending: input.returnUrl,
-        failure: input.cancelUrl,
-      },
-      auto_return: "approved",
-      statement_descriptor: "VITRINE CRIATIVA",
-      metadata: {
-        order_id: input.orderId,
-        catalog_id: input.catalogId,
-        seller_id: credentials.externalAccountId,
-      },
-      // Split 1:1 → nenhum marketplace_fee é enviado. O token é do vendedor,
-      // portanto 100% do valor é liquidado na conta dele.
-    };
+    const body = buildPreferenceBody(input, mpNotificationUrl(supabaseUrl));
 
     const res = await mpFetch("/checkout/preferences", {
       method: "POST",
@@ -334,16 +379,20 @@ export const mercadopagoProvider: PaymentProvider = {
     credentials: ProviderCredentials,
     input: RefundInput,
   ): Promise<RefundResult> {
-    let paymentId = input.providerPaymentId;
+    const paymentId = input.providerPaymentId;
     if (!paymentId) {
       throw new Error("Pagamento do Mercado Pago ainda não identificado para reembolso.");
     }
+    const amount = providerAmount(input.amount, input.currency);
+    // Chave determinística: repetir o mesmo reembolso (retry, duplo clique,
+    // reprocessamento) devolve o MESMO reembolso em vez de criar outro.
+    const idempotencyKey = `refund:${paymentId}:${currencyDecimals(input.currency)}:${amount}`;
     const res = await mpFetch(`/v1/payments/${encodeURIComponent(paymentId)}/refunds`, {
       method: "POST",
       token: credentials.accessToken,
-      headers: { "X-Idempotency-Key": `${paymentId}-${input.amount}-${Date.now()}` },
+      headers: { "X-Idempotency-Key": idempotencyKey },
       body: JSON.stringify({
-        amount: money(input.amount),
+        amount,
         ...(input.reason ? { reason: input.reason.slice(0, 250) } : {}),
       }),
     });
@@ -355,9 +404,57 @@ export const mercadopagoProvider: PaymentProvider = {
     return {
       providerRefundId: res.body?.id ? String(res.body.id) : null,
       status: status === "approved" ? "approved" : status === "rejected" ? "failed" : "pending",
-      amount: Number(res.body?.amount ?? input.amount),
+      amount: Number(res.body?.amount ?? amount),
       raw: res.body ?? {},
     };
+  },
+
+  /**
+   * Resolve a notificação pela API oficial.
+   *
+   * O webhook do Mercado Pago entrega `{ type: "payment", data: { id } }`: o
+   * `id` é o pagamento, enquanto a transação guarda a preferência. Sem esta
+   * consulta, o pedido nunca era encontrado (auditoria C1/C2).
+   */
+  async resolveNotification(
+    credentials: ProviderCredentials,
+    resource: { type: string; id: string },
+  ): Promise<NotificationResolution | null> {
+    const id = String(resource.id ?? "").trim();
+    if (!id) return null;
+
+    if (resource.type === "payment") {
+      const res = await mpFetch(`/v1/payments/${encodeURIComponent(id)}`, {
+        method: "GET",
+        token: credentials.accessToken,
+      });
+      if (!res.ok || !res.body?.id) return null;
+      return {
+        externalReference: res.body.external_reference
+          ? String(res.body.external_reference)
+          : null,
+        providerPaymentId: String(res.body.id),
+        providerStatus: res.body.status ?? null,
+      };
+    }
+
+    if (resource.type === "merchant_order") {
+      const res = await mpFetch(`/v1/merchant_orders/${encodeURIComponent(id)}`, {
+        method: "GET",
+        token: credentials.accessToken,
+      });
+      if (!res.ok || !res.body) return null;
+      const payment = selectPaymentFromMerchantOrder(res.body);
+      return {
+        externalReference: res.body.external_reference
+          ? String(res.body.external_reference)
+          : null,
+        providerPaymentId: payment?.paymentId ?? null,
+        providerStatus: payment?.status ?? null,
+      };
+    }
+
+    return null;
   },
 
   async verifyWebhook(request: WebhookRequest): Promise<WebhookVerification> {
