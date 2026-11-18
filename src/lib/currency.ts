@@ -903,6 +903,24 @@ export function fromMinorUnits(minor: number, code: string | null | undefined): 
   return roundMoney(minor / 10 ** decimals, code);
 }
 
+/**
+ * `true` quando o valor tem casas menores que a unidade mínima da moeda.
+ *
+ * Ex.: `10.5` em JPY (0 casas), `1.2345` em KWD (3 casas). A tolerância é
+ * relativa ao valor já convertido em unidades mínimas — nunca um "meio
+ * centavo" fixo, que quebra moedas de 0 ou 3 casas.
+ */
+export function hasSubUnitPrecision(
+  value: number,
+  code: string | null | undefined,
+): boolean {
+  if (!Number.isFinite(value)) return false;
+  const decimals = getCurrency(code).decimals;
+  const scaled = value * 10 ** decimals;
+  const tolerance = Math.max(1e-6, Math.abs(scaled) * 1e-12);
+  return Math.abs(scaled - Math.round(scaled)) > tolerance;
+}
+
 /** Formata um valor monetário já armazenado, sem converter nada. */
 export function formatMoney(value: number, code?: string | null): string {
   const def = getCurrency(code);

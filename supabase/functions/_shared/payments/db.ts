@@ -762,6 +762,8 @@ export async function createRefundRecord(input: {
   status: "pending" | "approved" | "failed" | "cancelled";
   reason: string | null;
   requestedBy: string | null;
+  /** Identificador da operação (R-01). Só é gravado quando a coluna existe. */
+  operationId?: string | null;
 }): Promise<string | null> {
   const admin = adminClient();
   const { data, error } = await admin
@@ -775,6 +777,7 @@ export async function createRefundRecord(input: {
       status: input.status,
       reason: input.reason,
       requested_by: input.requestedBy,
+      ...(input.operationId ? { operation_id: input.operationId } : {}),
     })
     .select("id")
     .maybeSingle();
@@ -796,7 +799,126 @@ export type RefundRow = {
   reason: string | null;
   requested_by: string | null;
   created_at: string;
+  /** Presente apenas depois da migration de operações (R-01). */
+  operation_id?: string | null;
 };
+
+/** `true` quando o erro é só a coluna `operation_id` ainda não existir. */
+function isMissingOperationColumn(error: {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+}): boolean {
+  const code = String(error.code ?? "").toUpperCase();
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  if (!text.includes("operation_id")) return false;
+  return code === "42703" || code === "PGRST204" || /column|coluna|does not exist/.test(text);
+}
+
+/** Todos os reembolsos da transação (base da contabilidade — R-01). */
+export async function listRefunds(transactionId: string): Promise<RefundRow[]> {
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("payment_refunds")
+    .select("*")
+    .eq("transaction_id", transactionId)
+    .order("created_at");
+  if (error) {
+    console.error("[payments] listRefunds", error.message);
+    return [];
+  }
+  return (data as RefundRow[] | null) ?? [];
+}
+
+/**
+ * Reembolso já registrado para a MESMA operação (retry seguro).
+ *
+ * Degrada para `null` quando a migration ainda não foi aplicada — nesse caso a
+ * proteção contra duplicidade continua no provedor (chave por operação) e no
+ * dedupe por `provider_refund_id`.
+ */
+export async function findRefundByOperation(
+  transactionId: string,
+  operationId: string,
+): Promise<RefundRow | null> {
+  const id = String(operationId ?? "").trim().toLowerCase();
+  if (!transactionId || !id) return null;
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("payment_refunds")
+    .select("*")
+    .eq("transaction_id", transactionId)
+    .eq("operation_id", id)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    if (!isMissingOperationColumn(error)) {
+      console.error("[payments] findRefundByOperation", error.message);
+    }
+    return null;
+  }
+  return (data as RefundRow | null) ?? null;
+}
+
+/**
+ * Reserva a operação antes de chamar o provedor.
+ *
+ * A linha nasce `pending`: se o processo cair no meio (timeout, deploy), o
+ * retry encontra a mesma operação e reusa a chave — nunca cria um segundo
+ * reembolso.
+ */
+export async function claimRefundOperation(input: {
+  transactionId: string;
+  catalogId: string;
+  provider: PaymentProviderKey;
+  amount: number;
+  reason: string | null;
+  requestedBy: string | null;
+  operationId: string;
+}): Promise<{ row: RefundRow | null; created: boolean; error?: string }> {
+  const admin = adminClient();
+  const base = {
+    transaction_id: input.transactionId,
+    catalog_id: input.catalogId,
+    provider: input.provider,
+    provider_refund_id: null,
+    amount: input.amount,
+    status: "pending",
+    reason: input.reason,
+    requested_by: input.requestedBy,
+  };
+
+  const inserted = await admin
+    .from("payment_refunds")
+    .insert({ ...base, operation_id: input.operationId })
+    .select("*")
+    .maybeSingle();
+
+  if (!inserted.error) {
+    return { row: (inserted.data as RefundRow | null) ?? null, created: true };
+  }
+
+  // Migration ainda não aplicada: segue sem operation_id (comportamento antigo,
+  // porém sem somar saldo em dobro — o ledger deduplica por id do provedor).
+  if (isMissingOperationColumn(inserted.error)) {
+    const fallback = await admin.from("payment_refunds").insert(base).select("*").maybeSingle();
+    if (fallback.error) {
+      console.error("[payments] claimRefundOperation", fallback.error.message);
+      return { row: null, created: false, error: fallback.error.message };
+    }
+    return { row: (fallback.data as RefundRow | null) ?? null, created: true };
+  }
+
+  // Corrida: outra requisição reservou a mesma operação.
+  if (String(inserted.error.code ?? "") === "23505") {
+    const existing = await findRefundByOperation(input.transactionId, input.operationId);
+    return { row: existing, created: false };
+  }
+
+  console.error("[payments] claimRefundOperation", inserted.error.message);
+  return { row: null, created: false, error: inserted.error.message };
+}
 
 /** Reembolso já registrado para o mesmo id do provedor (idempotência). */
 export async function findRefundByProviderId(
@@ -811,6 +933,8 @@ export async function findRefundByProviderId(
     .select("*")
     .eq("provider", provider)
     .eq("provider_refund_id", id)
+    .order("created_at")
+    .limit(1)
     .maybeSingle();
   return (data as RefundRow | null) ?? null;
 }
@@ -829,7 +953,7 @@ export async function listPendingRefunds(transactionId: string): Promise<RefundR
 
 export async function updateRefundRecord(
   refundId: string,
-  input: { status?: string; providerRefundId?: string | null },
+  input: { status?: string; providerRefundId?: string | null; amount?: number },
 ): Promise<void> {
   const admin = adminClient();
   await admin
@@ -839,6 +963,7 @@ export async function updateRefundRecord(
       ...(input.providerRefundId === undefined
         ? {}
         : { provider_refund_id: input.providerRefundId }),
+      ...(input.amount === undefined ? {} : { amount: input.amount }),
     })
     .eq("id", refundId);
 }

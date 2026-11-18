@@ -299,10 +299,30 @@ export function listTransactions(catalogId: string) {
   });
 }
 
+/**
+ * Identificador de uma operação de reembolso (R-01).
+ *
+ * Cada tentativa NOVA recebe um id; retries da mesma tentativa reusam o id já
+ * gerado. É o id que vira a chave de idempotência no provedor.
+ */
+export function newRefundOperationId(): string {
+  const cryptoImpl = globalThis.crypto;
+  if (cryptoImpl && typeof cryptoImpl.randomUUID === "function") {
+    return cryptoImpl.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 export function refundTransaction(input: {
   transactionId: string;
   amount?: number;
   reason?: string;
+  /** Operação de reembolso (retry reusa o mesmo id). */
+  operationId: string;
 }) {
   return call<{
     status: string;
@@ -313,9 +333,12 @@ export function refundTransaction(input: {
     pending: boolean;
     /** `true` quando o pedido já tinha esse reembolso pendente. */
     reused?: boolean;
+    /** Operação usada pelo backend (para retry seguro). */
+    operation_id?: string;
   }>("refund", {
     body: {
       transaction_id: input.transactionId,
+      operation_id: input.operationId,
       ...(input.amount === undefined ? {} : { amount: input.amount }),
       ...(input.reason ? { reason: input.reason } : {}),
     },

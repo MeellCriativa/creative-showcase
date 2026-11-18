@@ -122,6 +122,15 @@ export type RefundInput = {
   amount: number;
   currency: string;
   reason?: string | null;
+  /**
+   * Chave de idempotência da OPERAÇÃO de reembolso.
+   *
+   * Correção da auditoria (R-01): antes cada provedor derivava a chave do
+   * VALOR, então dois reembolsos legítimos de mesmo valor colidiam. A chave
+   * agora vem de fora (uma por operação), estável em retries e distinta entre
+   * operações.
+   */
+  idempotencyKey: string;
 };
 
 export type RefundResult = {

@@ -384,9 +384,9 @@ export const mercadopagoProvider: PaymentProvider = {
       throw new Error("Pagamento do Mercado Pago ainda não identificado para reembolso.");
     }
     const amount = providerAmount(input.amount, input.currency);
-    // Chave determinística: repetir o mesmo reembolso (retry, duplo clique,
-    // reprocessamento) devolve o MESMO reembolso em vez de criar outro.
-    const idempotencyKey = `refund:${paymentId}:${currencyDecimals(input.currency)}:${amount}`;
+    // Chave por OPERAÇÃO (R-01): retry da mesma operação devolve o MESMO
+    // reembolso; outra operação de mesmo valor usa outra chave.
+    const idempotencyKey = input.idempotencyKey;
     const res = await mpFetch(`/v1/payments/${encodeURIComponent(paymentId)}/refunds`, {
       method: "POST",
       token: credentials.accessToken,

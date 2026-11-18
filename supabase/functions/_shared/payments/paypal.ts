@@ -592,8 +592,9 @@ export const paypalProvider: PaymentProvider = {
     const res = await ppFetch(`/v2/payments/captures/${encodeURIComponent(captureId)}/refunds`, {
       method: "POST",
       token,
-      // Mesma chave para o mesmo reembolso → o PayPal devolve o mesmo refund.
-      headers: { "PayPal-Request-Id": `refund-${captureId}-${amount}` },
+      // Chave por OPERAÇÃO (R-01): o retry da mesma operação devolve o mesmo
+      // refund; outra operação de mesmo valor usa outra chave.
+      headers: { "PayPal-Request-Id": input.idempotencyKey },
       body: JSON.stringify({
         amount: { value: amount, currency_code: input.currency },
         ...(input.reason ? { note_to_payer: input.reason.slice(0, 255) } : {}),

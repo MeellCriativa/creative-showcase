@@ -265,6 +265,28 @@ export function eventKeyFor(input: { valid: boolean; eventId: string }): string 
 
 /* ── Tentativas de pagamento ────────────────────────────────────────────── */
 
+/**
+ * Status em que o pedido NÃO pode receber uma nova cobrança.
+ *
+ * Correção da auditoria (R-03): `partially_refunded` faltava na lista — um
+ * pedido já pago, com reembolso parcial, aceitava uma nova cobrança cheia.
+ * `pending` fica de fora de propósito: é a tentativa em andamento e o fluxo
+ * idempotente devolve a mesma cobrança em vez de criar outra.
+ */
+export const CHARGE_BLOCKING_STATUSES: readonly PaymentStatus[] = [
+  "approved",
+  "authorized",
+  "captured",
+  "partially_refunded",
+  "refunded",
+  "disputed",
+];
+
+export function blocksNewCharge(status: string | null | undefined): boolean {
+  const value = String(status ?? "").trim().toLowerCase();
+  return (CHARGE_BLOCKING_STATUSES as readonly string[]).includes(value);
+}
+
 export type PaymentAttemptDecision = "reuse" | "create" | "reject_consumed" | "reject_token";
 
 /**

@@ -17,17 +17,18 @@ import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import {
   adminClient,
+  claimRefundOperation,
   consumeCheckoutSession,
-  createRefundRecord,
   createTransaction,
   deleteConnection,
   findActiveTransactionByOrder,
+  findRefundByOperation,
   findRefundByProviderId,
   findTransactionByOrder,
   getCatalog,
   getConnection,
   getOwnedCatalog,
-  listPendingRefunds,
+  listRefunds,
   markConnectionState,
   saveOAuthState,
   syncOrderPayment,
@@ -54,13 +55,26 @@ import { createSecureOrder } from "../_shared/payments/orders.ts";
 import { applyOfficialSnapshot } from "../_shared/payments/webhooks.ts";
 import { clientFingerprint, enforceRateLimit } from "../_shared/payments/ratelimit.ts";
 import {
-  mergeRefundState,
+  blocksNewCharge,
   paymentAttemptDecision,
   providerLookupId,
 } from "../_shared/payments/lifecycle.ts";
-import { currencyDecimals } from "../_shared/payments/money.ts";
+import {
+  computeRefundState,
+  newRefundOperationId,
+  normalizeRefundOperationId,
+  planRefund,
+  reconcilePendingRefunds,
+  refundProviderKey,
+  type RefundState,
+} from "../_shared/payments/refunds.ts";
 import { resolveStoreCurrency, toMinorUnits } from "../../../src/lib/currency.ts";
-import type { PaymentProviderKey } from "../_shared/payments/types.ts";
+import type {
+  PaymentProvider,
+  PaymentProviderKey,
+  ProviderCredentials,
+  RefundResult,
+} from "../_shared/payments/types.ts";
 
 class HttpError extends Error {
   status: number;
@@ -307,8 +321,14 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     customer_name: string;
   };
 
-  if (["approved", "authorized", "captured", "refunded", "disputed"].includes(order.payment_status)) {
-    throw new HttpError(409, "Este pedido já possui pagamento aprovado.");
+  // ── Nenhuma cobrança nova para pedido já pago/reembolsado (R-03) ────────
+  // `partially_refunded` estava fora da lista: um pedido pago e parcialmente
+  // reembolsado aceitava uma nova cobrança cheia.
+  if (blocksNewCharge(order.payment_status)) {
+    throw new HttpError(
+      409,
+      "Este pedido já possui pagamento aprovado ou reembolsado e não pode ser cobrado novamente.",
+    );
   }
 
   const catalog = await getCatalog(order.catalog_id);
@@ -359,6 +379,18 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
   }
   if (attempt === "reuse" && active) {
     if (active.checkout_url) {
+      // R-03: a sessão precisa estar consumida (por esta tentativa ou pela que
+      // criou a cobrança). Sem consumo comprovado, nenhum link é liberado.
+      if (!session.consumed) {
+        const consumed = await consumeCheckoutSession(order.id, token);
+        if (!consumed.ok) {
+          console.error("[payments] sessão não consumida (reuso):", consumed.reason);
+          throw new HttpError(
+            503,
+            "Não foi possível liberar o pagamento com segurança. Refaça o pedido.",
+          );
+        }
+      }
       return jsonRes({
         success: true,
         provider,
@@ -420,6 +452,19 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     throw new HttpError(502, "O provedor não retornou a URL de pagamento.");
   }
 
+  // ── Token de checkout é de uso único (auditoria A3 / R-03) ──────────────
+  // O consumo acontece ANTES de registrar a transação: sem consumo comprovado
+  // nenhuma cobrança é criada nem liberada. Falha aqui é fatal (503) — antes
+  // era apenas um aviso e o link seguia sendo devolvido.
+  const consumed = await consumeCheckoutSession(order.id, token);
+  if (!consumed.ok) {
+    console.error("[payments] sessão não consumida:", consumed.reason);
+    throw new HttpError(
+      503,
+      "Não foi possível liberar o pagamento com segurança. Refaça o pedido.",
+    );
+  }
+
   const transaction = await createTransaction({
     catalogId: catalog.id,
     orderId: order.id,
@@ -459,12 +504,6 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     .from("orders")
     .update({ payment_provider: provider, payment_status: "pending" })
     .eq("id", order.id);
-
-  // ── Token de checkout é de uso único (auditoria A3) ─────────────────────
-  const consumed = await consumeCheckoutSession(order.id, token);
-  if (!consumed.ok) {
-    console.warn("[payments] sessão não consumida:", consumed.reason);
-  }
 
   return jsonRes({
     success: true,
@@ -765,6 +804,74 @@ async function loadOwnedTransaction(
   return { transaction, catalogId: catalog.id, provider: transaction.provider };
 }
 
+/**
+ * Consulta o total reembolsado oficial (best-effort).
+ *
+ * Nunca é fonte de inflação: o valor entra como complemento do ledger e é
+ * limitado ao total da transação em `computeRefundState`.
+ */
+async function readOfficialRefunded(input: {
+  providerImpl: PaymentProvider;
+  credentials: ProviderCredentials;
+  provider: PaymentProviderKey;
+  transaction: TransactionRow;
+  providerPaymentId: string;
+}): Promise<number | null> {
+  try {
+    // O PayPal expõe o reembolso na ORDEM (a captura não traz o total parcial).
+    const lookupId =
+      input.provider === "paypal" && input.transaction.provider_order_id
+        ? input.transaction.provider_order_id
+        : input.providerPaymentId;
+    const snapshot = await input.providerImpl.getPayment(input.credentials, lookupId);
+    if (!snapshot) return null;
+    const value = Number(snapshot.refundedAmount ?? 0);
+    return Number.isFinite(value) ? value : null;
+  } catch (error) {
+    console.error(
+      "[payments] refund snapshot",
+      error instanceof Error ? error.message : String(error),
+    );
+    return null;
+  }
+}
+
+/** Persiste o estado consolidado (só escreve quando algo realmente mudou). */
+async function persistRefundState(input: {
+  transaction: TransactionRow;
+  provider: PaymentProviderKey;
+  state: RefundState;
+}): Promise<void> {
+  const before = Number(input.transaction.refunded_amount ?? 0);
+  const changed =
+    Math.abs(before - input.state.refundedAmount) > 1e-9 ||
+    input.transaction.status !== input.state.status;
+  if (!changed) return;
+
+  await updateTransaction({
+    transactionId: input.transaction.id,
+    status: input.state.status,
+    providerStatus: input.transaction.provider_status,
+    refundedAmount: input.state.refundedAmount,
+  });
+  await syncOrderPayment({
+    orderId: input.transaction.order_id,
+    provider: input.provider,
+    status: input.state.status,
+    transactionId: input.transaction.id,
+  });
+}
+
+/**
+ * Reembolso (total ou parcial) — corrigido pela auditoria 2.1 (R-01/R-02).
+ *
+ * Fluxo:
+ *  1. cada chamada carrega um `operation_id` (UUID do painel, ou gerado aqui);
+ *  2. a operação é reservada no banco como `pending` ANTES do provedor;
+ *  3. a chave de idempotência do provedor deriva da OPERAÇÃO (nunca do valor);
+ *  4. o saldo é recalculado a partir do ledger aprovado, com a moeda real;
+ *  5. resposta repetida do provedor/retry não soma nada de novo.
+ */
 async function refundAction(ctx: OwnerCtx): Promise<Response> {
   const transactionId = String(ctx.body.transaction_id ?? "").trim();
   if (!transactionId) throw new HttpError(400, "transaction_id é obrigatório.");
@@ -778,105 +885,238 @@ async function refundAction(ctx: OwnerCtx): Promise<Response> {
     throw new HttpError(409, "Somente pagamentos capturados podem ser reembolsados.");
   }
 
-  const amount = Number(transaction.amount ?? 0);
-  const refunded = Number(transaction.refunded_amount ?? 0);
-  const remaining = Math.round((amount - refunded) * 100) / 100;
-  if (remaining <= 0) throw new HttpError(409, "Este pagamento já foi totalmente reembolsado.");
-
-  const requested = ctx.body.amount === undefined || ctx.body.amount === null
-    ? remaining
-    : Number(ctx.body.amount);
-  if (!Number.isFinite(requested) || requested <= 0) {
-    throw new HttpError(400, "Valor de reembolso inválido.");
-  }
-  if (requested > remaining + 0.001) {
-    throw new HttpError(400, "O valor excede o saldo reembolsável deste pagamento.");
+  const providerPaymentId = String(transaction.provider_payment_id ?? "").trim();
+  if (!providerPaymentId) {
+    throw new HttpError(409, "Pagamento ainda não identificado no provedor.");
   }
 
-  // ── Idempotência do reembolso (auditoria M3) ───────────────────────────
-  // Um reembolso pendente do mesmo valor é devolvido, não recriado.
-  const pendingRefunds = await listPendingRefunds(transaction.id);
-  const samePending = pendingRefunds.find(
-    (row) => Math.abs(Number(row.amount) - requested) < 1e-6,
-  );
-  if (samePending) {
-    return jsonRes({
-      success: true,
-      status: "pending",
-      amount: Number(samePending.amount),
-      provider_refund_id: samePending.provider_refund_id,
-      reused: true,
-    });
+  // ── Identificador da operação (R-01) ───────────────────────────────────
+  // O painel envia o mesmo id em retries; operações distintas (mesmo valor)
+  // recebem ids distintos.
+  const rawOperationId = ctx.body.operation_id;
+  const trimmedOperationId =
+    rawOperationId === undefined || rawOperationId === null
+      ? ""
+      : String(rawOperationId).trim();
+  const providedOperationId = normalizeRefundOperationId(rawOperationId);
+  if (trimmedOperationId && !providedOperationId) {
+    throw new HttpError(400, "operation_id inválido.");
   }
+  const operationId = providedOperationId ?? newRefundOperationId();
+
+  const reason = typeof ctx.body.reason === "string" ? ctx.body.reason : null;
+  const providerImpl = getProvider(provider);
+  if (!providerImpl) throw new HttpError(400, "Provedor de pagamento inválido.");
 
   const loaded = await loadCredentials(catalogId, provider);
   if (!loaded.credentials) {
     throw new HttpError(409, loaded.reason ?? "Conexão do provedor inválida.");
   }
 
-  const providerImpl = getProvider(provider)!;
-  const providerPaymentId = transaction.provider_payment_id ?? "";
-  if (!providerPaymentId) {
-    throw new HttpError(409, "Pagamento ainda não identificado no provedor.");
+  // ── Retry da MESMA operação: devolve o que já existe ───────────────────
+  const existing = await findRefundByOperation(transaction.id, operationId);
+  if (existing?.status === "approved") {
+    return jsonRes({
+      success: true,
+      status: "approved",
+      amount: Number(existing.amount),
+      provider_refund_id: existing.provider_refund_id,
+      payment_status: transaction.status,
+      pending: false,
+      reused: true,
+      operation_id: operationId,
+    });
+  }
+  if (existing?.status === "cancelled") {
+    throw new HttpError(
+      409,
+      "Esta operação de reembolso já foi contabilizada por outra operação.",
+    );
+  }
+  if (existing?.status === "pending" && existing.provider_refund_id) {
+    // O provedor já recebeu a operação e ela aguarda confirmação.
+    return jsonRes({
+      success: true,
+      status: "pending",
+      amount: Number(existing.amount),
+      provider_refund_id: existing.provider_refund_id,
+      payment_status: transaction.status,
+      pending: true,
+      reused: true,
+      operation_id: operationId,
+    });
   }
 
-  const result = await providerImpl.refund(loaded.credentials, {
+  const ledger = await listRefunds(transaction.id);
+  const snapshotRefunded = await readOfficialRefunded({
+    providerImpl,
+    credentials: loaded.credentials,
+    provider,
+    transaction,
     providerPaymentId,
-    amount: requested,
-    currency: transaction.currency,
-    reason: (ctx.body.reason as string) ?? null,
   });
 
-  // Mesmo reembolso devolvido pelo provedor (retry) não gera novo registro.
-  const existingRefund = result.providerRefundId
-    ? await findRefundByProviderId(provider, result.providerRefundId)
-    : null;
-  if (!existingRefund) {
-    await createRefundRecord({
+  // ── Validação monetária (R-02) ─────────────────────────────────────────
+  const plan = planRefund({
+    totalAmount: Number(transaction.amount ?? 0),
+    currency: transaction.currency,
+    requestedAmount: existing
+      ? Number(existing.amount)
+      : ctx.body.amount === undefined || ctx.body.amount === null
+        ? null
+        : Number(ctx.body.amount),
+    ledger,
+    snapshotRefunded,
+    currentStatus: transaction.status,
+    operationId,
+  });
+  if (!plan.ok) {
+    const status =
+      plan.code === "invalid_amount" ||
+      plan.code === "precision" ||
+      plan.code === "invalid_operation_id"
+        ? 400
+        : 409;
+    throw new HttpError(status, plan.reason);
+  }
+
+  // ── Reserva a operação antes do provedor (retry seguro) ────────────────
+  let row = existing;
+  if (!row) {
+    const claim = await claimRefundOperation({
       transactionId: transaction.id,
       catalogId,
       provider,
-      providerRefundId: result.providerRefundId,
-      amount: result.amount,
-      status: result.status,
-      reason: (ctx.body.reason as string) ?? null,
+      amount: plan.amount,
+      reason,
       requestedBy: ctx.userId,
+      operationId,
+    });
+    if (!claim.row) {
+      throw new HttpError(
+        503,
+        "Não foi possível registrar a operação de reembolso. Tente novamente.",
+      );
+    }
+    row = claim.row;
+    if (!claim.created && row.status === "approved") {
+      return jsonRes({
+        success: true,
+        status: "approved",
+        amount: Number(row.amount),
+        provider_refund_id: row.provider_refund_id,
+        payment_status: transaction.status,
+        pending: false,
+        reused: true,
+        operation_id: operationId,
+      });
+    }
+    if (!claim.created && row.status === "pending" && row.provider_refund_id) {
+      return jsonRes({
+        success: true,
+        status: "pending",
+        amount: Number(row.amount),
+        provider_refund_id: row.provider_refund_id,
+        payment_status: transaction.status,
+        pending: true,
+        reused: true,
+        operation_id: operationId,
+      });
+    }
+  }
+
+  const idempotencyKey = refundProviderKey({ providerPaymentId, operationId });
+
+  let result: RefundResult;
+  try {
+    result = await providerImpl.refund(loaded.credentials, {
+      providerPaymentId,
+      amount: plan.amount,
+      currency: plan.currency,
+      reason,
+      idempotencyKey,
+    });
+  } catch (error) {
+    // Resultado DESCONHECIDO (timeout/rede): a linha fica `pending` para que o
+    // retry reuse a MESMA chave. Nada é contabilizado.
+    console.error(
+      "[payments] refund provider",
+      error instanceof Error ? error.message : String(error),
+    );
+    throw new HttpError(
+      502,
+      "O provedor não confirmou o reembolso. Tente novamente — a mesma operação não será reembolsada duas vezes.",
+    );
+  }
+
+  // ── O provedor devolveu um reembolso de OUTRA operação? ────────────────
+  // Anula esta linha: o valor já pertence a outra operação e não pode ser
+  // somado de novo (R-01).
+  const duplicate = result.providerRefundId
+    ? await findRefundByProviderId(provider, result.providerRefundId)
+    : null;
+  if (duplicate && duplicate.id !== row.id) {
+    await updateRefundRecord(row.id, {
+      status: "cancelled",
+      providerRefundId: result.providerRefundId,
+    });
+    const state = computeRefundState({
+      totalAmount: Number(transaction.amount ?? 0),
+      currency: plan.currency,
+      ledger: await listRefunds(transaction.id),
+      snapshotRefunded,
+      currentStatus: transaction.status,
+    });
+    await persistRefundState({ transaction, provider, state });
+    return jsonRes({
+      success: true,
+      status: duplicate.status,
+      amount: 0,
+      provider_refund_id: result.providerRefundId,
+      payment_status: state.status,
+      pending: duplicate.status === "pending",
+      reused: true,
+      operation_id: operationId,
     });
   }
 
-  // Só reembolso APROVADO altera o saldo (pendente fica registrado e é
-  // conciliado depois — auditoria M5).
-  let finalStatus = transaction.status;
-  if (result.status === "approved") {
-    const merged = mergeRefundState({
-      totalAmount: amount,
-      currentRefunded: refunded,
-      currentStatus: transaction.status,
-      snapshotRefunded: refunded + result.amount,
-      snapshotStatus: "captured",
-    });
-    finalStatus = merged.status;
-    await updateTransaction({
-      transactionId: transaction.id,
-      status: merged.status,
-      providerStatus: transaction.provider_status,
-      refundedAmount: merged.refundedAmount,
-    });
-    await syncOrderPayment({
-      orderId: transaction.order_id,
-      provider,
-      status: merged.status,
-      transactionId: transaction.id,
-    });
-  }
+  await updateRefundRecord(row.id, {
+    status: result.status,
+    providerRefundId: result.providerRefundId,
+    amount: result.amount,
+  });
+
+  // ── Saldo recalculado do ledger (R-01/R-02) ────────────────────────────
+  // O total oficial só complementa; nunca é somado ao que já existe.
+  const official =
+    result.status === "approved"
+      ? await readOfficialRefunded({
+          providerImpl,
+          credentials: loaded.credentials,
+          provider,
+          transaction,
+          providerPaymentId,
+        })
+      : null;
+
+  const state = computeRefundState({
+    totalAmount: Number(transaction.amount ?? 0),
+    currency: plan.currency,
+    ledger: await listRefunds(transaction.id),
+    snapshotRefunded: official ?? snapshotRefunded,
+    currentStatus: transaction.status,
+  });
+
+  await persistRefundState({ transaction, provider, state });
 
   return jsonRes({
     success: true,
     status: result.status,
     amount: result.amount,
     provider_refund_id: result.providerRefundId,
-    payment_status: finalStatus,
+    payment_status: state.status,
     pending: result.status === "pending",
+    operation_id: operationId,
   });
 }
 
@@ -909,21 +1149,47 @@ async function refreshPaymentAction(ctx: OwnerCtx): Promise<Response> {
   }
   void catalogId;
 
-  // ── Conciliação de reembolsos pendentes (auditoria M5) ─────────────────
-  const refundedNow = Number(applied.snapshot.refundedAmount ?? 0);
-  const refundedBefore = Number(transaction.refunded_amount ?? 0);
-  if (refundedNow > refundedBefore + 1e-9) {
-    for (const pending of await listPendingRefunds(transaction.id)) {
-      await updateRefundRecord(pending.id, { status: "approved" });
-    }
+  // ── Conciliação de reembolsos pendentes (auditoria M5 / R-01) ──────────
+  // Aprova apenas os pendentes que o total oficial comprova, em ordem
+  // cronológica — nunca "todos de uma vez" só porque o saldo subiu.
+  const ledger = await listRefunds(transaction.id);
+  const snapshotRefunded = Number(applied.snapshot.refundedAmount ?? 0);
+  const reconciliation = reconcilePendingRefunds({
+    totalAmount: Number(transaction.amount ?? 0),
+    currency: transaction.currency,
+    ledger,
+    snapshotRefunded,
+    currentStatus: applied.snapshot.status,
+  });
+  for (const refundId of reconciliation.approveIds) {
+    await updateRefundRecord(refundId, { status: "approved" });
   }
+
+  const state = computeRefundState({
+    totalAmount: Number(transaction.amount ?? 0),
+    currency: transaction.currency,
+    ledger:
+      reconciliation.approveIds.length > 0 ? await listRefunds(transaction.id) : ledger,
+    snapshotRefunded,
+    currentStatus: applied.snapshot.status,
+  });
+
+  await persistRefundState({
+    transaction: {
+      ...transaction,
+      status: applied.snapshot.status,
+      refunded_amount: snapshotRefunded,
+    },
+    provider,
+    state,
+  });
 
   return jsonRes({
     success: true,
-    status: applied.snapshot.status,
+    status: state.status,
     provider_status: applied.snapshot.providerStatus,
     captured_amount: applied.snapshot.capturedAmount,
-    refunded_amount: applied.snapshot.refundedAmount,
+    refunded_amount: state.refundedAmount,
     amount: applied.snapshot.amount,
     currency: applied.snapshot.currency,
     captured: applied.captured ?? false,

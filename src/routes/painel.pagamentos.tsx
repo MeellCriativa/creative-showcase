@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import {
   disconnectProvider,
   getProviderStatus,
   listTransactions,
+  newRefundOperationId,
   PROVIDER_LABELS,
   refreshPayment,
   refundTransaction,
@@ -29,7 +30,15 @@ import {
   type PaymentConnectionView,
   type PaymentProviderKey,
 } from "@/lib/payments";
-import { formatMoney, resolveStoreCurrency } from "@/lib/currency";
+import {
+  formatMoney,
+  fromMinorUnits,
+  getCurrency,
+  hasSubUnitPrecision,
+  parseAmount,
+  resolveStoreCurrency,
+  toMinorUnits,
+} from "@/lib/currency";
 import { useI18n, type MessageKey } from "@/i18n";
 
 /** Rótulos traduzíveis dos status técnicos devolvidos pelo provedor. */
@@ -85,6 +94,19 @@ function PagamentosPage() {
   const { data: catalog } = useMyCatalog(user?.id);
   const catalogId = catalog?.id;
   const qc = useQueryClient();
+
+  /**
+   * Operação de reembolso em andamento (R-01).
+   *
+   * Um retry da MESMA tentativa (mesma transação e mesmo valor) reusa o id —
+   * e portanto a chave de idempotência do provedor. Uma tentativa nova recebe
+   * um id novo, mesmo que o valor seja idêntico.
+   */
+  const refundOperation = useRef<{
+    transactionId: string;
+    amountMinor: number;
+    operationId: string;
+  } | null>(null);
 
   const currency = resolveStoreCurrency(catalog?.currency);
   const money = (value: number) => formatMoney(value, currency);
@@ -243,32 +265,62 @@ function PagamentosPage() {
     }
   }
 
-  async function handleRefund(transactionId: string, remaining: number) {
+  async function handleRefund(transactionId: string, remaining: number, txCurrency: string) {
+    const decimals = getCurrency(txCurrency).decimals;
+    const remainingMinor = toMinorUnits(remaining, txCurrency);
     const input = window.prompt(
       t("payments.refundPrompt", {
-        currency,
-        max: formatNumber(remaining, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        currency: txCurrency,
+        max: formatNumber(remaining, {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals,
+        }),
       }),
       "",
     );
     if (input === null) return;
-    const trimmed = input.trim().replace(",", ".");
-    const amount = trimmed === "" ? remaining : Number(trimmed);
-    if (!Number.isFinite(amount) || amount <= 0) {
+
+    // Precisão vem da moeda da transação (JPY 0, BRL/USD 2, KWD 3) — nunca de
+    // um `* 100` fixo (R-02).
+    const trimmed = input.trim();
+    const parsed = trimmed === "" ? remaining : parseAmount(trimmed);
+    if (parsed === null || !Number.isFinite(parsed) || parsed <= 0) {
       toast.error(t("payments.refundInvalid"));
       return;
     }
-    if (amount > remaining + 0.001) {
+    if (hasSubUnitPrecision(parsed, txCurrency)) {
+      toast.error(t("payments.refundInvalid"));
+      return;
+    }
+    const amountMinor = toMinorUnits(parsed, txCurrency);
+    if (amountMinor <= 0) {
+      toast.error(t("payments.refundInvalid"));
+      return;
+    }
+    if (amountMinor > remainingMinor) {
       toast.error(t("payments.refundExceeds"));
       return;
     }
+    const amount = fromMinorUnits(amountMinor, txCurrency);
+
+    const current = refundOperation.current;
+    const operationId =
+      current &&
+      current.transactionId === transactionId &&
+      current.amountMinor === amountMinor
+        ? current.operationId
+        : newRefundOperationId();
+    refundOperation.current = { transactionId, amountMinor, operationId };
+
     setBusy(`refund:${transactionId}`);
     try {
-      const res = await refundTransaction({ transactionId, amount });
+      const res = await refundTransaction({ transactionId, amount, operationId });
       if (!res.success) {
         toast.error(String(res.error || t("payments.refundError")));
         return;
       }
+      // Concluído: a próxima solicitação é uma operação NOVA.
+      refundOperation.current = null;
       if (res.reused) {
         toast.info(t("payments.refundReused", { amount: money(res.amount) }));
       } else if (res.pending) {
@@ -360,12 +412,18 @@ function PagamentosPage() {
         ) : (
           <ul className="space-y-2">
             {transactions.map((tx) => {
-              const remaining = Math.max(
+              const txCurrency = resolveStoreCurrency(tx.currency);
+              // Saldo em unidades mínimas da moeda (R-02) — a MESMA conta do
+              // backend, sem `* 100` fixo nem tolerância de centavos.
+              const remainingMinor = Math.max(
                 0,
-                Math.round((Number(tx.amount) - Number(tx.refunded_amount)) * 100) / 100,
+                toMinorUnits(Number(tx.amount), txCurrency) -
+                  toMinorUnits(Number(tx.refunded_amount), txCurrency),
               );
+              const remaining = fromMinorUnits(remainingMinor, txCurrency);
               const canRefund =
-                ["captured", "approved", "partially_refunded"].includes(tx.status) && remaining > 0;
+                ["captured", "approved", "partially_refunded"].includes(tx.status) &&
+                remainingMinor > 0;
               return (
                 <li key={tx.id} className="rounded-xl border border-border px-3 py-2.5 text-xs">
                   <div className="flex items-center justify-between gap-2">
@@ -378,13 +436,10 @@ function PagamentosPage() {
                   </div>
                   <div className="mt-1 flex items-center justify-between text-muted-foreground">
                     <span>
-                      {formatMoney(Number(tx.amount), resolveStoreCurrency(tx.currency))}
+                      {formatMoney(Number(tx.amount), txCurrency)}
                       {Number(tx.refunded_amount) > 0
                         ? ` · ${t("payments.refundedAmount", {
-                            amount: formatMoney(
-                              Number(tx.refunded_amount),
-                              resolveStoreCurrency(tx.currency),
-                            ),
+                            amount: formatMoney(Number(tx.refunded_amount), txCurrency),
                           })}`
                         : ""}
                     </span>
@@ -404,7 +459,7 @@ function PagamentosPage() {
                     {canRefund && (
                       <button
                         type="button"
-                        onClick={() => handleRefund(tx.id, remaining)}
+                        onClick={() => handleRefund(tx.id, remaining, txCurrency)}
                         disabled={busy === `refund:${tx.id}`}
                         className="rounded-lg border border-border px-2.5 py-1 font-medium text-muted-foreground hover:bg-muted disabled:opacity-60"
                       >
