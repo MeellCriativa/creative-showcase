@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeftRight,
   BarChart3,
+  Check,
   ClipboardList,
   Copy,
   ExternalLink,
@@ -38,6 +39,37 @@ function PainelHome() {
 
   const [storeName, setStoreName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    if (catalog) setNameDraft(catalog.store_name);
+  }, [catalog]);
+
+  async function saveStoreName(e: React.FormEvent) {
+    e.preventDefault();
+    if (!catalog) return;
+    const nextName = nameDraft.trim();
+    if (!nextName) {
+      toast.error(t("panel.dashboard.storeNameRequired"));
+      return;
+    }
+    if (nextName === catalog.store_name) return;
+    setSavingName(true);
+    try {
+      const { error } = await supabase
+        .from("catalogs")
+        .update({ store_name: nextName })
+        .eq("id", catalog.id);
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
+      toast.success(t("panel.dashboard.storeNameSaved"));
+    } catch {
+      toast.error(t("panel.dashboard.storeNameSaveError"));
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   async function createCatalog(e: React.FormEvent) {
     e.preventDefault();
@@ -75,8 +107,22 @@ function PainelHome() {
   if (!catalog) {
     return (
       <div className="px-5 pb-10 pt-12">
-        <h1 className="text-3xl font-bold text-foreground">{t("panel.dashboard.createTitle")}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t("panel.dashboard.createSubtitle")}</p>
+        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold text-foreground">{t("panel.dashboard.createTitle")}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {t("panel.dashboard.createSubtitle")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={logout}
+            aria-label={t("common.logout")}
+            className="grid size-10 shrink-0 place-items-center rounded-full border border-border text-muted-foreground"
+          >
+            <LogOut className="size-4" />
+          </button>
+        </header>
         <form onSubmit={createCatalog} className="mt-8 space-y-4">
           <input
             required
@@ -208,6 +254,32 @@ function PainelHome() {
             <Store className="size-6" />
           </span>
         </div>
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-border bg-card p-5">
+        <p className="text-sm font-semibold text-foreground">{t("panel.dashboard.storeNameTitle")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("panel.dashboard.storeNameHint")}</p>
+        <form onSubmit={saveStoreName} className="mt-3 flex items-stretch gap-2">
+          <input
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            maxLength={80}
+            aria-label={t("panel.dashboard.storeNameTitle")}
+            className="input-base min-w-0 flex-1"
+          />
+          <button
+            type="submit"
+            disabled={savingName || !nameDraft.trim() || nameDraft.trim() === catalog.store_name}
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {savingName ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Check className="size-4" />
+            )}
+            {savingName ? t("common.saving") : t("common.save")}
+          </button>
+        </form>
       </section>
 
       <section className="mt-6 rounded-3xl border border-border bg-card p-5">
