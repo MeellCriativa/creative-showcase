@@ -28,6 +28,7 @@ const resolveInitialLocale = createIsomorphicFn()
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { SITE_NAME, SITE_OG_IMAGE, SITE_OG_IMAGE_ALT, SITE_URL } from "../lib/site";
 
 function NotFoundContent() {
   const { t } = useI18n();
@@ -127,7 +128,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Crie seu catálogo digital, personalize sua vitrine e receba pedidos direto no WhatsApp.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: SITE_NAME },
+      { property: "og:url", content: SITE_URL },
+      { property: "og:image", content: SITE_OG_IMAGE },
+      { property: "og:image:type", content: "image/jpeg" },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { property: "og:image:alt", content: SITE_OG_IMAGE_ALT },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: SITE_OG_IMAGE },
+      { name: "twitter:image:alt", content: SITE_OG_IMAGE_ALT },
+      { name: "theme-color", content: "#8b5cf6" },
     ],
     links: [
       {
@@ -140,7 +151,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Caveat:wght@500;600;700&family=Fredoka:wght@500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&family=Lora:wght@500;600;700&family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Quicksand:wght@500;600;700&display=swap",
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "icon", href: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { rel: "icon", href: "/favicon.png", type: "image/png", sizes: "256x256" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
+      { rel: "manifest", href: "/site.webmanifest" },
     ],
   }),
   shellComponent: RootShell,

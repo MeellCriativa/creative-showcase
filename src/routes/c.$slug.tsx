@@ -25,6 +25,7 @@ import {
   type CustomerAddress,
 } from "@/lib/catalog";
 import { formatMoney, fromMinorUnits, resolveStoreCurrency, toMinorUnits } from "@/lib/currency";
+import { SITE_OG_IMAGE } from "@/lib/site";
 import { quoteShipping } from "@/lib/shipping";
 import {
   createPayment,
@@ -57,7 +58,8 @@ export const Route = createFileRoute("/c/$slug")({
     const description =
       catalog?.store_description ||
       "Escolha seus produtos e finalize o pedido direto pelo WhatsApp.";
-    const ogImage = catalog?.cover_url || catalog?.logo_url;
+    const storeImage = catalog?.cover_url || catalog?.logo_url;
+    const ogImage = storeImage || SITE_OG_IMAGE;
     return {
       meta: [
         { title },
@@ -65,8 +67,16 @@ export const Route = createFileRoute("/c/$slug")({
         { property: "og:title", content: catalog?.store_name || title },
         { property: "og:description", content: description },
         { property: "og:type", content: "website" },
-        ...(ogImage ? [{ property: "og:image", content: ogImage }] : []),
-        { name: "twitter:card", content: ogImage ? "summary_large_image" : "summary" },
+        { property: "og:image", content: ogImage },
+        ...(storeImage
+          ? []
+          : [
+              { property: "og:image:type", content: "image/png" },
+              { property: "og:image:width", content: "1200" },
+              { property: "og:image:height", content: "630" },
+            ]),
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:image", content: ogImage },
       ],
     };
   },
@@ -286,7 +296,7 @@ function PublicCatalog() {
 
   useEffect(() => {
     if (!catalog) return;
-    const ogImage = catalog.logo_url || catalog.cover_url;
+    const ogImage = catalog.logo_url || catalog.cover_url || SITE_OG_IMAGE;
     const setMeta = (property: string, content: string) => {
       let el = document.querySelector<HTMLMetaElement>(`meta[property="${property}"]`);
       if (!el) {
