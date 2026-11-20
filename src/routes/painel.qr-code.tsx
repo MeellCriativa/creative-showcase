@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Download, Link2, Loader2, QrCode, RefreshCw, Store } from "lucide-react";
+import { Download, Info, Link2, Loader2, QrCode, RefreshCw, Store } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/hooks/useAuth";
@@ -181,6 +181,11 @@ function QrCodePage() {
           {generating ? <Loader2 className="size-4 animate-spin" /> : <QrCode className="size-4" />}
           {generating ? t("qrCode.generating") : t("qrCode.generateButton")}
         </button>
+
+        <p className="mt-3 flex items-start gap-2 rounded-xl bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
+          {t("qrCode.linkChangeHint")}
+        </p>
       </form>
 
       {pngDataUrl && generatedUrl && (

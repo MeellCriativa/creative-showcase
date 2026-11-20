@@ -16,6 +16,8 @@ export const qrCode = defineNamespace({
     useStoreLink: "Usar o link da minha loja",
     generateButton: "Gerar QR Code",
     generating: "Gerando QR Code…",
+    linkChangeHint:
+      "Se você alterar o link da sua loja, será necessário gerar um novo QR Code.",
     invalidUrl: "Informe uma URL válida, começando com http:// ou https://.",
     generateError: "Não foi possível gerar o QR Code. Tente novamente.",
     generatedTitle: "QR Code pronto!",
@@ -40,6 +42,8 @@ export const qrCode = defineNamespace({
     useStoreLink: "Use my store link",
     generateButton: "Generate QR Code",
     generating: "Generating QR Code…",
+    linkChangeHint:
+      "If you change your store link, you'll need to generate a new QR Code.",
     invalidUrl: "Enter a valid URL starting with http:// or https://.",
     generateError: "We couldn't generate the QR Code. Please try again.",
     generatedTitle: "QR Code ready!",
@@ -65,6 +69,8 @@ export const qrCode = defineNamespace({
     useStoreLink: "Usar el enlace de mi tienda",
     generateButton: "Generar QR Code",
     generating: "Generando QR Code…",
+    linkChangeHint:
+      "Si cambias el enlace de tu tienda, deberás generar un nuevo QR Code.",
     invalidUrl: "Ingresa una URL válida que comience con http:// o https://.",
     generateError: "No se pudo generar el QR Code. Inténtalo de nuevo.",
     generatedTitle: "¡QR Code listo!",
