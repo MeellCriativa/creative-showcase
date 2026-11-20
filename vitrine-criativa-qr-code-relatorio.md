@@ -2,8 +2,9 @@
 
 **Data:** 20 de novembro de 2026
 **Repositório:** `C:\Users\USER\Documents\Default Project`, branch `main`
-**Execução:** implementação local + testes + build
-**Commit/push/deploy:** **NÃO realizados**, conforme autorização expressa do usuário
+**Execução:** implementação local + testes + build + publicação em produção
+**Autorização:** usuário autorizou commit, push, build, deploy e validação pós-publicação em 20/11/2026
+**Commit/push/deploy:** **REALIZADOS** — ver seção 6
 
 ---
 
@@ -117,3 +118,48 @@ O campo é preenchido automaticamente com o **link público canônico da loja**,
 - Geração 100% local, gratuita e sem rastreamento.
 - Nenhum commit, push, deploy, publicação de função, alteração de Secret ou operação financeira foi realizada.
 - Produção e homologação permanecem intactas.
+
+---
+
+## 6. Publicação em produção (autorizada)
+
+### 6.1 Validações pré-publicação
+| Verificação | Resultado |
+| --- | --- |
+| Leitura do relatório de revisão final | OK |
+| Isolamento entre lojas | **Aprovado** — teste explícito adicionado: cada slug gera um QR distinto, decodificado de volta para a URL correta, sem estado compartilhado |
+| Testes e build | OK — 519/519 testes; build client + SSR + Nitro/Cloudflare |
+| Diff completo | Conferido; 11 arquivos, somente escopo do QR Code |
+| Alterações financeiras ou credenciais no pacote | **Nenhuma** — nenhum arquivo de pagamento, auth, migração, plano ou Secret no commit |
+| Branch e projeto | `main`, `https://github.com/MeellCriativa/creative-showcase.git`, deploy no Worker `vitrine` (conta `meellcriativa`) |
+
+### 6.2 Evidências da publicação
+- **Commit criado:** `fd0c761` — `feat(qr-code): adiciona ferramenta gratuita de QR Code da loja`
+- **Push realizado:** `65c8a87..fd0c761  main -> main` (credencial `agendacreator-pro`)
+- **Build:** `npm run build` aprovado; bundle gerado a partir do `.env`, sem sobrescrever variáveis na linha de comando
+- **Deploy:** `npx wrangler deploy --name vitrine`, concluído em 14,35 s, 56 assets enviados
+- **Versão do Worker publicada:** `b76004d7-3c82-4abb-9cf2-fea30c7924da`
+- **URL de produção:** https://vitrine.meellcriativa.workers.dev
+
+### 6.3 Rollback
+- **Versão anterior registrada:** `40b89b3d-9715-4468-8904-85f142f733bd` (deploy de 20/11/2026 07:24 UTC)
+- Procedimento, **somente se autorizado**: `cd .output && npx wrangler rollback --name vitrine --version 40b89b3d-9715-4468-8904-85f142f733bd`
+- Rollback não executado — nenhuma regressão crítica detectada.
+
+### 6.4 Validação pós-deploy
+| # | Verificação | Resultado |
+| --- | --- | --- |
+| 1 | URL de produção HTTP 200 | **OK** — `/` 200, `/painel/qr-code` 200, asset `painel.qr-code-x1pk7XSt.js` 200 |
+| 2 | Tela `/painel/qr-code` após autenticação | Rota publicada e carregando seus chunks; sem login, redireciona corretamente para "Entrar". A interação autenticada completa não foi executada em produção (sem credenciais de loja neste ambiente) — validada localmente pelos testes determinísticos |
+| 3 | Atalho no painel | **OK** — `painel.index-CzC2Jg9N.js` publicado contém `/painel/qr-code` e `qrCode.shortcutText` |
+| 4 | QR com link público correto | **OK** — `buildStoreQrUrl` usa o slug salvo + `SITE_URL`; conteúdo decodificado nos testes é exatamente a URL informada |
+| 5 | Download do PNG | **OK** — bundle publicado contém `qr-code-minha-loja.png`; teste de âncora temporária aprovado (clique + remoção) |
+| 6 | Leitura do QR e abertura da vitrine | **OK nos testes locais** — PNG decodificado a 1600 px e 800 px apontando para a URL correta; não foi feita leitura com câmera física |
+| 7 | Isolamento entre lojas | **OK** — teste dedicado com slugs A e B, PNGs distintos e decodificação independente |
+| 8 | Erros novos no console | **Nenhum** — navegador em `/`, `/painel/qr-code` e `/c/minha-loja` sem mensagens de erro |
+| 9 | Regressão em vitrines/painel | **Nenhuma detectada** — rota pública `/c/minha-loja` e login do painel carregando normalmente |
+
+Validação em navegador desktop realizada. Não foi possível validar em dispositivo mobile físico nem autenticar como loja real em produção; a geração/download foram verificados por testes automatizados com decodificação real do PNG.
+
+### 6.5 Confirmação de escopo
+**Pagamentos e banco não foram alterados.** Nenhuma migração, RLS, Secret, Edge Function financeira, autenticação, plano, dado de cliente ou exclusão de dados foi tocada. O commit `fd0c761` contém exclusivamente a funcionalidade QR Code, seus testes, dependências e este relatório.
