@@ -190,6 +190,11 @@ serve(async (req) => {
       ...credentials.capabilities,
       ...(verified?.capabilities ?? {}),
     };
+    // M4: o site retornado pelo MP prevalece; divergência é SINALIZADA, nunca
+    // apaga a conexão (o vendedor decide se reconecta com o país correto).
+    const requestedSite = String(payload.site_id ?? "").trim().toUpperCase();
+    const officialSite = String(capabilities.site_id ?? "").trim().toUpperCase();
+    const siteMismatch = !!requestedSite && !!officialSite && requestedSite !== officialSite;
     const support = checkCurrencySupport(provider, {
       currency,
       accountSiteId: (capabilities.site_id as string | null | undefined) ?? null,
@@ -247,6 +252,7 @@ serve(async (req) => {
         ? {}
         : { error: verified?.reason ? stableError(verified.reason) : "verify_failed" }),
       ...(support.supported ? {} : { currency_warning: "1" }),
+      ...(siteMismatch ? { site_mismatch: "1" } : {}),
     });
   } catch (error) {
     console.error("[payments-callback]", error);

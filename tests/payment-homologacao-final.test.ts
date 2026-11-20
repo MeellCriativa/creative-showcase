@@ -75,8 +75,10 @@ test("P4/SPLIT: preferência sem comissão e com identificação do pedido e da 
 test("P1: renovação usa refresh_token e não inventa revogação programática", () => {
   const provider = read("supabase/functions/_shared/payments/mercadopago.ts");
   assert.match(provider, /grant_type:\s*"refresh_token"/);
-  assert.match(provider, /async revoke\(credentials: ProviderCredentials\): Promise<void>/);
-  // A documentação oficial só prevê revogação pelo vendedor no própria conta
-  // (ou desativação do app). O código não deve fingir que revogou no MP.
-  assert.match(provider, /void credentials/);
+  assert.match(provider, /async revoke\(credentials: ProviderCredentials\): Promise<RevokeResult>/);
+  // M3: não existe endpoint público confirmado; o contrato sinaliza que a
+  // revogação é manual em vez de fingir que o acesso foi revogado no MP.
+  assert.match(provider, /remoteRevoked:\s*false/);
+  assert.match(provider, /manualRequired:\s*true/);
+  assert.doesNotMatch(provider, /oauth\/credentials/);
 });

@@ -41,11 +41,21 @@ export type CurrencySupportInput = {
   accountSiteId?: string | null;
   /** Moeda primária da conta PayPal, quando conhecida. */
   accountPrimaryCurrency?: string | null;
+  /**
+   * M4: em operações de ESCRITA (habilitar cobrança) exigimos saber o site da
+   * conta MP. Leituras do painel/checkout permanecem fail-open para não fazer
+   * uma conexão legada desaparecer subitamente.
+   */
+  requireKnownSite?: boolean;
 };
 
 export type CurrencySupportResult =
   | { supported: true }
-  | { supported: false; reason: string; code: "currency_not_supported" | "account_currency_mismatch" };
+  | {
+      supported: false;
+      reason: string;
+      code: "currency_not_supported" | "account_currency_mismatch" | "account_site_unknown";
+    };
 
 function normalize(code: string | null | undefined): string {
   return String(code ?? "").trim().toUpperCase();
@@ -99,6 +109,14 @@ export function checkCurrencySupport(
   }
   const siteId = normalize(input.accountSiteId);
   const siteCurrency = siteId ? MERCADOPAGO_SITE_CURRENCIES[siteId] : undefined;
+  if (input.requireKnownSite && !siteCurrency) {
+    return {
+      supported: false,
+      code: "account_site_unknown",
+      reason:
+        "Não foi possível confirmar o país da conta Mercado Pago. Clique em 'Verificar conexão' antes de habilitar a cobrança.",
+    };
+  }
   if (siteCurrency && siteCurrency !== currency) {
     return {
       supported: false,

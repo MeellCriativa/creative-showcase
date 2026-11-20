@@ -59,7 +59,10 @@ import {
   panelOrigin,
   paymentsCallbackUrl,
 } from "../_shared/payments/urls.ts";
-import { checkCurrencySupport } from "../_shared/payments/currencies.ts";
+import {
+  checkCurrencySupport,
+  MERCADOPAGO_SITE_CURRENCIES,
+} from "../_shared/payments/currencies.ts";
 import { createSecureOrder } from "../_shared/payments/orders.ts";
 import { applyOfficialSnapshot } from "../_shared/payments/webhooks.ts";
 import { clientFingerprint, enforceRateLimit } from "../_shared/payments/ratelimit.ts";
@@ -87,6 +90,7 @@ import type {
   PaymentProvider,
   PaymentProviderKey,
   ProviderCredentials,
+  RevokeResult,
 } from "../_shared/payments/types.ts";
 
 class HttpError extends Error {
@@ -418,6 +422,8 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
     currency,
     accountSiteId: (capabilities.site_id as string | null) ?? null,
     accountPrimaryCurrency: (capabilities.primary_currency as string | null) ?? null,
+    // M4: cobrar é escrita — exige saber onde a conta liquida.
+    requireKnownSite: true,
   });
   if (!support.supported) throw new HttpError(409, support.reason);
 
@@ -710,6 +716,22 @@ async function connectAction(ctx: OwnerCtx): Promise<Response> {
     throw new HttpError(503, providerImpl.setupMessage() ?? "Provedor não configurado.");
   }
 
+  // M4: site da conta é opcional e validado contra a tabela oficial de moedas.
+  // `/users/me` continua sendo a fonte da verdade no callback.
+  let requestedSiteId: string | null = null;
+  if (provider === "mercadopago") {
+    const rawSite = String(ctx.body.site_id ?? "").trim().toUpperCase();
+    if (rawSite) {
+      if (!MERCADOPAGO_SITE_CURRENCIES[rawSite]) {
+        throw new HttpError(400, "País da conta Mercado Pago inválido.");
+      }
+      requestedSiteId = rawSite;
+    }
+  }
+
+  // M1: PKCE permanece desligado por decisão registrada. A proteção CSRF é o
+  // `state` assinado + nonce de uso único; não enviamos challenge/verifier.
+
   // Nonce de uso único (auditoria M8): o `state` continua assinado e expirando,
   // mas agora também precisa existir e estar livre em `payment_oauth_states`.
   const nonce = crypto.randomUUID();
@@ -720,6 +742,7 @@ async function connectAction(ctx: OwnerCtx): Promise<Response> {
     provider,
     env: providerEnvironment(provider),
     nonce,
+    ...(requestedSiteId ? { site_id: requestedSiteId } : {}),
     exp: Date.now() + stateExpiryMs(),
   });
   if (!state) throw new HttpError(503, "Não foi possível assinar a autorização (state).");
@@ -738,6 +761,7 @@ async function connectAction(ctx: OwnerCtx): Promise<Response> {
     state,
     redirectUri: callbackUrl(),
     trackingId: `${catalog.id}-${Date.now()}`,
+    siteId: requestedSiteId,
   });
 
   return jsonRes({ success: true, url: authorizeUrl, provider });
@@ -750,11 +774,23 @@ async function disconnectAction(ctx: OwnerCtx): Promise<Response> {
   if (!catalog) throw new HttpError(404, "Catálogo não encontrado.");
 
   const loaded = await loadCredentials(catalog.id, provider);
+  let revocation: RevokeResult = { remoteRevoked: false, manualRequired: true };
   if (loaded.credentials) {
-    await getProvider(provider)!.revoke(loaded.credentials);
+    try {
+      // M3: a revogação remota é best effort e NUNCA impede a remoção local.
+      revocation = await getProvider(provider)!.revoke(loaded.credentials);
+    } catch (error) {
+      console.error("[payments] revoke falhou (local removido)", (error as Error).message);
+      revocation = {
+        remoteRevoked: false,
+        manualRequired: true,
+        reason: "Não foi possível revogar no provedor.",
+      };
+    }
   }
   await deleteConnection(catalog.id, provider);
-  return jsonRes({ success: true });
+  // Nunca devolvemos texto cru do provedor: apenas o contrato estável acima.
+  return jsonRes({ success: true, revocation });
 }
 
 async function verifyAction(ctx: OwnerCtx): Promise<Response> {
@@ -833,6 +869,8 @@ async function setEnabledAction(ctx: OwnerCtx): Promise<Response> {
       currency,
       accountSiteId: (capabilities.site_id as string | null) ?? null,
       accountPrimaryCurrency: (capabilities.primary_currency as string | null) ?? null,
+      // M4: habilitar é escrita — exige saber onde a conta liquida.
+      requireKnownSite: true,
     });
     if (!support.supported) throw new HttpError(409, support.reason);
   }

@@ -219,6 +219,19 @@ export type NotificationResolution = {
   sellerAccountId?: string | null;
 };
 
+/**
+ * Resultado da desconexão (correção M3).
+ *
+ * A remoção LOCAL sempre acontece. `remoteRevoked` só é `true` quando o
+ * provedor confirma a revogação; quando não há endpoint oficial confirmado,
+ * `manualRequired` orienta o vendedor a desautorizar o aplicativo na conta dele.
+ */
+export type RevokeResult = {
+  remoteRevoked: boolean;
+  manualRequired: boolean;
+  reason?: string;
+};
+
 export interface PaymentProvider {
   readonly key: PaymentProviderKey;
   readonly label: string;
@@ -229,11 +242,18 @@ export interface PaymentProvider {
   /** Motivo legível quando `isConfigured()` é falso. */
   setupMessage(): string | null;
 
-  /** URL de autorização/onboarding do vendedor (state assinado). */
+  /**
+   * URL de autorização/onboarding do vendedor (state assinado).
+   *
+   * M1 (decisão registrada): PKCE permanece FORA desta etapa. O OAuth do MP
+   * usado aqui é authorization code com `state` HMAC + nonce; o aplicativo deve
+   * manter PKCE desabilitado. `siteId` só informa o país da conta na URL.
+   */
   buildAuthorizeUrl(input: {
     state: string;
     redirectUri: string;
     trackingId?: string;
+    siteId?: string | null;
   }): Promise<string>;
 
   /** Troca o retorno do OAuth/onboarding por credenciais da conta do vendedor. */
@@ -248,8 +268,11 @@ export interface PaymentProvider {
     current: ProviderCredentials;
   }): Promise<ProviderCredentials>;
 
-  /** Revoga o acesso na origem (best effort, nunca lança). */
-  revoke(credentials: ProviderCredentials): Promise<void>;
+  /**
+   * Tenta revogar o acesso na origem (best effort, nunca lança).
+   * O chamador SEMPRE remove a conexão local, independente do resultado.
+   */
+  revoke(credentials: ProviderCredentials): Promise<RevokeResult>;
 
   /** Consulta a conta conectada e confirma que o token funciona. */
   verifyConnection(credentials: ProviderCredentials): Promise<{

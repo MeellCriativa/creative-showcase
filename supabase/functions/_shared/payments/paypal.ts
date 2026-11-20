@@ -23,6 +23,7 @@ import type {
   RefundInput,
   RefundQueryResult,
   RefundResult,
+  RevokeResult,
   WebhookRequest,
   WebhookVerification,
 } from "./types.ts";
@@ -235,6 +236,19 @@ export function paypalSnapshotFromOrder(
   const captures = payments["captures"];
   const capture = Array.isArray(captures) ? (captures[0] as Record<string, unknown>) : null;
 
+  /**
+   * P3/P5: a referência do pedido e a conta de destino vêm da ORDEM OFICIAL —
+   * nunca do corpo do webhook. Sem eles a confirmação é recusada (fail-closed).
+   */
+  const externalReference =
+    (unit?.["custom_id"] as string | undefined) ??
+    (unit?.["reference_id"] as string | undefined) ??
+    null;
+  const sellerAccountId =
+    (unit?.["payee"] as Record<string, unknown> | undefined)?.["merchant_id"] ??
+    (capture?.["payee"] as Record<string, unknown> | undefined)?.["merchant_id"] ??
+    null;
+
   const orderStatus = String(order["status"] ?? "");
   const captureStatus = String(capture?.["status"] ?? "").toUpperCase();
   const captureAmount = Number(
@@ -324,6 +338,8 @@ export function paypalSnapshotFromOrder(
     capturedAmount,
     refundedAmount,
     refundedAmountKnown,
+    externalReference: externalReference ? String(externalReference) : null,
+    sellerAccountId: sellerAccountId ? String(sellerAccountId) : null,
     payerReference: null,
     raw: order,
   };
@@ -461,9 +477,14 @@ export const paypalProvider: PaymentProvider = {
     return { ...current, accessToken: token, expiresAt: null };
   },
 
-  async revoke(): Promise<void> {
-    // PayPal não expõe revogação programática do vínculo de marketplace.
-    // A desconexão remove as credenciais locais (feita pelo router).
+  async revoke(): Promise<RevokeResult> {
+    // M3: PayPal não expõe revogação programática do vínculo de marketplace.
+    // A desconexão remove as credenciais locais (feita pelo router) e avisa.
+    return {
+      remoteRevoked: false,
+      manualRequired: true,
+      reason: "Revogue o aplicativo Vitrine Criativa na sua conta PayPal.",
+    };
   },
 
   async verifyConnection(credentials: ProviderCredentials) {
@@ -593,11 +614,14 @@ export const paypalProvider: PaymentProvider = {
     });
     if (!res.ok || !res.body) return null;
     const units = res.body.purchase_units;
-    const unit = Array.isArray(units) ? units[0] : null;
+    const unit = Array.isArray(units) ? (units[0] as Record<string, unknown> | undefined) : null;
+    const merchantId =
+      (unit?.["payee"] as Record<string, unknown> | undefined)?.["merchant_id"] ?? null;
     return {
       externalReference: unit?.custom_id ?? unit?.reference_id ?? null,
       providerPaymentId: String(res.body.id ?? id),
       providerStatus: res.body.status ?? null,
+      sellerAccountId: merchantId ? String(merchantId) : null,
     };
   },
 

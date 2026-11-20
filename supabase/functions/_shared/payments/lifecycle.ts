@@ -440,6 +440,28 @@ export function detectPaymentOwnershipMismatch(input: {
   };
 }
 
+/**
+ * P4/P5 — no modelo marketplace do PayPal não há token por vendedor: a prova
+ * de destino é o `payee.merchant_id` da ordem oficial comparado com a conta
+ * conectada DA LOJA DA TRANSAÇÃO. Sem qualquer um dos dois, a confirmação é
+ * recusada (fail-closed) — nunca usamos o corpo do webhook como prova.
+ */
+export function paypalAccountMatchesConnection(input: {
+  snapshotMerchantId: string | null | undefined;
+  connectionMerchantId: string | null | undefined;
+  connectionExternalAccountId?: string | null;
+}): boolean {
+  // Merchant ID é identificador opaco do PayPal: comparamos EXATAMENTE (só trim),
+  // sem derrubar caixa, para que um ID diferente apenas em caixa não seja aceito.
+  const exact = (value: string | null | undefined): string => String(value ?? "").trim();
+  const snapshot = exact(input.snapshotMerchantId);
+  if (!snapshot) return false;
+  const connected = [input.connectionMerchantId, input.connectionExternalAccountId]
+    .map(exact)
+    .filter(Boolean);
+  return connected.includes(snapshot);
+}
+
 export type ConfirmationGateReason =
   | "amount_divergence"
   | "currency_divergence"

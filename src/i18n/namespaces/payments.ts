@@ -51,11 +51,15 @@ export const payments = defineNamespace({
     connectFailed: "A conexão com {{provider}} não pôde ser concluída.",
     currencyWarning:
       "A moeda da loja não é compatível com esse provedor. O método não será exibido no checkout.",
+    siteMismatchWarning:
+      "O país retornado pelo Mercado Pago é diferente do informado. Verifique a conta antes de habilitar a cobrança.",
     connectStartFailed: "Falha ao iniciar a conexão.",
     connectStartError: "Não foi possível iniciar a conexão. Tente novamente.",
     disconnectConfirm: "Desconectar {{provider}}? O método deixa de aparecer no checkout.",
     disconnectError: "Erro ao desconectar.",
     disconnectedToast: "{{provider}} desconectado.",
+    disconnectManualRevokeWarning:
+      "{{provider}} foi removido da loja. Revogue também o aplicativo na sua conta do provedor.",
     verifyError: "Não foi possível verificar a conexão.",
     verifiedToast: "{{provider}} verificado.",
     toggleError: "Não foi possível alterar o método.",
@@ -148,11 +152,15 @@ export const payments = defineNamespace({
     connectFailed: "The connection to {{provider}} could not be completed.",
     currencyWarning:
       "The store currency is not supported by this provider. The method will not be shown at checkout.",
+    siteMismatchWarning:
+      "The country returned by Mercado Pago differs from the one informed. Check the account before enabling charges.",
     connectStartFailed: "Could not start the connection.",
     connectStartError: "Could not start the connection. Please try again.",
     disconnectConfirm: "Disconnect {{provider}}? The method will no longer appear at checkout.",
     disconnectError: "Could not disconnect.",
     disconnectedToast: "{{provider}} disconnected.",
+    disconnectManualRevokeWarning:
+      "{{provider}} was removed from your store. Also revoke the application in your provider account.",
     verifyError: "Could not verify the connection.",
     verifiedToast: "{{provider}} verified.",
     toggleError: "Could not change the method.",
@@ -246,11 +254,15 @@ export const payments = defineNamespace({
     connectFailed: "No se pudo completar la conexión con {{provider}}.",
     currencyWarning:
       "La moneda de la tienda no es compatible con este proveedor. El método no se mostrará en el checkout.",
+    siteMismatchWarning:
+      "El país devuelto por Mercado Pago es distinto del informado. Revisa la cuenta antes de habilitar cobros.",
     connectStartFailed: "No se pudo iniciar la conexión.",
     connectStartError: "No fue posible iniciar la conexión. Inténtalo de nuevo.",
     disconnectConfirm: "¿Desconectar {{provider}}? El método dejará de aparecer en el checkout.",
     disconnectError: "Error al desconectar.",
     disconnectedToast: "{{provider}} desconectado.",
+    disconnectManualRevokeWarning:
+      "{{provider}} se eliminó de la tienda. Revoca también la aplicación en tu cuenta del proveedor.",
     verifyError: "No fue posible verificar la conexión.",
     verifiedToast: "{{provider}} verificado.",
     toggleError: "No fue posible cambiar el método.",

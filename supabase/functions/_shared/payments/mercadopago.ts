@@ -23,6 +23,7 @@ import type {
   ProviderPaymentSnapshot,
   RefundInput,
   RefundResult,
+  RevokeResult,
   WebhookRequest,
   WebhookVerification,
 } from "./types.ts";
@@ -94,6 +95,39 @@ function maskAccountLabel(value: string | null | undefined): string | null {
 
 export function mpEnvironment(): "sandbox" | "production" {
   return readEnv("MP_ENV") === "production" ? "production" : "sandbox";
+}
+
+/**
+ * M1 — PKCE NÃO é implementado nesta etapa (decisão registrada no relatório).
+ * O fluxo é authorization code com `state` HMAC + nonce; o aplicativo MP deve
+ * permanecer com PKCE desabilitado. Um `code_challenge` sem o fluxo completo
+ * do `code_verifier` quebraria a troca do código.
+ */
+
+/** Escopos mínimos para criar preferência, consultar e reembolsar. */
+export const MP_REQUIRED_SCOPES = ["offline_access", "read", "write"] as const;
+
+/**
+ * M2 — normaliza o `scope` devolvido por `/oauth/token`.
+ *
+ * Escopos são configurados no aplicativo MP, NÃO enviados na URL de
+ * autorização. Um campo ausente nunca vira "permissão concedida": `known=false`
+ * impede a conexão (fail-closed) sem inventar valores.
+ */
+export function mpScopesFromToken(value: unknown): {
+  scopes: string[];
+  known: boolean;
+  missing: string[];
+} {
+  if (typeof value !== "string" || !value.trim()) {
+    return { scopes: [], known: false, missing: [...MP_REQUIRED_SCOPES] };
+  }
+  const scopes = value
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim().toLowerCase())
+    .filter(Boolean);
+  const missing = MP_REQUIRED_SCOPES.filter((scope) => !scopes.includes(scope));
+  return { scopes, known: true, missing };
 }
 
 function config() {
@@ -291,8 +325,8 @@ export const mercadopagoProvider: PaymentProvider = {
     return null;
   },
 
-  async buildAuthorizeUrl({ state, redirectUri }): Promise<string> {
-    const { clientId, authBase, siteId } = config();
+  async buildAuthorizeUrl({ state, redirectUri, siteId }): Promise<string> {
+    const { clientId, authBase, siteId: defaultSiteId } = config();
     if (!clientId) throw new Error("MP_CLIENT_ID ausente.");
     const query = new URLSearchParams({
       client_id: clientId,
@@ -300,8 +334,11 @@ export const mercadopagoProvider: PaymentProvider = {
       platform_id: "mp",
       state,
       redirect_uri: redirectUri,
-      site_id: siteId,
+      // M4: o site vem do connect (quando informado) ou do env; `/users/me`
+      // continua sendo a fonte da verdade persistida no callback.
+      site_id: String(siteId || defaultSiteId).toUpperCase(),
     });
+    // M1: sem PKCE — o aplicativo MP cadastrado deve permanecer com PKCE off.
     return `${authBase}/authorization?${query.toString()}`;
   },
 
@@ -326,6 +363,20 @@ export const mercadopagoProvider: PaymentProvider = {
       throw new Error(safeApiError(res.body) || `Mercado Pago recusou a autorização (${res.status}).`);
     }
 
+    // M2: fail-closed. Se o MP não informou escopos ou concedeu menos do que o
+    // necessário, NÃO assumimos que está tudo bem — o callback traduz esse erro
+    // para `permissions_not_granted`.
+    const parsedScopes = mpScopesFromToken(res.body.scope);
+    if (!parsedScopes.known || parsedScopes.missing.length) {
+      console.error(
+        "[mercadopago] escopos insuficientes:",
+        parsedScopes.known ? parsedScopes.missing.join(",") : "scope_ausente",
+      );
+      throw new Error(
+        `permissions_not_granted: ${parsedScopes.known ? parsedScopes.missing.join(",") : "scope_ausente"}`,
+      );
+    }
+
     const accessToken = res.body.access_token as string;
     const refreshToken = (res.body.refresh_token as string) ?? null;
     const expiresIn = Number(res.body.expires_in ?? 15_552_000); // 180 dias (padrão MP)
@@ -336,7 +387,7 @@ export const mercadopagoProvider: PaymentProvider = {
       accessToken,
       refreshToken,
       expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
-      scopes: String(res.body.scope ?? "offline_access read write").split(/[\s,]+/).filter(Boolean),
+      scopes: parsedScopes.scopes,
       externalAccountId: userId,
       externalAccountLabel: maskAccountLabel(me.body?.email ?? me.body?.nickname) ?? userId,
       merchantId: userId,
@@ -345,6 +396,7 @@ export const mercadopagoProvider: PaymentProvider = {
         country_id: me.body?.country_id ?? null,
         nickname: maskAccountId(me.body?.nickname ?? null),
         live_mode: res.body.live_mode ?? null,
+        scopes_known: true,
       },
     };
   },
@@ -367,18 +419,42 @@ export const mercadopagoProvider: PaymentProvider = {
       throw new Error("Não foi possível renovar a autorização do Mercado Pago.");
     }
     const expiresIn = Number(res.body.expires_in ?? 15_552_000);
+    // M2: se o refresh trouxer `scope`, revalidamos. Se não trouxer, preservamos
+    // os escopos conhecidos (fail-open aqui evita expiração em massa).
+    let scopes = current.scopes;
+    let capabilities = current.capabilities;
+    if (res.body.scope !== undefined && res.body.scope !== null) {
+      const refreshedScopes = mpScopesFromToken(res.body.scope);
+      if (!refreshedScopes.known || refreshedScopes.missing.length) {
+        console.error(
+          "[mercadopago] refresh com escopos insuficientes:",
+          refreshedScopes.known ? refreshedScopes.missing.join(",") : "scope_ausente",
+        );
+        throw new Error("A autorização do Mercado Pago perdeu permissões necessárias.");
+      }
+      scopes = refreshedScopes.scopes;
+      capabilities = { ...current.capabilities, scopes_known: true };
+    }
     return {
       ...current,
       accessToken: res.body.access_token,
       refreshToken: res.body.refresh_token ?? refreshToken,
       expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+      scopes,
+      capabilities,
     };
   },
 
-  async revoke(credentials: ProviderCredentials): Promise<void> {
-    // MP não documenta revogação programática; a desconexão apaga os tokens
-    // locais e o vendedor pode remover o app na conta dele.
+  async revoke(credentials: ProviderCredentials): Promise<RevokeResult> {
+    // M3: não existe endpoint público de revogação confirmado na documentação
+    // consultada. Nunca fingimos que revogamos: sinalizamos a ação manual.
+    // A desconexão local é feita pelo chamador, independente deste retorno.
     void credentials;
+    return {
+      remoteRevoked: false,
+      manualRequired: true,
+      reason: "Revogue o aplicativo Mercado Pago na sua própria conta.",
+    };
   },
 
   async verifyConnection(credentials: ProviderCredentials) {
@@ -393,6 +469,10 @@ export const mercadopagoProvider: PaymentProvider = {
         reason: `Mercado Pago respondeu ${res.status}.`,
       };
     }
+    // M4: `/users/me` é a fonte da verdade, mas um campo ausente NÃO pode
+    // apagar o que já estava persistido (isso deixava a conta sem site_id e a
+    // checagem de moeda silenciosamente permissiva).
+    const previous = credentials.capabilities ?? {};
     return {
       ok: true,
       externalAccountId: String(res.body.id),
@@ -402,9 +482,10 @@ export const mercadopagoProvider: PaymentProvider = {
         String(res.body.id),
       merchantId: String(res.body.id),
       capabilities: {
-        site_id: res.body.site_id ?? null,
-        country_id: res.body.country_id ?? null,
-        nickname: maskAccountId(res.body.nickname ?? null),
+        ...previous,
+        ...(res.body.site_id ? { site_id: String(res.body.site_id) } : {}),
+        ...(res.body.country_id ? { country_id: String(res.body.country_id) } : {}),
+        nickname: maskAccountId(res.body.nickname ?? null) ?? previous.nickname ?? null,
       },
     };
   },

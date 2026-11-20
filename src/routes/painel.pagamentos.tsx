@@ -161,6 +161,9 @@ function PagamentosPage() {
     if (params.get("currency_warning") === "1") {
       toast.warning(t("payments.currencyWarning"));
     }
+    if (params.get("site_mismatch") === "1") {
+      toast.warning(t("payments.siteMismatchWarning"));
+    }
 
     window.history.replaceState({}, "", "/painel/pagamentos");
     qc.invalidateQueries({ queryKey: ["payment-status", catalogId] });
@@ -204,6 +207,12 @@ function PagamentosPage() {
         return;
       }
       toast.success(t("payments.disconnectedToast", { provider: PROVIDER_LABELS[provider] }));
+      // M3: remover a conexão da loja NÃO revoga o aplicativo no provedor.
+      if (res.revocation?.manualRequired) {
+        toast.warning(t("payments.disconnectManualRevokeWarning", {
+          provider: PROVIDER_LABELS[provider],
+        }), { duration: 12000 });
+      }
       invalidate();
     } finally {
       setBusy(null);

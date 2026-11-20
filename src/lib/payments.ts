@@ -289,8 +289,19 @@ export function connectProvider(catalogId: string, provider: PaymentProviderKey)
   });
 }
 
+/**
+ * M3: desconectar SEMPRE remove a conexão local. `remoteRevoked` só é `true`
+ * quando o provedor confirmou; caso contrário o vendedor precisa revogar o
+ * aplicativo na própria conta (nunca exibimos texto cru do provedor).
+ */
+export type PaymentRevocationView = {
+  remoteRevoked: boolean;
+  manualRequired: boolean;
+  reason?: string;
+};
+
 export function disconnectProvider(catalogId: string, provider: PaymentProviderKey) {
-  return call<Record<string, never>>("disconnect", {
+  return call<{ revocation?: PaymentRevocationView }>("disconnect", {
     body: { catalog_id: catalogId, provider },
   });
 }

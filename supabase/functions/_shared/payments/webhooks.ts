@@ -23,6 +23,7 @@ import {
   findTransactionByProviderPayment,
   finishEvent,
   flagDivergence,
+  getConnection,
   getEvent,
   recordEvent,
   syncOrderPayment,
@@ -41,6 +42,7 @@ import {
   eventKeyFor,
   isCrossCatalogEvent,
   mergeRefundState,
+  paypalAccountMatchesConnection,
   paymentConfirmationGate,
   paymentIdForLookup,
   shouldCapture,
@@ -160,6 +162,23 @@ export async function applyOfficialSnapshot(input: {
   let snapshot = await providerImpl.getPayment(loaded.credentials, input.providerPaymentId);
   if (!snapshot) return { ok: false, snapshot: null, reason: "Provedor não retornou o pagamento." };
 
+  // P4/P5 (PayPal): o `payee.merchant_id` da ordem oficial precisa ser a conta
+  // conectada DA LOJA DESTA TRANSAÇÃO. Sem isso, um evento de outra loja poderia
+  // capturar/confirmar o pedido errado. Fail-closed antes de qualquer efeito.
+  if (
+    input.provider === "paypal" &&
+    !paypalAccountMatchesConnection({
+      snapshotMerchantId: snapshot.sellerAccountId,
+      connectionMerchantId: loaded.credentials.merchantId,
+      connectionExternalAccountId: loaded.credentials.externalAccountId,
+    })
+  ) {
+    log(input.provider, "conta de destino divergente; confirmação recusada", {
+      transaction: input.transaction.id,
+    });
+    return { ok: false, snapshot: null, reason: "paypal_merchant_mismatch" };
+  }
+
   let captured = false;
   const currency = resolveStoreCurrency(input.transaction.currency);
 
@@ -181,10 +200,11 @@ export async function applyOfficialSnapshot(input: {
       snapshotOrderId: candidate.externalReference,
       expectedSellerId: loaded.credentials.externalAccountId,
       snapshotSellerId: candidate.sellerAccountId,
-      // No Mercado Pago a API sempre informa `external_reference` e
-      // `collector_id`; ausência também impede a confirmação (fail-closed).
-      requireOrderReference: input.provider === "mercadopago",
-      requireSellerAccount: input.provider === "mercadopago",
+      // P3: os dois provedores informam pedido e conta na consulta OFICIAL.
+      // `paypalSnapshotFromOrder` extrai `custom_id` e `payee.merchant_id`.
+      // Ausência impede a confirmação (fail-closed) antes da captura.
+      requireOrderReference: true,
+      requireSellerAccount: true,
     });
     return { divergence, ownership, gate: paymentConfirmationGate({ divergence, ownership }) };
   };
@@ -580,6 +600,31 @@ async function processVerifiedEvent(input: {
         ok: false,
         status: 200,
         reason: "cross_catalog_event",
+        transaction: resolved.transaction,
+      };
+    }
+  }
+
+  // P4/P5 (PayPal): defesa em profundidade. A conta oficial devolvida pela
+  // consulta da notificação precisa pertencer à loja dona da transação. Mesmo
+  // que o payload não traga conta, `applyOfficialSnapshot` volta a exigir.
+  if (provider === "paypal" && resolved.sellerAccountId) {
+    const transactionConnection = await getConnection(resolved.transaction.catalog_id, provider);
+    if (
+      !transactionConnection ||
+      !paypalAccountMatchesConnection({
+        snapshotMerchantId: resolved.sellerAccountId,
+        connectionMerchantId: transactionConnection.merchant_id,
+        connectionExternalAccountId: transactionConnection.external_account_id,
+      })
+    ) {
+      log(provider, "evento de outra conta PayPal ignorado", {
+        transaction: resolved.transaction.id,
+      });
+      return {
+        ok: false,
+        status: 200,
+        reason: "cross_seller_event",
         transaction: resolved.transaction,
       };
     }
