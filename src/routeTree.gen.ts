@@ -22,6 +22,7 @@ import { Route as PainelPagamentosRouteImport } from './routes/painel.pagamentos
 import { Route as PainelPedidosRouteImport } from './routes/painel.pedidos'
 import { Route as PainelPersonalizarRouteImport } from './routes/painel.personalizar'
 import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
+import { Route as PainelQrCodeRouteImport } from './routes/painel.qr-code'
 import { Route as PainelSenhaRouteImport } from './routes/painel.senha'
 import { Route as PainelWhatsappRouteImport } from './routes/painel.whatsapp'
 
@@ -90,6 +91,11 @@ const PainelProdutosRoute = PainelProdutosRouteImport.update({
   path: '/produtos',
   getParentRoute: () => PainelRoute,
 } as any)
+const PainelQrCodeRoute = PainelQrCodeRouteImport.update({
+  id: '/qr-code',
+  path: '/qr-code',
+  getParentRoute: () => PainelRoute,
+} as any)
 const PainelSenhaRoute = PainelSenhaRouteImport.update({
   id: '/senha',
   path: '/senha',
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
+  '/painel/qr-code': typeof PainelQrCodeRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
   '/painel/': typeof PainelIndexRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
+  '/painel/qr-code': typeof PainelQrCodeRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
   '/painel': typeof PainelIndexRoute
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
+  '/painel/qr-code': typeof PainelQrCodeRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
   '/painel/': typeof PainelIndexRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
+    | '/painel/qr-code'
     | '/painel/senha'
     | '/painel/whatsapp'
     | '/painel/'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
+    | '/painel/qr-code'
     | '/painel/senha'
     | '/painel/whatsapp'
     | '/painel'
@@ -200,6 +211,7 @@ export interface FileRouteTypes {
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
+    | '/painel/qr-code'
     | '/painel/senha'
     | '/painel/whatsapp'
     | '/painel/'
@@ -305,6 +317,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelProdutosRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/painel/qr-code': {
+      id: '/painel/qr-code'
+      path: '/qr-code'
+      fullPath: '/painel/qr-code'
+      preLoaderRoute: typeof PainelQrCodeRouteImport
+      parentRoute: typeof PainelRoute
+    }
     '/painel/senha': {
       id: '/painel/senha'
       path: '/senha'
@@ -331,6 +350,7 @@ interface PainelRouteChildren {
   PainelPedidosRoute: typeof PainelPedidosRoute
   PainelPersonalizarRoute: typeof PainelPersonalizarRoute
   PainelProdutosRoute: typeof PainelProdutosRoute
+  PainelQrCodeRoute: typeof PainelQrCodeRoute
   PainelSenhaRoute: typeof PainelSenhaRoute
   PainelWhatsappRoute: typeof PainelWhatsappRoute
   PainelIndexRoute: typeof PainelIndexRoute
@@ -345,6 +365,7 @@ const PainelRouteChildren: PainelRouteChildren = {
   PainelPedidosRoute: PainelPedidosRoute,
   PainelPersonalizarRoute: PainelPersonalizarRoute,
   PainelProdutosRoute: PainelProdutosRoute,
+  PainelQrCodeRoute: PainelQrCodeRoute,
   PainelSenhaRoute: PainelSenhaRoute,
   PainelWhatsappRoute: PainelWhatsappRoute,
   PainelIndexRoute: PainelIndexRoute,

@@ -444,6 +444,7 @@ test("as telas principais usam o sistema de i18n", () => {
     "src/routes/painel.envio.tsx",
     "src/routes/painel.whatsapp.tsx",
     "src/routes/painel.conversor.tsx",
+    "src/routes/painel.qr-code.tsx",
     "src/routes/painel.senha.tsx",
     "src/routes/c.$slug.tsx",
   ];

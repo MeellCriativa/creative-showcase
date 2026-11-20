@@ -20,6 +20,7 @@ import { panel } from "./namespaces/panel.ts";
 import { password } from "./namespaces/password.ts";
 import { payments } from "./namespaces/payments.ts";
 import { products } from "./namespaces/products.ts";
+import { qrCode } from "./namespaces/qrCode.ts";
 import { shipping } from "./namespaces/shipping.ts";
 import { stats } from "./namespaces/stats.ts";
 import { whatsapp } from "./namespaces/whatsapp.ts";
@@ -38,6 +39,7 @@ export const messages = {
   catalog: catalog.ptBR,
   payments: payments.ptBR,
   shipping: shipping.ptBR,
+  qrCode: qrCode.ptBR,
   whatsapp: whatsapp.ptBR,
   converter: converter.ptBR,
   password: password.ptBR,
@@ -63,6 +65,7 @@ export const messagesByLocale: Record<Locale, Messages> = {
     catalog: catalog.en,
     payments: payments.en,
     shipping: shipping.en,
+    qrCode: qrCode.en,
     whatsapp: whatsapp.en,
     converter: converter.en,
     password: password.en,
@@ -81,6 +84,7 @@ export const messagesByLocale: Record<Locale, Messages> = {
     catalog: catalog.es,
     payments: payments.es,
     shipping: shipping.es,
+    qrCode: qrCode.es,
     whatsapp: whatsapp.es,
     converter: converter.es,
     password: password.es,

@@ -15,6 +15,7 @@ import {
   LogOut,
   Package,
   Palette,
+  QrCode,
   Save,
   Share2,
   Store,
@@ -479,6 +480,12 @@ function PainelHome() {
           icon={ArrowLeftRight}
           title={t("panel.dashboard.shortcutConverter")}
           text={t("panel.dashboard.converterText")}
+        />
+        <ShortcutLink
+          to="/painel/qr-code"
+          icon={QrCode}
+          title={t("qrCode.title")}
+          text={t("qrCode.shortcutText")}
         />
         <PasswordLink to="/painel/senha" />
       </nav>
