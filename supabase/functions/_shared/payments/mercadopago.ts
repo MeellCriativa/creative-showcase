@@ -8,7 +8,7 @@
  *
  * Split 1:N não é implementado (exigiria habilitação específica na conta).
  */
-import { maskEmail, readEnv } from "./crypto.ts";
+import { maskAccountId, maskEmail, readEnv } from "./crypto.ts";
 import { addAmounts, currencyDecimals, providerAmount } from "./money.ts";
 import { computeChargeSplit } from "./lifecycle.ts";
 import { selectPaymentFromMerchantOrder } from "./resolution.ts";
@@ -47,6 +47,13 @@ function safeApiError(body: any): string {
   const message = typeof body.message === "string" ? redact(body.message) : "";
   const code = typeof body.error === "string" ? redact(body.error) : "";
   return [code, message].filter(Boolean).join(": ");
+}
+
+/** Nunca persistir e-mail/apelido da conta em claro (visível via capabilities/RLS). */
+function maskAccountLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const clean = String(value);
+  return clean.includes("@") ? maskEmail(clean) : maskAccountId(clean);
 }
 
 export function mpEnvironment(): "sandbox" | "production" {
@@ -254,7 +261,6 @@ export const mercadopagoProvider: PaymentProvider = {
     const expiresIn = Number(res.body.expires_in ?? 15_552_000); // 180 dias (padrão MP)
     const me = await mpFetch("/users/me", { method: "GET", token: accessToken });
     const userId = String(res.body.user_id ?? me.body?.id ?? "");
-    const label = me.body?.email ?? me.body?.nickname ?? userId;
 
     return {
       accessToken,
@@ -262,12 +268,12 @@ export const mercadopagoProvider: PaymentProvider = {
       expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
       scopes: String(res.body.scope ?? "offline_access read write").split(/[\s,]+/).filter(Boolean),
       externalAccountId: userId,
-      externalAccountLabel: String(label),
+      externalAccountLabel: maskAccountLabel(me.body?.email ?? me.body?.nickname) ?? userId,
       merchantId: userId,
       capabilities: {
         site_id: me.body?.site_id ?? null,
         country_id: me.body?.country_id ?? null,
-        nickname: me.body?.nickname ?? null,
+        nickname: maskAccountId(me.body?.nickname ?? null),
         live_mode: res.body.live_mode ?? null,
       },
     };
@@ -320,12 +326,15 @@ export const mercadopagoProvider: PaymentProvider = {
     return {
       ok: true,
       externalAccountId: String(res.body.id),
-      externalAccountLabel: String(res.body.email ?? res.body.nickname ?? res.body.id),
+      externalAccountLabel:
+        maskAccountLabel(res.body.email ?? res.body.nickname) ??
+        credentials.externalAccountLabel ??
+        String(res.body.id),
       merchantId: String(res.body.id),
       capabilities: {
         site_id: res.body.site_id ?? null,
         country_id: res.body.country_id ?? null,
-        nickname: res.body.nickname ?? null,
+        nickname: maskAccountId(res.body.nickname ?? null),
       },
     };
   },
