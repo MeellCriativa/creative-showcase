@@ -332,6 +332,28 @@ export async function consumeCheckoutSession(
   return { ok: true };
 }
 
+/**
+ * Compensa o consumo da sessão quando a cobrança foi criada no provedor mas o
+ * espelho local `payment_transactions` falhou. Sem isso o comprador ficaria sem
+ * link e o retry seria recusado apesar de não haver transação registrada.
+ */
+export async function releaseCheckoutSession(
+  orderId: string,
+  token: string,
+): Promise<void> {
+  if (!orderId || !token) return;
+  const hash = await sha256Hex(token);
+  const admin = adminClient();
+  const { error } = await admin
+    .from("order_checkout_sessions")
+    .update({ consumed_at: null })
+    .eq("order_id", orderId)
+    .eq("token_hash", hash)
+    .not("consumed_at", "is", null)
+    .gt("expires_at", new Date().toISOString());
+  if (error) console.error("[payments] releaseCheckoutSession", error.message);
+}
+
 /* ── Nonces de OAuth (uso único) ─────────────────────────────────────────── */
 
 /**
@@ -534,26 +556,21 @@ export async function claimCapture(
 ): Promise<boolean> {
   const admin = adminClient();
   const now = Date.now();
-  const { data } = await admin
-    .from("payment_transactions")
-    .select("capture_claimed_at")
-    .eq("id", transactionId)
-    .maybeSingle();
-  const claimedAt = data?.capture_claimed_at
-    ? new Date(data.capture_claimed_at as string).getTime()
-    : null;
-  if (claimedAt !== null && Number.isFinite(claimedAt) && now - claimedAt < leaseMs) {
-    return false;
-  }
-  const { error } = await admin
+  const cutoff = new Date(now - leaseMs).toISOString();
+  // UPDATE condicional + RETURNING: só quem alterou a linha recebe `data`.
+  // O antigo SELECT + UPDATE permitia dois isolates obterem o lease ao mesmo tempo.
+  const { data, error } = await admin
     .from("payment_transactions")
     .update({ capture_claimed_at: new Date(now).toISOString() })
-    .eq("id", transactionId);
+    .eq("id", transactionId)
+    .or(`capture_claimed_at.is.null,capture_claimed_at.lt.${cutoff}`)
+    .select("id")
+    .maybeSingle();
   if (error) {
     console.error("[payments] claimCapture", error.message);
     return false;
   }
-  return true;
+  return !!data?.id;
 }
 
 export async function releaseCapture(transactionId: string): Promise<void> {
@@ -642,9 +659,9 @@ export async function syncOrderPayment(input: {
   provider: PaymentProviderKey;
   status: PaymentStatus;
   transactionId: string;
-}): Promise<void> {
+}): Promise<{ ok: boolean; error?: string }> {
   const admin = adminClient();
-  await admin
+  const { error } = await admin
     .from("orders")
     .update({
       payment_status: input.status,
@@ -652,6 +669,11 @@ export async function syncOrderPayment(input: {
       payment_transaction_id: input.transactionId,
     })
     .eq("id", input.orderId);
+  if (error) {
+    console.error("[payments] syncOrderPayment", error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
 }
 
 /* ── Eventos (idempotência) ──────────────────────────────────────────────── */

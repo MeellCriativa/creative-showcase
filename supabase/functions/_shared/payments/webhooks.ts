@@ -29,6 +29,7 @@ import {
   updateTransaction,
   type TransactionRow,
 } from "./db.ts";
+import { maskEmail } from "./crypto.ts";
 import { loadCredentials } from "./connections.ts";
 import { getProvider } from "./index.ts";
 import {
@@ -68,6 +69,34 @@ export const CAPTURE_LEASE_MS = 60_000;
 
 function log(provider: PaymentProviderKey, message: string, extra?: unknown): void {
   console.log(`[webhooks-${provider}] ${message}`, extra ?? "");
+}
+
+/**
+ * Reduz PII antes de persistir o payload bruto em `payment_events`.
+ * A resolução do evento usa o payload original; só o registro auditável é
+ * redatado (e-mail mascarado, demais dados pessoais removidos).
+ */
+function redactWebhookPayload(value: unknown, key = ""): unknown {
+  const sensitiveKey = key.toLowerCase();
+  if (value === null || typeof value !== "object") {
+    if (/e-?mail|email/i.test(sensitiveKey) && typeof value === "string") {
+      return maskEmail(value);
+    }
+    if (
+      /cpf|cnpj|document|documento|phone|telefone|celular|address|endereco|payer|buyer|customer|comprador|pagador|\bip\b/i.test(
+        sensitiveKey,
+      )
+    ) {
+      return "[REDACTED]";
+    }
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactWebhookPayload(item));
+  const out: Record<string, unknown> = {};
+  for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
+    out[childKey] = redactWebhookPayload(childValue, childKey);
+  }
+  return out;
 }
 
 /** Conta do vendedor informada pelo Mercado Pago no corpo do evento. */
@@ -221,12 +250,21 @@ export async function applyOfficialSnapshot(input: {
     };
   }
 
-  await syncOrderPayment({
+  const synced = await syncOrderPayment({
     orderId: input.transaction.order_id,
     provider: input.provider,
     status: merged.status,
     transactionId: input.transaction.id,
   });
+  if (!synced.ok) {
+    return {
+      ok: false,
+      snapshot: effectiveSnapshot,
+      reason: "local_persist_failed",
+      captured,
+      regressed: merged.regressed,
+    };
+  }
 
   return { ok: true, snapshot: effectiveSnapshot, captured, regressed: merged.regressed };
 }
@@ -280,7 +318,7 @@ export async function handleWebhook(input: {
       eventId,
       eventType: verification.eventType,
       signatureValid: false,
-      payload: verification.payload,
+      payload: redactWebhookPayload(verification.payload) as Record<string, unknown>,
     });
     if (rejected.id) {
       await finishEvent(rejected.id, false, verification.reason ?? "invalid_signature");
@@ -302,7 +340,7 @@ export async function handleWebhook(input: {
       eventId,
       eventType: verification.eventType,
       signatureValid: true,
-      payload: verification.payload,
+      payload: redactWebhookPayload(verification.payload) as Record<string, unknown>,
     });
     if (recorded.error) {
       // Erro real de banco: NÃO tratamos como duplicata (auditoria A1).

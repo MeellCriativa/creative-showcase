@@ -455,6 +455,7 @@ function PagamentosPage() {
         <ProviderCard
           key={connection.provider}
           connection={connection}
+          encryptionConfigured={!!status?.encryption_configured}
           busy={busy}
           onConnect={() => handleConnect(connection.provider)}
           onDisconnect={() => handleDisconnect(connection.provider)}
@@ -589,6 +590,7 @@ function PagamentosPage() {
 
 function ProviderCard({
   connection,
+  encryptionConfigured,
   busy,
   onConnect,
   onDisconnect,
@@ -596,6 +598,7 @@ function ProviderCard({
   onToggle,
 }: {
   connection: PaymentConnectionView;
+  encryptionConfigured: boolean;
   busy: string | null;
   onConnect: () => void;
   onDisconnect: () => void;
@@ -607,7 +610,7 @@ function ProviderCard({
   const disconnecting = busy === `disconnect:${connection.provider}`;
   const verifying = busy === `verify:${connection.provider}`;
   const toggling = busy === `toggle:${connection.provider}`;
-  const canEnable = connection.connected && connection.currencySupported;
+  const canEnable = encryptionConfigured && connection.connected && connection.currencySupported;
 
   return (
     <div className="space-y-4 rounded-2xl border border-border bg-card p-5">
@@ -707,7 +710,7 @@ function ProviderCard({
           <button
             type="button"
             onClick={onConnect}
-            disabled={connecting || !connection.configured}
+            disabled={connecting || !connection.configured || !encryptionConfigured}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
           >
             {connecting ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}

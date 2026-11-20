@@ -8,7 +8,7 @@
  *
  * Split 1:N não é implementado (exigiria habilitação específica na conta).
  */
-import { readEnv } from "./crypto.ts";
+import { maskEmail, readEnv } from "./crypto.ts";
 import { addAmounts, currencyDecimals, providerAmount } from "./money.ts";
 import { computeChargeSplit } from "./lifecycle.ts";
 import { selectPaymentFromMerchantOrder } from "./resolution.ts";
@@ -28,6 +28,26 @@ import type {
 
 const API_BASE = "https://api.mercadopago.com";
 const TIMEOUT_MS = 20_000;
+/** Janela de tolerância do `ts` assinado do webhook (defesa contra replay). */
+const WEBHOOK_TS_TOLERANCE_MS = 10 * 60_000;
+
+/**
+ * Erro da API do MP nunca é logado cru: o corpo pode conter dados do pagador
+ * ou da conta da lojista. Mantemos apenas o que é necessário para diagnosticar.
+ */
+function redact(value: string): string {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "<email>")
+    .replace(/\b\d{11,14}\b/g, "<documento>")
+    .slice(0, 200);
+}
+
+function safeApiError(body: any): string {
+  if (!body || typeof body !== "object") return "";
+  const message = typeof body.message === "string" ? redact(body.message) : "";
+  const code = typeof body.error === "string" ? redact(body.error) : "";
+  return [code, message].filter(Boolean).join(": ");
+}
 
 export function mpEnvironment(): "sandbox" | "production" {
   return readEnv("MP_ENV") === "production" ? "production" : "sandbox";
@@ -225,8 +245,8 @@ export const mercadopagoProvider: PaymentProvider = {
       }),
     });
     if (!res.ok || !res.body?.access_token) {
-      console.error("[mercadopago] oauth/token", res.status, JSON.stringify(res.body));
-      throw new Error(res.body?.message || `Mercado Pago recusou a autorização (${res.status}).`);
+      console.error("[mercadopago] oauth/token", res.status, safeApiError(res.body));
+      throw new Error(safeApiError(res.body) || `Mercado Pago recusou a autorização (${res.status}).`);
     }
 
     const accessToken = res.body.access_token as string;
@@ -267,7 +287,7 @@ export const mercadopagoProvider: PaymentProvider = {
       }),
     });
     if (!res.ok || !res.body?.access_token) {
-      console.error("[mercadopago] refresh", res.status, JSON.stringify(res.body));
+      console.error("[mercadopago] refresh", res.status, safeApiError(res.body));
       throw new Error("Não foi possível renovar a autorização do Mercado Pago.");
     }
     const expiresIn = Number(res.body.expires_in ?? 15_552_000);
@@ -324,8 +344,8 @@ export const mercadopagoProvider: PaymentProvider = {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      console.error("[mercadopago] preference", res.status, JSON.stringify(res.body));
-      throw new Error(res.body?.message || `Mercado Pago recusou o pagamento (${res.status}).`);
+      console.error("[mercadopago] preference", res.status, safeApiError(res.body));
+      throw new Error(safeApiError(res.body) || `Mercado Pago recusou o pagamento (${res.status}).`);
     }
     const isSandbox = mpEnvironment() === "sandbox";
     const checkoutUrl =
@@ -364,7 +384,8 @@ export const mercadopagoProvider: PaymentProvider = {
       refundedAmount: refunded,
       // O Mercado Pago informa `transaction_amount_refunded` oficialmente.
       refundedAmountKnown: true,
-      payerReference: res.body.payer?.email ?? null,
+      // Nunca persistir e-mail completo: a coluna é legível por RLS do dono.
+      payerReference: maskEmail(res.body.payer?.email),
       raw: res.body,
     };
   },
@@ -399,8 +420,8 @@ export const mercadopagoProvider: PaymentProvider = {
       }),
     });
     if (!res.ok) {
-      console.error("[mercadopago] refund", res.status, JSON.stringify(res.body));
-      throw new Error(res.body?.message || `Mercado Pago recusou o reembolso (${res.status}).`);
+      console.error("[mercadopago] refund", res.status, safeApiError(res.body));
+      throw new Error(safeApiError(res.body) || `Mercado Pago recusou o reembolso (${res.status}).`);
     }
     const status = String(res.body?.status ?? "").toLowerCase();
     return {
@@ -492,7 +513,12 @@ export const mercadopagoProvider: PaymentProvider = {
       (payload as any)?.data?.id ?? request.query["data.id"] ?? request.query.id ?? "",
     );
     const action = String((payload as any).action ?? "");
-    const eventId = `${type || "payment"}:${dataId || "unknown"}:${action || "notification"}`;
+    const requestId = request.headers["x-request-id"] ?? "";
+    // `x-request-id` identifica a entrega de forma estável; `action` varia entre
+    // reenvios do mesmo pagamento e fragmentava a idempotência do evento.
+    const eventId = requestId
+      ? `${type || "payment"}:${dataId || "unknown"}:${requestId}`
+      : `${type || "payment"}:${dataId || "unknown"}:${action || "notification"}`;
     const isPayment = type === "payment" || type === "merchant_order";
 
     const { webhookSecret } = config();
@@ -509,7 +535,6 @@ export const mercadopagoProvider: PaymentProvider = {
     }
 
     const signature = request.headers["x-signature"] ?? "";
-    const requestId = request.headers["x-request-id"] ?? "";
     const parts = new Map<string, string>();
     for (const chunk of signature.split(",")) {
       const idx = chunk.indexOf("=");
@@ -526,6 +551,21 @@ export const mercadopagoProvider: PaymentProvider = {
         isTestEvent: false,
         payload,
         reason: "Assinatura ausente.",
+      };
+    }
+
+    // O `ts` faz parte do manifesto assinado, mas sem janela de frescor uma
+    // notificação legítima capturada poderia ser reenviada indefinidamente.
+    const tsMs = Number(ts) * 1000;
+    if (!Number.isFinite(tsMs) || Math.abs(Date.now() - tsMs) > WEBHOOK_TS_TOLERANCE_MS) {
+      return {
+        valid: false,
+        eventId,
+        eventType: type,
+        providerPaymentId: type === "payment" ? dataId || null : null,
+        isTestEvent: false,
+        payload,
+        reason: "Assinatura fora da janela de validade.",
       };
     }
 

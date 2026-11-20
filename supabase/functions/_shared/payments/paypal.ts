@@ -9,7 +9,7 @@
  * Sem `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`PAYPAL_PARTNER_ID` o provedor
  * reporta `configured = false` e nada é simulado.
  */
-import { readEnv } from "./crypto.ts";
+import { maskAccountId, maskEmail, readEnv } from "./crypto.ts";
 import { providerAmountString, currencyDecimals } from "./money.ts";
 import { computeChargeSplit } from "./lifecycle.ts";
 import type {
@@ -33,6 +33,25 @@ const BASES: Record<string, string> = {
 };
 
 const TIMEOUT_MS = 20_000;
+
+/** Erros da API nunca são logados crus (podem conter dados do pagador). */
+function safeApiError(body: any): string {
+  if (!body || typeof body !== "object") return "";
+  const raw = typeof body.message === "string"
+    ? body.message
+    : typeof body.name === "string"
+      ? body.name
+      : "";
+  return raw
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "<email>")
+    .replace(/\b\d{11,14}\b/g, "<documento>")
+    .slice(0, 200);
+}
+
+function maskAccountLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value.includes("@") ? maskEmail(value) : maskAccountId(value);
+}
 
 export function paypalEnvironment(): "sandbox" | "production" {
   return readEnv("PAYPAL_ENV") === "production" ? "production" : "sandbox";
@@ -315,17 +334,22 @@ export const paypalProvider: PaymentProvider = {
   label: "PayPal",
 
   isConfigured(): boolean {
-    const { clientId, clientSecret, partnerId } = config();
-    return !!(clientId && clientSecret && partnerId);
+    const { clientId, clientSecret, partnerId, webhookId } = config();
+    // Sem o ID do webhook a assinatura não pode ser validada: expor o botão
+    // "Conectar" daria a falsa impressão de que o provedor está pronto.
+    return !!(clientId && clientSecret && partnerId && webhookId);
   },
 
   setupMessage(): string | null {
-    const { clientId, clientSecret, partnerId } = config();
+    const { clientId, clientSecret, partnerId, webhookId } = config();
     if (!clientId || !clientSecret) {
       return "PayPal ainda não configurado na plataforma (credenciais ausentes).";
     }
     if (!partnerId) {
       return "PayPal aguardando aprovação comercial: o Partner ID (marketplace) ainda não foi emitido.";
+    }
+    if (!webhookId) {
+      return "PayPal aguardando o ID do webhook: notificações sem assinatura válida não são aceitas.";
     }
     return null;
   },
@@ -361,9 +385,9 @@ export const paypalProvider: PaymentProvider = {
       }),
     });
     if (!res.ok) {
-      console.error("[paypal] partner-referrals", res.status, JSON.stringify(res.body));
+      console.error("[paypal] partner-referrals", res.status, safeApiError(res.body));
       throw new Error(
-        res.body?.message || `PayPal recusou o onboarding do vendedor (${res.status}).`,
+        safeApiError(res.body) || `PayPal recusou o onboarding do vendedor (${res.status}).`,
       );
     }
     const action = Array.isArray(res.body?.links)
@@ -377,7 +401,8 @@ export const paypalProvider: PaymentProvider = {
 
   async completeAuthorization({ query, redirectUri }): Promise<ProviderCredentials> {
     const merchantId = String(query.merchantIdInPayPal ?? query.merchant_id ?? "").trim();
-    const permissionsGranted = String(query.permissionsGranted ?? "true") === "true";
+    // Fail closed: se o parâmetro não veio, NÃO podemos presumir consentimento.
+    const permissionsGranted = String(query.permissionsGranted ?? "") === "true";
     if (!merchantId) {
       throw new Error("A PayPal não retornou o Merchant ID do vendedor.");
     }
@@ -423,7 +448,7 @@ export const paypalProvider: PaymentProvider = {
       expiresAt: null,
       scopes: ["https://uri.paypal.com/services/payments/payment", "https://uri.paypal.com/services/payments/refund"],
       externalAccountId: merchantId,
-      externalAccountLabel: primaryEmail || merchantId,
+      externalAccountLabel: maskAccountLabel(primaryEmail) ?? merchantId,
       merchantId,
       capabilities,
     };
@@ -485,7 +510,8 @@ export const paypalProvider: PaymentProvider = {
     return {
       ok: !!res.body?.payments_receivable,
       externalAccountId: credentials.merchantId,
-      externalAccountLabel: res.body?.primary_email ?? credentials.externalAccountLabel,
+      externalAccountLabel:
+        maskAccountLabel(res.body?.primary_email) ?? credentials.externalAccountLabel,
       merchantId: credentials.merchantId,
       capabilities: {
         primary_currency: res.body?.primary_currency ?? null,
@@ -521,8 +547,10 @@ export const paypalProvider: PaymentProvider = {
     });
 
     if (!res.ok) {
-      console.error("[paypal] create order", res.status, JSON.stringify(res.body));
-      throw new Error(res.body?.message || `PayPal recusou a criação do pagamento (${res.status}).`);
+      console.error("[paypal] create order", res.status, safeApiError(res.body));
+      throw new Error(
+        safeApiError(res.body) || `PayPal recusou a criação do pagamento (${res.status}).`,
+      );
     }
     const approve = Array.isArray(res.body?.links)
       ? res.body.links.find((l: { rel: string }) => l.rel === "approve" || l.rel === "payer-action")
@@ -598,12 +626,29 @@ export const paypalProvider: PaymentProvider = {
       },
     );
     if (!res.ok) {
-      const issue = String(res.body?.details?.[0]?.issue ?? res.body?.name ?? "");
-      if (issue === "ORDER_ALREADY_CAPTURED" || res.status === 422) {
-        // Já capturado (retry/duplo clique): devolve o estado real da ordem.
-        return paypalProvider.getPayment(_credentials, providerPaymentId);
+      const issue = String(
+        res.body?.details?.[0]?.issue ?? res.body?.details?.[0]?.description ?? res.body?.name ?? "",
+      );
+      if (issue === "ORDER_ALREADY_CAPTURED") {
+        // Retry/duplo clique: só aceita se a ordem REALMENTE estiver capturada.
+        const existing = await paypalProvider.getPayment(_credentials, providerPaymentId);
+        if (
+          existing &&
+          (existing.status === "captured" ||
+            existing.status === "refunded" ||
+            existing.status === "partially_refunded")
+        ) {
+          return existing;
+        }
+        console.error(
+          "[paypal] capture",
+          res.status,
+          safeApiError(res.body),
+          "order sem captura confirmada",
+        );
+        return null;
       }
-      console.error("[paypal] capture", res.status, JSON.stringify(res.body));
+      console.error("[paypal] capture", res.status, safeApiError(res.body));
       return null;
     }
     return paypalSnapshotFromOrder(res.body, providerPaymentId);
@@ -635,8 +680,10 @@ export const paypalProvider: PaymentProvider = {
       }),
     });
     if (!res.ok) {
-      console.error("[paypal] refund", res.status, JSON.stringify(res.body));
-      throw new Error(res.body?.message || `PayPal recusou o reembolso (${res.status}).`);
+      console.error("[paypal] refund", res.status, safeApiError(res.body));
+      throw new Error(
+        safeApiError(res.body) || `PayPal recusou o reembolso (${res.status}).`,
+      );
     }
     const status = String(res.body?.status ?? "").toUpperCase();
     return {

@@ -90,7 +90,7 @@ function buildRequest(
   } = {},
 ) {
   const requestId = options.requestId ?? "req-abc-123";
-  const ts = options.ts ?? "1763300000";
+  const ts = options.ts ?? String(Math.floor(Date.now() / 1000));
   const dataId = options.dataId ?? PAYMENT_ID;
   const signature =
     options.signature === undefined ? sign(dataId, requestId, ts) : options.signature;
@@ -118,7 +118,7 @@ test("notificação legítima do MP é aceita e identificada", async () => {
   assert.equal(verification.eventType, "payment");
   assert.equal(verification.providerPaymentId, PAYMENT_ID);
   assert.equal(verification.isTestEvent, false);
-  assert.equal(verification.eventId, `payment:${PAYMENT_ID}:payment.updated`);
+  assert.equal(verification.eventId, `payment:${PAYMENT_ID}:req-abc-123`);
   assert.deepEqual(verification.payload, PAYMENT_NOTIFICATION);
 });
 
@@ -126,7 +126,7 @@ test("assinatura adulterada é recusada antes de qualquer efeito", async () => {
   const verification = await withEnv({ MP_WEBHOOK_SECRET: WEBHOOK_SECRET }, () =>
     mercadopagoProvider.verifyWebhook(
       buildRequest(PAYMENT_NOTIFICATION, {
-        signature: `ts=1763300000,v1=${"0".repeat(64)}`,
+        signature: `ts=${Math.floor(Date.now() / 1000)},v1=${"0".repeat(64)}`,
       }),
     ),
   );
@@ -137,7 +137,7 @@ test("assinatura adulterada é recusada antes de qualquer efeito", async () => {
 });
 
 test("segredo diferente invalida a assinatura", async () => {
-  const forged = sign(PAYMENT_ID, "req-abc-123", "1763300000", "outro-segredo");
+  const forged = sign(PAYMENT_ID, "req-abc-123", String(Math.floor(Date.now() / 1000)), "outro-segredo");
   const verification = await withEnv({ MP_WEBHOOK_SECRET: WEBHOOK_SECRET }, () =>
     mercadopagoProvider.verifyWebhook(buildRequest(PAYMENT_NOTIFICATION, { signature: forged })),
   );
@@ -168,6 +168,17 @@ test("payload inválido não derruba o handler", async () => {
   );
   assert.equal(verification.valid, false);
   assert.equal(verification.reason, "Payload inválido.");
+});
+
+test("assinatura matematicamente válida, mas antiga, é recusada (replay)", async () => {
+  const oldTs = String(Math.floor(Date.now() / 1000) - 3600);
+  const verification = await withEnv({ MP_WEBHOOK_SECRET: WEBHOOK_SECRET }, () =>
+    mercadopagoProvider.verifyWebhook(
+      buildRequest(PAYMENT_NOTIFICATION, { ts: oldTs, signature: sign(PAYMENT_ID, "req-abc-123", oldTs) }),
+    ),
+  );
+  assert.equal(verification.valid, false);
+  assert.equal(verification.reason, "Assinatura fora da janela de validade.");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,7 +299,7 @@ test("evento falso não ocupa a chave do evento legítimo", async () => {
   assert.equal(forged.valid, false);
 
   const forgedKey = eventKeyFor({ valid: forged.valid, eventId: forged.eventId });
-  assert.equal(forgedKey, `invalid:payment:${PAYMENT_ID}:payment.updated`);
+  assert.equal(forgedKey, `invalid:payment:${PAYMENT_ID}:req-abc-123`);
   assert.equal(eventDecision({ valid: false, existing: false, processed: false }), "reject");
 
   // O evento legítimo, com a mesma id, ainda entra na fila.
@@ -298,7 +309,7 @@ test("evento falso não ocupa a chave do evento legítimo", async () => {
   assert.equal(legitimate.valid, true);
 
   const legitimateKey = eventKeyFor({ valid: legitimate.valid, eventId: legitimate.eventId });
-  assert.equal(legitimateKey, `payment:${PAYMENT_ID}:payment.updated`);
+  assert.equal(legitimateKey, `payment:${PAYMENT_ID}:req-abc-123`);
   assert.notEqual(legitimateKey, forgedKey);
   assert.equal(eventDecision({ valid: true, existing: false, processed: false }), "process");
 });

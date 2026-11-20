@@ -14,8 +14,7 @@
 
 $ErrorActionPreference = "Stop"
 $PROJECT_REF = "wdcufpvlbisnqtvmbyso"
-$SUPABASE_URL = "https://wdcufpvlbisnqtvmbyso.supabase.co"
-$SERVICE_ROLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkY3VmcHZsYmlzbnF0dm1ieXNvIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzY2ODM0MCwiZXhwIjoyMTAzMjQ0MzQwfQ.pfPUmQeSErbkyBf54HtaKxEdIywv4tFCe6LUmYZS6TY"
+# SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sao injetados automaticamente pelo runtime da Supabase.
 $VITRINE_URL = "https://vitrine.meellcriativa.workers.dev"
 
 Write-Host ""
@@ -60,8 +59,6 @@ supabase secrets set `
   ME_CLIENT_ID=$clientId `
   ME_CLIENT_SECRET=$clientSecret `
   ME_ENV=$env `
-  SUPABASE_URL=$SUPABASE_URL `
-  SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE `
   VITRINE_URL=$VITRINE_URL
 if ($LASTEXITCODE -ne 0) { Write-Host "Set de secrets falhou." -ForegroundColor Red; exit 1 }
 

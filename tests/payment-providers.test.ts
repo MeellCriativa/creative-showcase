@@ -131,29 +131,18 @@ test("PayPal com credenciais mas SEM Partner ID continua não configurado", () =
   assert.match(message ?? "", /aprovação comercial|Partner ID/i);
 });
 
-test("PayPal só fica configurado com Client ID + Secret + Partner ID", () => {
-  assert.equal(
-    withEnv(
-      {
-        PAYPAL_CLIENT_ID: "id",
-        PAYPAL_CLIENT_SECRET: "secret",
-        PAYPAL_PARTNER_ID: "PARTNER-123",
-      },
-      () => paypalProvider.isConfigured(),
-    ),
-    true,
-  );
-  assert.equal(
-    withEnv(
-      {
-        PAYPAL_CLIENT_ID: "id",
-        PAYPAL_CLIENT_SECRET: "secret",
-        PAYPAL_PARTNER_ID: "PARTNER-123",
-      },
-      () => paypalProvider.setupMessage(),
-    ),
-    null,
-  );
+test("PayPal exige Client ID + Secret + Partner ID + Webhook ID", () => {
+  const base = {
+    PAYPAL_CLIENT_ID: "id",
+    PAYPAL_CLIENT_SECRET: "secret",
+    PAYPAL_PARTNER_ID: "PARTNER-123",
+  };
+  assert.equal(withEnv(base, () => paypalProvider.isConfigured()), false);
+  assert.match(withEnv(base, () => paypalProvider.setupMessage()) ?? "", /webhook/i);
+
+  const complete = { ...base, PAYPAL_WEBHOOK_ID: "WEBHOOK-123" };
+  assert.equal(withEnv(complete, () => paypalProvider.isConfigured()), true);
+  assert.equal(withEnv(complete, () => paypalProvider.setupMessage()), null);
 });
 
 test("Mercado Pago fica configurado com Client ID + Secret", () => {
@@ -316,7 +305,7 @@ function mpSignature(secret: string, dataId: string, requestId: string, ts: stri
 
 test("Mercado Pago aceita assinatura HMAC válida de pagamento", async () => {
   const secret = "segredo-de-teste-mp";
-  const ts = "1700000000";
+  const ts = String(Math.floor(Date.now() / 1000));
   const requestId = "req-1";
   const dataId = "ABC123";
   const result = await withEnv({ MP_WEBHOOK_SECRET: secret }, () =>
@@ -332,7 +321,7 @@ test("Mercado Pago aceita assinatura HMAC válida de pagamento", async () => {
   assert.equal(result.valid, true);
   assert.equal(result.isTestEvent, false);
   assert.equal(result.providerPaymentId, dataId);
-  assert.equal(result.eventId, `payment:${dataId}:payment.created`);
+  assert.equal(result.eventId, `payment:${dataId}:req-1`);
 });
 
 test("Mercado Pago recusa assinatura inválida (não confia no corpo)", async () => {
@@ -340,7 +329,7 @@ test("Mercado Pago recusa assinatura inválida (não confia no corpo)", async ()
   const result = await withEnv({ MP_WEBHOOK_SECRET: secret }, () =>
     mercadopagoProvider.verifyWebhook({
       headers: {
-        "x-signature": mpSignature("outro-segredo", "ABC123", "req-1", "1700000000"),
+        "x-signature": mpSignature("outro-segredo", "ABC123", "req-1", String(Math.floor(Date.now() / 1000))),
         "x-request-id": "req-1",
       },
       rawBody: JSON.stringify({ type: "payment", data: { id: "ABC123" } }),
@@ -368,7 +357,7 @@ test("Mercado Pago aceita notificação apenas por query string (IPN)", async ()
   const result = await withEnv({ MP_WEBHOOK_SECRET: secret }, () =>
     mercadopagoProvider.verifyWebhook({
       headers: {
-        "x-signature": mpSignature(secret, "999", "req-2", "1700000001"),
+        "x-signature": mpSignature(secret, "999", "req-2", String(Math.floor(Date.now() / 1000))),
         "x-request-id": "req-2",
       },
       rawBody: "",
@@ -385,7 +374,7 @@ test("evento que não é de pagamento é sinalizado como ignorável", async () =
   const result = await withEnv({ MP_WEBHOOK_SECRET: secret }, () =>
     mercadopagoProvider.verifyWebhook({
       headers: {
-        "x-signature": mpSignature(secret, "evt-1", "req-3", "1700000002"),
+        "x-signature": mpSignature(secret, "evt-1", "req-3", String(Math.floor(Date.now() / 1000))),
         "x-request-id": "req-3",
       },
       rawBody: JSON.stringify({ type: "test", data: { id: "evt-1" } }),
@@ -403,7 +392,7 @@ test("merchant_order válido não é tratado como pagamento", async () => {
   const result = await withEnv({ MP_WEBHOOK_SECRET: secret }, () =>
     mercadopagoProvider.verifyWebhook({
       headers: {
-        "x-signature": mpSignature(secret, "ord-1", "req-4", "1700000003"),
+        "x-signature": mpSignature(secret, "ord-1", "req-4", String(Math.floor(Date.now() / 1000))),
         "x-request-id": "req-4",
       },
       rawBody: JSON.stringify({ type: "merchant_order", data: { id: "ord-1" } }),
@@ -421,7 +410,7 @@ test("evento de pagamento com assinatura inválida continua recusado", async () 
   const result = await withEnv({ MP_WEBHOOK_SECRET: secret }, () =>
     mercadopagoProvider.verifyWebhook({
       headers: {
-        "x-signature": mpSignature(secret, "ord-1", "req-3", "1700000002"),
+        "x-signature": mpSignature(secret, "ord-1", "req-3", String(Math.floor(Date.now() / 1000))),
         "x-request-id": "req-3",
       },
       rawBody: JSON.stringify({ type: "payment", data: { id: "OUTRO-ID" } }),

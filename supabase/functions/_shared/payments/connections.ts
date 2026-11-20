@@ -112,7 +112,11 @@ export async function buildConnectionView(
     accountPrimaryCurrency: accountPrimaryCurrency ?? null,
   });
 
-  const connected = !!(connection?.connected && connection?.status === "connected");
+  const connected = !!(
+    connection?.connected &&
+    connection?.status === "connected" &&
+    connection.environment === providerEnvironment(provider)
+  );
   const rawLabel = connection?.external_account_label ?? null;
   const maskedLabel = rawLabel
     ? rawLabel.includes("@")
@@ -152,6 +156,8 @@ export async function listPublicPaymentMethods(
     if (!providerImpl.isConfigured()) continue;
     const connection = await getConnection(catalogId, provider);
     if (!connection?.connected || connection.status !== "connected" || !connection.enabled) continue;
+    // Conexões sandbox não podem cobrar se o runtime estiver em produção (e vice-versa).
+    if (connection.environment !== providerEnvironment(provider)) continue;
     const capabilities = (connection.capabilities ?? {}) as Record<string, unknown>;
     const support = checkCurrencySupport(provider, {
       currency: catalogCurrency,

@@ -321,6 +321,26 @@ test("captura duplicada devolve a mesma captura em vez de erro", async () => {
   }
 });
 
+test("422 genérico na captura NÃO é tratado como já capturado", async () => {
+  const stub = stubFetch((url) => {
+    if (url.endsWith("/v1/oauth2/token")) return { body: { access_token: "platform-token" } };
+    if (url.endsWith(`/v2/checkout/orders/${ORDER_ID}/capture`)) {
+      return {
+        status: 422,
+        body: { name: "UNPROCESSABLE_ENTITY", details: [{ issue: "INVALID_AMOUNT" }] },
+      };
+    }
+    throw new Error("consulta pós-erro não deveria ser feita");
+  });
+
+  try {
+    const snapshot = await withEnv(ENV, () => paypalProvider.capture(CREDENTIALS, ORDER_ID));
+    assert.equal(snapshot, null);
+  } finally {
+    stub.restore();
+  }
+});
+
 test("capture sem credenciais de plataforma não simula pagamento", async () => {
   const stub = stubFetch((url) => {
     throw new Error(`não deveria chamar a rede: ${url}`);

@@ -32,6 +32,7 @@ import {
   listPendingRefundsForCatalog,
   listRefunds,
   markConnectionState,
+  releaseCheckoutSession,
   saveOAuthState,
   syncOrderPayment,
   updateRefundRecord,
@@ -502,7 +503,10 @@ async function createPaymentAction(ctx: PublicCtx): Promise<Response> {
         reused: true,
       });
     }
-    throw new HttpError(409, "Já existe um pagamento em andamento para este pedido.");
+    // Sem espelho local não há como retomar o checkout: devolve a sessão para
+    // que o mesmo token possa ser usado uma vez (a cobrança já existe na origem).
+    await releaseCheckoutSession(order.id, token);
+    throw new HttpError(503, "Não foi possível registrar o pagamento. Tente novamente.");
   }
 
   await admin
@@ -540,6 +544,31 @@ async function paymentStatusAction(ctx: PublicCtx): Promise<Response> {
   if (!data) throw new HttpError(404, "Pedido não encontrado.");
 
   const provider = isProviderKey(data.payment_provider) ? data.payment_provider : null;
+
+  /**
+   * MP Checkout Pro guarda a PREFERÊNCIA em `provider_order_id`; o id consultável
+   * em `/v1/payments/{id}` só chega pelo webhook. Se o comprador voltar antes
+   * dele, consultamos a API oficial usando a preferência como `merchant_order`
+   * e persistimos o payment id antes do snapshot (auditoria Etapa 2.2).
+   */
+  async function resolveMpPaymentId(tx: TransactionRow, credentials: ProviderCredentials) {
+    const impl = getProvider("mercadopago");
+    if (!impl || !tx.provider_order_id) return null;
+    const looked = await impl.resolveNotification(credentials, {
+      type: "merchant_order",
+      id: tx.provider_order_id,
+    });
+    const paymentId = looked?.providerPaymentId ?? null;
+    if (!paymentId) return null;
+    await updateTransaction({
+      transactionId: tx.id,
+      status: tx.status,
+      providerStatus: looked?.providerStatus ?? tx.provider_status,
+      providerPaymentId: paymentId,
+    });
+    return paymentId;
+  }
+
   let transaction: TransactionRow | null = null;
   if (provider) {
     transaction =
@@ -555,11 +584,18 @@ async function paymentStatusAction(ctx: PublicCtx): Promise<Response> {
   let status = String(data.payment_status ?? "pending");
   let captured = false;
   if (wantsRefresh && transaction && provider) {
-    const providerPaymentId = providerLookupId({
+    let providerPaymentId = providerLookupId({
       provider,
       providerPaymentId: transaction.provider_payment_id,
       providerOrderId: transaction.provider_order_id,
     });
+    if (provider === "mercadopago" && !transaction.provider_payment_id) {
+      const creds = await loadCredentials(transaction.catalog_id, provider);
+      if (creds.credentials) {
+        providerPaymentId =
+          (await resolveMpPaymentId(transaction, creds.credentials)) ?? providerPaymentId;
+      }
+    }
     if (providerPaymentId) {
       const applied = await applyOfficialSnapshot({
         provider,
@@ -917,8 +953,7 @@ function buildRefundDeps(input: {
     updateTransaction,
     syncOrderPayment: async (sync) => {
       try {
-        await syncOrderPayment(sync);
-        return { ok: true };
+        return await syncOrderPayment(sync);
       } catch (error) {
         return {
           ok: false,
@@ -1060,11 +1095,14 @@ async function refreshPaymentAction(ctx: OwnerCtx): Promise<Response> {
 
   // Consulta oficial usando o id correto (pagamento no MP, ordem no PayPal) e
   // captura a ordem PayPal quando ela ainda está apenas autorizada.
-  const paymentId = providerLookupId({
+  let paymentId = providerLookupId({
     provider,
     providerPaymentId: transaction.provider_payment_id,
     providerOrderId: transaction.provider_order_id,
   });
+  if (provider === "mercadopago" && !transaction.provider_payment_id) {
+    paymentId = (await resolveMpPaymentId(transaction, loaded.credentials)) ?? paymentId;
+  }
   if (!paymentId) throw new HttpError(409, "Pagamento ainda não identificado no provedor.");
 
   const applied = await applyOfficialSnapshot({
