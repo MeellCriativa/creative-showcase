@@ -14,7 +14,7 @@ const executable = sql
   .join("\n")
   .toLowerCase();
 
-test("migração de minimização revoga SELECT amplo das tabelas financeiras", () => {
+test("migração de minimização revoga TODOS os privilégios do navegador", () => {
   for (const table of [
     "payment_connections",
     "payment_transactions",
@@ -23,9 +23,16 @@ test("migração de minimização revoga SELECT amplo das tabelas financeiras", 
   ]) {
     assert.match(
       executable,
-      new RegExp(`revoke select on public\\.${table} from anon, authenticated`),
+      new RegExp(`revoke all on table public\\.${table} from anon, authenticated`),
     );
   }
+  // TRUNCATE/TRIGGER não são preservados: RLS não protege TRUNCATE.
+  assert.equal(/grant\s+truncate/i.test(executable), false);
+  assert.equal(/grant\s+trigger/i.test(executable), false);
+});
+
+test("toggle de conexão continua disponível via PostgREST", () => {
+  assert.match(executable, /grant update \(enabled\) on public\.payment_connections to authenticated/);
 });
 
 test("colunas sensíveis NÃO são concedidas ao navegador", () => {
@@ -46,4 +53,5 @@ test("colunas sensíveis NÃO são concedidas ao navegador", () => {
 test("service_role não é alterado e o schema é recarregado", () => {
   assert.match(executable, /notify pgrst, 'reload schema'/);
   assert.equal(executable.includes("revoke select on public.payment_connections from service_role"), false);
+  assert.equal(executable.includes("revoke all on table public.payment_connections from service_role"), false);
 });
