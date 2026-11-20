@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ImagePlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { useI18n } from "@/i18n";
 import { uploadImage } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
@@ -19,9 +20,10 @@ export function ImageUploader({
   value,
   onChange,
   max = 5,
-  label = "Adicionar foto",
+  label,
   shape = "square",
 }: Props) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,25 +37,35 @@ export function ImageUploader({
       for (const file of list) urls.push(await uploadImage(file, userId));
       onChange([...value, ...urls]);
     } catch {
-      toast.error("Não foi possível enviar a imagem.");
+      toast.error(t("forms.uploader.uploadFailed"));
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   }
 
-  const box = shape === "circle" ? "size-20 rounded-full" : shape === "wide" ? "h-24 w-full rounded-2xl" : "size-24 rounded-2xl";
+  const box =
+    shape === "circle"
+      ? "size-20 rounded-full"
+      : shape === "wide"
+        ? "h-24 w-full rounded-2xl"
+        : "size-24 rounded-2xl";
+  const labelText = label ?? t("forms.uploader.addLabel");
 
   return (
     <div className="flex flex-wrap gap-3">
       {value.map((url) => (
         <div key={url} className={cn("relative overflow-hidden border border-border", box)}>
-          <img src={url} alt="Imagem enviada" className="h-full w-full object-cover" />
+          <img
+            src={url}
+            alt={t("forms.uploader.uploadedAlt")}
+            className="h-full w-full object-cover"
+          />
           <button
             type="button"
             onClick={() => onChange(value.filter((u) => u !== url))}
             className="absolute right-1 top-1 grid size-6 place-items-center rounded-full bg-foreground/70 text-background"
-            aria-label="Remover imagem"
+            aria-label={t("forms.uploader.remove")}
           >
             <X className="size-3.5" />
           </button>
@@ -71,7 +83,7 @@ export function ImageUploader({
           )}
         >
           {busy ? <Loader2 className="size-5 animate-spin" /> : <ImagePlus className="size-5" />}
-          <span className="px-1 text-center leading-tight">{label}</span>
+          <span className="px-1 text-center leading-tight">{labelText}</span>
         </button>
       )}
 

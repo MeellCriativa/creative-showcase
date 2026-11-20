@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
+import { useI18n } from "@/i18n";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/estatisticas")({
@@ -24,6 +25,7 @@ function toISODate(d: Date) {
 type VisitRow = { visited_at: string };
 
 function EstatisticasPage() {
+  const { t, formatDate } = useI18n();
   const { user } = useAuth();
   const { data: catalog } = useMyCatalog(user?.id);
 
@@ -69,12 +71,12 @@ function EstatisticasPage() {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const iso = toISODate(d);
-      const label = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      const label = formatDate(d, { day: "2-digit", month: "2-digit" });
       const count = (visits ?? []).filter((v) => v.visited_at.slice(0, 10) === iso).length;
       days.push({ date: iso, label, count });
     }
     return days;
-  }, [visits, now]);
+  }, [visits, now, formatDate]);
 
   const maxBar = Math.max(...last14Days.map((d) => d.count), 1);
 
@@ -82,30 +84,35 @@ function EstatisticasPage() {
 
   return (
     <div className="px-5 pb-10 pt-10">
-      <h1 className="text-2xl font-bold text-foreground">Estatísticas</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Veja quantas pessoas visitaram seu catálogo nos últimos dias.
-      </p>
+      <h1 className="text-2xl font-bold text-foreground">{t("stats.title")}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("stats.subtitle")}</p>
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Total" value={String(visits?.length ?? 0)} />
-        <StatCard label="Hoje" value={String(todayCount)} />
-        <StatCard label="Últimos 7 dias" value={String(sevenDaysCount)} />
-        <StatCard label="Últimos 30 dias" value={String(visits?.length ?? 0)} />
+        <StatCard label={t("stats.total")} value={String(visits?.length ?? 0)} />
+        <StatCard label={t("stats.today")} value={String(todayCount)} />
+        <StatCard label={t("stats.last7Days")} value={String(sevenDaysCount)} />
+        <StatCard label={t("stats.last30Days")} value={String(visits?.length ?? 0)} />
       </div>
 
       <div className="mt-8 rounded-2xl border border-border bg-card p-4">
-        <h2 className="mb-4 text-sm font-semibold text-foreground">Visitas — últimos 14 dias</h2>
+        <h2 className="mb-4 text-sm font-semibold text-foreground">{t("stats.chartTitle")}</h2>
         {isLoading && <Loader2 className="mx-auto size-5 animate-spin text-primary" />}
         {!isLoading && (
           <div className="overflow-x-auto">
             <div className="flex items-end gap-1.5" style={{ minHeight: 100 }}>
               {last14Days.map((d) => (
-                <div key={d.date} className="flex flex-1 flex-col items-center" style={{ minWidth: 32 }}>
+                <div
+                  key={d.date}
+                  className="flex flex-1 flex-col items-center"
+                  style={{ minWidth: 32 }}
+                >
                   <span className="mb-1 text-[10px] text-muted-foreground">{d.count}</span>
                   <div
                     className="w-full rounded-t-md bg-primary"
-                    style={{ height: `${(d.count / maxBar) * 80}px`, minHeight: d.count > 0 ? 4 : 0 }}
+                    style={{
+                      height: `${(d.count / maxBar) * 80}px`,
+                      minHeight: d.count > 0 ? 4 : 0,
+                    }}
                   />
                   <span className="mt-1 text-[10px] text-muted-foreground">{d.label}</span>
                 </div>

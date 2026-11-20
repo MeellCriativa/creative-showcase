@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
-import { formatBRL } from "@/lib/catalog";
+import { useI18n, type MessageKey } from "@/i18n";
+import { formatMoney, resolveOrderCurrency, resolveStoreCurrency } from "@/lib/currency";
 import { meApi } from "@/lib/shipping";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -52,17 +53,27 @@ type OrderRow = {
   me_label_url: string | null;
   status: string;
   created_at: string;
+  /** Moeda do pedido no momento da compra. NULL = pedido anterior à Etapa 1. */
+  currency: string | null;
 };
 
-const STATUSES = ["novo", "confirmado", "em_preparacao", "pronto", "finalizado", "cancelado"] as const;
+const STATUSES = [
+  "novo",
+  "confirmado",
+  "em_preparacao",
+  "pronto",
+  "finalizado",
+  "cancelado",
+] as const;
 
-const STATUS_LABELS: Record<string, string> = {
-  novo: "Novo",
-  confirmado: "Confirmado",
-  em_preparacao: "Em preparação",
-  pronto: "Pronto",
-  finalizado: "Finalizado",
-  cancelado: "Cancelado",
+/** Chave de tradução de cada status; o valor técnico do banco não muda. */
+const STATUS_LABEL_KEYS: Record<string, MessageKey> = {
+  novo: "orders.status.novo",
+  confirmado: "orders.status.confirmado",
+  em_preparacao: "orders.status.emPreparacao",
+  pronto: "orders.status.pronto",
+  finalizado: "orders.status.finalizado",
+  cancelado: "orders.status.cancelado",
 };
 
 const STATUS_CLASSES: Record<string, string> = {
@@ -89,6 +100,7 @@ function isToday(iso: string) {
 }
 
 function PedidosPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: catalog } = useMyCatalog(user?.id);
@@ -118,14 +130,25 @@ function PedidosPage() {
   const todayCount = (orders ?? []).filter((o) => isToday(o.created_at)).length;
   const pendingCount = (orders ?? []).filter((o) => PENDING_STATUSES.includes(o.status)).length;
   const finishedCount = (orders ?? []).filter((o) => o.status === "finalizado").length;
-  const totalRevenue = (orders ?? [])
-    .filter((o) => o.status !== "cancelado")
-    .reduce((sum, o) => sum + (o.total ?? 0), 0);
+
+  /**
+   * Faturamento por moeda: cada pedido entra na moeda em que foi feito.
+   * Pedidos históricos (sem `currency`) são BRL e não mudam se a loja trocar
+   * de moeda depois.
+   */
+  const storeCurrency = resolveStoreCurrency(catalog?.currency);
+  const revenueByCurrency = new Map<string, number>();
+  for (const order of orders ?? []) {
+    if (order.status === "cancelado") continue;
+    const code = resolveOrderCurrency(order.currency);
+    revenueByCurrency.set(code, (revenueByCurrency.get(code) ?? 0) + (order.total ?? 0));
+  }
+  const revenueEntries = [...revenueByCurrency.entries()].sort((a, b) => b[1] - a[1]);
 
   async function updateStatus(orderId: string, status: string) {
     const { error } = await supabase.from("orders").update({ status }).eq("id", orderId);
     if (error) {
-      toast.error("Erro ao atualizar status.");
+      toast.error(t("orders.updateError"));
     } else {
       void queryClient.invalidateQueries({ queryKey: ["orders", catalog?.id] });
     }
@@ -135,25 +158,36 @@ function PedidosPage() {
 
   return (
     <div className="px-5 pb-10 pt-10">
-      <h1 className="text-2xl font-bold text-foreground">Pedidos</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Acompanhe e gerencie os pedidos recebidos pelo seu catálogo.
-      </p>
+      <h1 className="text-2xl font-bold text-foreground">{t("orders.title")}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("orders.subtitle")}</p>
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Hoje" value={String(todayCount)} />
-        <StatCard label="Pendentes" value={String(pendingCount)} />
-        <StatCard label="Finalizados" value={String(finishedCount)} />
-        <StatCard label="Total (R$)" value={formatBRL(totalRevenue)} />
+        <StatCard label={t("orders.stats.today")} value={String(todayCount)} />
+        <StatCard label={t("orders.stats.pending")} value={String(pendingCount)} />
+        <StatCard label={t("orders.stats.finished")} value={String(finishedCount)} />
+        {revenueEntries.length === 0 ? (
+          <StatCard
+            label={t("orders.stats.total", { currency: storeCurrency })}
+            value={formatMoney(0, storeCurrency)}
+          />
+        ) : (
+          revenueEntries.map(([code, value]) => (
+            <StatCard
+              key={code}
+              label={t("orders.stats.total", { currency: code })}
+              value={formatMoney(value, code)}
+            />
+          ))
+        )}
       </div>
 
       <div className="mt-6 flex gap-2 overflow-x-auto pb-1">
         {(
           [
-            { key: "todos", label: "Todos" },
-            { key: "hoje", label: "Hoje" },
-            { key: "pendentes", label: "Pendentes" },
-            { key: "finalizados", label: "Finalizados" },
+            { key: "todos", label: t("orders.filters.all") },
+            { key: "hoje", label: t("orders.filters.today") },
+            { key: "pendentes", label: t("orders.filters.pending") },
+            { key: "finalizados", label: t("orders.filters.finished") },
           ] as const satisfies readonly { key: Filter; label: string }[]
         ).map((f) => (
           <button
@@ -175,7 +209,7 @@ function PedidosPage() {
         {isLoading && <Loader2 className="mx-auto size-5 animate-spin text-primary" />}
         {!isLoading && filtered.length === 0 && (
           <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            Nenhum pedido encontrado.
+            {t("orders.empty")}
           </p>
         )}
         {filtered.map((order) => (
@@ -202,12 +236,16 @@ function OrderCard({
   order: OrderRow;
   onStatusChange: (id: string, status: string) => void;
 }) {
+  const { t, formatDate, formatDateTime } = useI18n();
+  const orderCurrency = resolveOrderCurrency(order.currency);
+  const money = (value: number) => formatMoney(value, orderCurrency);
   const dt = new Date(order.created_at);
-  const formattedDate = dt.toLocaleDateString("pt-BR");
-  const formattedTime = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const formattedDate = formatDate(dt, { day: "2-digit", month: "2-digit", year: "numeric" });
+  const formattedTime = formatDateTime(dt, { hour: "2-digit", minute: "2-digit" });
   const [meBusy, setMeBusy] = useState<string | null>(null);
 
   const isMeShipping = order.delivery_method === "melhor_envio";
+  const statusLabelKey = STATUS_LABEL_KEYS[order.status];
 
   async function runMe(action: string) {
     if (!order.catalog_id) return;
@@ -225,30 +263,41 @@ function OrderCard({
       if (action === "cart") {
         const sender = await meApi.status(opt);
         if (!sender.success) {
-          toast.error(String(sender.error || "Conecte sua loja à Melhor Envio antes."));
+          toast.error(String(sender.error || t("orders.toast.connectFirst")));
           return;
         }
         const s = sender.sender;
         if (!s || !s.complete) {
-          toast.error("Preencha o endereço de remetente na integração Melhor Envio.");
+          toast.error(t("orders.toast.senderIncomplete"));
           return;
         }
         res = await meApi.cart(opt, {
           service_id: order.shipping_service,
           sender: {
-            name: s.name, phone: s.phone, email: s.email, document: s.document,
-            street: s.street, number: s.number, complement: s.complement,
-            district: s.district, city: s.city, state: s.state, zip: s.zip,
+            name: s.name,
+            phone: s.phone,
+            email: s.email,
+            document: s.document,
+            street: s.street,
+            number: s.number,
+            complement: s.complement,
+            district: s.district,
+            city: s.city,
+            state: s.state,
+            zip: s.zip,
           },
           recipient: {
             name: order.customer_name,
             phone: order.customer_phone || "",
             email: "",
             document: "",
-            street: order.customer_street, number: order.customer_number,
+            street: order.customer_street,
+            number: order.customer_number,
             complement: order.customer_complement,
-            district: order.customer_district, city: order.customer_city,
-            state: order.customer_state, zip: order.shipping_zip,
+            district: order.customer_district,
+            city: order.customer_city,
+            state: order.customer_state,
+            zip: order.shipping_zip,
           },
           products: (order.items || []).map((it) => ({
             name: it.name,
@@ -269,24 +318,24 @@ function OrderCard({
         else if (action === "tracking") res = await meApi.tracking(opt, order.me_order_id);
         else res = { success: false };
       } else {
-        res = { success: false, error: "Crie o envio primeiro." };
+        res = { success: false, error: t("orders.toast.createFirst") };
       }
 
       if (!res.success) {
-        toast.error(String(res.error || "Falha na operação."));
+        toast.error(String(res.error || t("orders.toast.operationFailed")));
         return;
       }
 
       if (action === "cart") {
-        toast.success("Envio criado! Agora pague o envio.");
+        toast.success(t("orders.toast.created"));
       } else if (action === "checkout") {
-        toast.success("Envio pago!");
+        toast.success(t("orders.toast.paid"));
       } else if (action === "generate") {
-        toast.success("Etiqueta gerada!");
+        toast.success(t("orders.toast.labelGenerated"));
       } else if (action === "print" && res.url) {
         window.open(String(res.url), "_blank");
       } else if (action === "tracking") {
-        toast.success("Verifique o rastreio retornado.");
+        toast.success(t("orders.toast.trackingInfo"));
       }
 
       // refetch orders to update ME fields
@@ -294,9 +343,7 @@ function OrderCard({
       try {
         const { data: updated } = await supabase
           .from("orders")
-          .select(
-            "me_order_id, me_status, me_tracking, me_protocol, me_label_url",
-          )
+          .select("me_order_id, me_status, me_tracking, me_protocol, me_label_url")
           .eq("id", order.id)
           .single();
         if (updated) {
@@ -306,7 +353,7 @@ function OrderCard({
         /* ignore */
       }
     } catch {
-      toast.error("Erro inesperado ao processar o envio.");
+      toast.error(t("orders.toast.unexpected"));
     } finally {
       setMeBusy(null);
     }
@@ -321,8 +368,10 @@ function OrderCard({
             <p className="text-xs text-muted-foreground">{order.customer_phone}</p>
           )}
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[order.status] ?? "bg-muted text-muted-foreground"}`}>
-          {STATUS_LABELS[order.status] ?? order.status}
+        <span
+          className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[order.status] ?? "bg-muted text-muted-foreground"}`}
+        >
+          {statusLabelKey ? t(statusLabelKey) : order.status}
         </span>
       </div>
 
@@ -331,7 +380,9 @@ function OrderCard({
           <li key={idx} className="text-sm text-foreground">
             <span className="font-medium">{item.quantity}x</span> {item.name}
             {item.variation && <span className="text-muted-foreground"> ({item.variation})</span>}
-            <span className="ml-1 text-muted-foreground">— {formatBRL(item.unitPrice * item.quantity)}</span>
+            <span className="ml-1 text-muted-foreground">
+              — {money(item.unitPrice * item.quantity)}
+            </span>
           </li>
         ))}
       </ul>
@@ -339,29 +390,29 @@ function OrderCard({
       {order.delivery_method && (
         <div className="mt-3 rounded-xl bg-accent/50 px-3 py-2 text-xs text-muted-foreground space-y-1">
           {order.delivery_method === "melhor_envio" && (
-            <p className="font-semibold text-foreground">📦 Envio (Correios e transportadoras)</p>
+            <p className="font-semibold text-foreground">{t("orders.shipping.melhorEnvio")}</p>
           )}
           {order.delivery_method === "local_pickup" && (
-            <p className="font-semibold text-foreground">🏪 Retirada no local</p>
+            <p className="font-semibold text-foreground">{t("orders.shipping.localPickup")}</p>
           )}
           {order.delivery_method === "local_delivery" && (
-            <p className="font-semibold text-foreground">🛵 Entrega local</p>
+            <p className="font-semibold text-foreground">{t("orders.shipping.localDelivery")}</p>
           )}
-          {order.shipping_service_name && <p>Modalidade: {order.shipping_service_name}</p>}
+          {order.shipping_service_name && (
+            <p>{t("orders.shipping.service", { name: order.shipping_service_name })}</p>
+          )}
           {order.shipping_cost != null && order.shipping_cost > 0 && (
-            <p>Frete: {formatBRL(order.shipping_cost)}</p>
+            <p>{t("orders.shipping.cost", { value: money(order.shipping_cost) })}</p>
           )}
-          {order.shipping_eta_text && <p>Prazo: {order.shipping_eta_text}</p>}
-          {order.shipping_zip && <p>CEP: {order.shipping_zip}</p>}
+          {order.shipping_eta_text && (
+            <p>{t("orders.shipping.eta", { eta: order.shipping_eta_text })}</p>
+          )}
+          {order.shipping_zip && <p>{t("orders.shipping.zip", { zip: order.shipping_zip })}</p>}
           {(order.customer_street || order.customer_city) && (
             <p>
               {[order.customer_street, order.customer_number].filter(Boolean).join(", ")}
               {order.customer_complement ? ` - ${order.customer_complement}` : ""}
-              {[
-                order.customer_district,
-                order.customer_city,
-                order.customer_state,
-              ]
+              {[order.customer_district, order.customer_city, order.customer_state]
                 .filter(Boolean)
                 .join(" - ") && (
                 <>
@@ -375,11 +426,12 @@ function OrderCard({
           )}
           {isMeShipping && order.me_tracking && (
             <p className="pt-1">
-              🔎 Código de rastreio: <span className="font-semibold text-foreground">{order.me_tracking}</span>
+              {t("orders.shipping.tracking")}{" "}
+              <span className="font-semibold text-foreground">{order.me_tracking}</span>
             </p>
           )}
           {isMeShipping && order.me_protocol && (
-            <p>Protocolo: {order.me_protocol}</p>
+            <p>{t("orders.shipping.protocol", { protocol: order.me_protocol })}</p>
           )}
         </div>
       )}
@@ -393,7 +445,7 @@ function OrderCard({
               className="flex items-center gap-1 rounded-xl border border-border bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
             >
               {meBusy === "cart" ? <Loader2 className="size-3 animate-spin" /> : null}
-              Criar envio
+              {t("orders.actions.create")}
             </button>
           ) : (
             <>
@@ -403,7 +455,7 @@ function OrderCard({
                 className="flex items-center gap-1 rounded-xl border border-border bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
               >
                 {meBusy === "checkout" ? <Loader2 className="size-3 animate-spin" /> : null}
-                Pagar envio
+                {t("orders.actions.pay")}
               </button>
               <button
                 onClick={() => void runMe("generate")}
@@ -411,7 +463,7 @@ function OrderCard({
                 className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground disabled:opacity-50"
               >
                 {meBusy === "generate" ? <Loader2 className="size-3 animate-spin" /> : null}
-                Gerar etiqueta
+                {t("orders.actions.generateLabel")}
               </button>
               <button
                 onClick={() => void runMe("tracking")}
@@ -419,7 +471,7 @@ function OrderCard({
                 className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground disabled:opacity-50"
               >
                 {meBusy === "tracking" ? <Loader2 className="size-3 animate-spin" /> : null}
-                Rastrear
+                {t("orders.actions.track")}
               </button>
               {order.me_label_url ? (
                 <a
@@ -428,7 +480,7 @@ function OrderCard({
                   rel="noreferrer"
                   className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground"
                 >
-                  Imprimir etiqueta
+                  {t("orders.actions.printLabel")}
                 </a>
               ) : (
                 <button
@@ -437,7 +489,7 @@ function OrderCard({
                   className="flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground disabled:opacity-50"
                 >
                   {meBusy === "print" ? <Loader2 className="size-3 animate-spin" /> : null}
-                  Imprimir etiqueta
+                  {t("orders.actions.printLabel")}
                 </button>
               )}
             </>
@@ -446,9 +498,11 @@ function OrderCard({
       )}
 
       <div className="mt-3 flex items-center justify-between">
-        <p className="text-sm font-bold text-foreground">Total: {formatBRL(order.total)}</p>
+        <p className="text-sm font-bold text-foreground">
+          {t("orders.total", { value: money(order.total) })}
+        </p>
         <p className="text-xs text-muted-foreground">
-          {formattedDate} às {formattedTime}
+          {t("orders.dateAt", { date: formattedDate, time: formattedTime })}
         </p>
       </div>
 
@@ -464,11 +518,14 @@ function OrderCard({
           onChange={(e) => onStatusChange(order.id, e.target.value)}
           className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary"
         >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
+          {STATUSES.map((s) => {
+            const labelKey = STATUS_LABEL_KEYS[s];
+            return (
+              <option key={s} value={s}>
+                {labelKey ? t(labelKey) : s}
+              </option>
+            );
+          })}
         </select>
       </div>
     </div>

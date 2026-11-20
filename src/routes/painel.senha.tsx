@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/painel/senha")({
   head: () => ({
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/painel/senha")({
 });
 
 function SenhaPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -29,11 +31,11 @@ function SenhaPage() {
     e.preventDefault();
     if (!user?.email) return;
     if (newPassword.length < 6) {
-      toast.error("A nova senha deve ter pelo menos 6 caracteres.");
+      toast.error(t("password.errors.tooShort"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast.error("As senhas não coincidem.");
+      toast.error(t("password.errors.mismatch"));
       return;
     }
     setBusy(true);
@@ -42,17 +44,17 @@ function SenhaPage() {
         email: user.email,
         password: currentPassword,
       });
-      if (reauthError) throw new Error("Senha atual incorreta.");
+      if (reauthError) throw new Error(t("password.errors.wrongCurrent"));
 
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
-      toast.success("Senha atualizada com sucesso!");
+      toast.success(t("password.success"));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao atualizar senha.");
+      toast.error(err instanceof Error ? err.message : t("password.errors.updateFailed"));
     } finally {
       setBusy(false);
     }
@@ -67,15 +69,15 @@ function SenhaPage() {
           <KeyboardIcon className="size-5" />
         </span>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Redefinir senha</h1>
-          <p className="text-xs text-muted-foreground">Altere a senha do seu acesso</p>
+          <h1 className="text-2xl font-bold text-foreground">{t("password.title")}</h1>
+          <p className="text-xs text-muted-foreground">{t("password.subtitle")}</p>
         </div>
       </header>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-4">
         <div>
           <label htmlFor="current" className="text-sm font-medium text-foreground">
-            Senha atual
+            {t("password.currentLabel")}
           </label>
           <div className="relative mt-1.5">
             <input
@@ -85,14 +87,14 @@ function SenhaPage() {
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               className="w-full rounded-2xl border border-input bg-card px-4 py-3.5 pr-12 text-base outline-none focus:border-primary"
-              placeholder="Sua senha atual"
+              placeholder={t("password.currentPlaceholder")}
             />
             <button
               type="button"
               tabIndex={-1}
               onClick={toggle}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-muted-foreground"
-              aria-label={show ? "Ocultar senhas" : "Mostrar senhas"}
+              aria-label={show ? t("password.hidePasswords") : t("password.showPasswords")}
             >
               {show ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
             </button>
@@ -101,7 +103,7 @@ function SenhaPage() {
 
         <div>
           <label htmlFor="new" className="text-sm font-medium text-foreground">
-            Nova senha
+            {t("password.newLabel")}
           </label>
           <input
             id="new"
@@ -111,13 +113,13 @@ function SenhaPage() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             className="mt-1.5 w-full rounded-2xl border border-input bg-card px-4 py-3.5 text-base outline-none focus:border-primary"
-            placeholder="mínimo 6 caracteres"
+            placeholder={t("password.newPlaceholder")}
           />
         </div>
 
         <div>
           <label htmlFor="confirm" className="text-sm font-medium text-foreground">
-            Confirmar nova senha
+            {t("password.confirmLabel")}
           </label>
           <input
             id="confirm"
@@ -127,7 +129,7 @@ function SenhaPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             className="mt-1.5 w-full rounded-2xl border border-input bg-card px-4 py-3.5 text-base outline-none focus:border-primary"
-            placeholder="Repita a nova senha"
+            placeholder={t("password.confirmPlaceholder")}
           />
         </div>
 
@@ -137,7 +139,7 @@ function SenhaPage() {
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition active:scale-[0.98] disabled:opacity-60"
         >
           {busy && <Loader2 className="size-4 animate-spin" />}
-          Salvar nova senha
+          {t("password.submit")}
         </button>
       </form>
     </div>

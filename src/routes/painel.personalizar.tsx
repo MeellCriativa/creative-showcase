@@ -1,15 +1,33 @@
 import { useEffect, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2, ChevronUp, ChevronDown, Plus, ChevronLeft } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Loader2,
+  Trash2,
+  ChevronUp,
+  ChevronDown,
+  Plus,
+  ChevronLeft,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { ImageUploader } from "@/components/ImageUploader";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { CartIcon, CART_STYLES } from "@/components/CartIcons";
+import { useI18n } from "@/i18n";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
-import { slugify, FONT_OPTIONS, getFontFamily, PAYMENT_METHODS, DELIVERY_METHODS, formatCep } from "@/lib/catalog";
+import {
+  slugify,
+  FONT_OPTIONS,
+  getFontFamily,
+  PAYMENT_METHODS,
+  DELIVERY_METHODS,
+  formatCep,
+} from "@/lib/catalog";
+import { formatMoney, getCurrency, resolveStoreCurrency } from "@/lib/currency";
 import type { Banner } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -18,16 +36,60 @@ export const Route = createFileRoute("/painel/personalizar")({
 });
 
 const palettes = [
-  { primary: "#8b5cf6", accent: "#f3eefc", label: "Lilás" },
-  { primary: "#d1477a", accent: "#fdf2f6", label: "Rosa" },
-  { primary: "#b45309", accent: "#fef3c7", label: "Âmbar" },
-  { primary: "#0f766e", accent: "#ccfbf1", label: "Verde" },
-  { primary: "#4338ca", accent: "#e0e7ff", label: "Índigo" },
-  { primary: "#1f2937", accent: "#f3f4f6", label: "Grafite" },
-  { primary: "#be123c", accent: "#ffe4e6", label: "Vermelho" },
-];
+  { primary: "#8b5cf6", accent: "#f3eefc", labelKey: "customize.colors.lilac" },
+  { primary: "#d1477a", accent: "#fdf2f6", labelKey: "customize.colors.pink" },
+  { primary: "#b45309", accent: "#fef3c7", labelKey: "customize.colors.amber" },
+  { primary: "#0f766e", accent: "#ccfbf1", labelKey: "customize.colors.green" },
+  { primary: "#4338ca", accent: "#e0e7ff", labelKey: "customize.colors.indigo" },
+  { primary: "#1f2937", accent: "#f3f4f6", labelKey: "customize.colors.graphite" },
+  { primary: "#be123c", accent: "#ffe4e6", labelKey: "customize.colors.red" },
+] as const;
+
+/** Chaves de tradução das opções fixas de `@/lib/catalog` e `CartIcons`. */
+const FONT_LABEL_KEYS = {
+  moderna: "customize.fonts.modern",
+  manuscrita: "customize.fonts.handwritten",
+  delicada: "customize.fonts.delicate",
+  elegante: "customize.fonts.elegant",
+  minimalista: "customize.fonts.minimalist",
+  arredondada: "customize.fonts.rounded",
+  serifada: "customize.fonts.serif",
+  divertida: "customize.fonts.playful",
+} as const;
+
+const PAYMENT_LABEL_KEYS = {
+  pix: "customize.payments.pix",
+  credit_card: "customize.payments.credit",
+  debit_card: "customize.payments.debit",
+  pix_auto: "customize.payments.pixAuto",
+  cash: "customize.payments.cash",
+} as const;
+
+const DELIVERY_LABEL_KEYS = {
+  local_pickup: "customize.delivery.localPickup",
+  local_delivery: "customize.delivery.localDelivery",
+  melhor_envio: "customize.delivery.melhorEnvio",
+} as const;
+
+const CART_LABEL_KEYS = {
+  carrinho: "customize.cartStyles.cart",
+  sacola: "customize.cartStyles.bag",
+  sacola_coracao: "customize.cartStyles.bagHeart",
+  carrinho_coracao: "customize.cartStyles.cartHeart",
+  minimalista: "customize.cartStyles.minimal",
+  kawaii: "customize.cartStyles.kawaii",
+} as const;
+
+const WHATSAPP_BUTTON_COLORS = [
+  { color: "#8b5cf6", labelKey: "customize.colors.lilac" },
+  { color: "#25d366", labelKey: "customize.colors.green" },
+  { color: "#128C7E", labelKey: "customize.colors.darkGreen" },
+  { color: "#d1477a", labelKey: "customize.colors.pink" },
+  { color: "#1f2937", labelKey: "customize.colors.graphite" },
+] as const;
 
 function PersonalizarPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: catalog } = useMyCatalog(user?.id);
@@ -60,6 +122,7 @@ function PersonalizarPage() {
   const [ownerName, setOwnerName] = useState("");
   const [ownerBio, setOwnerBio] = useState("");
   const [ownerHours, setOwnerHours] = useState("");
+  const [currency, setCurrency] = useState("BRL");
 
   useEffect(() => {
     if (!catalog) return;
@@ -83,16 +146,17 @@ function PersonalizarPage() {
     setStoreDescription(catalog.store_description ?? "");
     setInstagramUrl(catalog.instagram_url ?? "");
     setPaymentMethods(
-      Array.isArray(catalog.payment_methods) ? (catalog.payment_methods as string[]) : []
+      Array.isArray(catalog.payment_methods) ? (catalog.payment_methods as string[]) : [],
     );
     setDeliveryMethods(
-      Array.isArray(catalog.delivery_methods) ? (catalog.delivery_methods as string[]) : []
+      Array.isArray(catalog.delivery_methods) ? (catalog.delivery_methods as string[]) : [],
     );
     setShippingOriginZip(catalog.shipping_origin_zip ?? "");
     setOwnerPhotoUrl(catalog.owner_photo_url ? [catalog.owner_photo_url] : []);
     setOwnerName(catalog.owner_name ?? "");
     setOwnerBio(catalog.owner_bio ?? "");
     setOwnerHours(catalog.owner_hours ?? "");
+    setCurrency(resolveStoreCurrency(catalog.currency));
 
     (async () => {
       const { data } = await supabase
@@ -106,7 +170,8 @@ function PersonalizarPage() {
 
   if (!catalog || !user) return <EmptyCatalog />;
 
-  const logoSizePx = logoSize === "pequena" ? "size-12" : logoSize === "grande" ? "size-36" : "size-16";
+  const logoSizePx =
+    logoSize === "pequena" ? "size-12" : logoSize === "grande" ? "size-36" : "size-16";
 
   function addBanner(url: string) {
     setBanners((prev) => [
@@ -144,7 +209,9 @@ function PersonalizarPage() {
   }
 
   function updateBannerPosition(idx: number, objectPosition: string) {
-    setBanners((prev) => prev.map((b, i) => (i === idx ? { ...b, object_position: objectPosition } : b)));
+    setBanners((prev) =>
+      prev.map((b, i) => (i === idx ? { ...b, object_position: objectPosition } : b)),
+    );
   }
 
   async function save(e: React.FormEvent) {
@@ -178,6 +245,7 @@ function PersonalizarPage() {
       owner_name: ownerName.trim() || null,
       owner_bio: ownerBio.trim() || null,
       owner_hours: ownerHours.trim() || null,
+      currency: resolveStoreCurrency(currency),
     };
 
     const { error: catalogError } = await supabase
@@ -189,11 +257,17 @@ function PersonalizarPage() {
       setSaving(false);
       console.error("[Vitrine Criativa] Catalog save error:", catalogError);
       if (catalogError.code === "23505") {
-        toast.error("Esse endereço de link já está em uso.");
+        toast.error(t("customize.errors.slugInUse"));
+      } else if (catalogError.message?.includes("currency")) {
+        toast.error(t("customize.errors.currencyColumnMissing"));
       } else if (catalogError.message?.includes("column")) {
-        toast.error("Erro de configuração do banco. Execute a migration SQL no Supabase.");
+        toast.error(t("customize.errors.databaseConfig"));
       } else {
-        toast.error(`Erro ao salvar: ${catalogError.message ?? "tente novamente"}`);
+        toast.error(
+          t("customize.errors.saveFailed", {
+            message: catalogError.message ?? t("customize.errors.tryAgain"),
+          }),
+        );
       }
       return;
     }
@@ -208,13 +282,10 @@ function PersonalizarPage() {
     const toDelete = [...currentIds].filter((id) => !keptIds.has(id));
 
     if (toDelete.length > 0) {
-      const { error: deleteError } = await supabase
-        .from("banners")
-        .delete()
-        .in("id", toDelete);
+      const { error: deleteError } = await supabase.from("banners").delete().in("id", toDelete);
       if (deleteError) {
         setSaving(false);
-        toast.error("Erro ao atualizar banners.");
+        toast.error(t("customize.errors.bannerUpdateFailed"));
         return;
       }
     }
@@ -235,7 +306,7 @@ function PersonalizarPage() {
       if (insertError) {
         setSaving(false);
         console.error("[Vitrine Criativa] Banner insert error:", insertError);
-        toast.error("Erro ao salvar banners.");
+        toast.error(t("customize.errors.bannerSaveFailed"));
         return;
       }
     }
@@ -255,30 +326,38 @@ function PersonalizarPage() {
       if (updateError) {
         setSaving(false);
         console.error("[Vitrine Criativa] Banner update error:", updateError);
-        toast.error("Erro ao atualizar banners.");
+        toast.error(t("customize.errors.bannerUpdateFailed"));
         return;
       }
     }
 
     setSaving(false);
-    toast.success("Vitrine atualizada!");
+    toast.success(t("customize.toasts.saved"));
     void queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
   }
 
   return (
     <form onSubmit={save} className="px-5 pb-10 pt-10">
-      <h1 className="text-2xl font-bold text-foreground">Personalizar vitrine</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Deixe o catálogo com a cara da sua marca.
-      </p>
+      <h1 className="text-2xl font-bold text-foreground">{t("customize.title")}</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{t("customize.subtitle")}</p>
 
       {/* ── Pré-visualização ── */}
       <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="relative h-20 w-full overflow-hidden" style={{ background: accent ?? "#f3eefc" }}>
+        <div
+          className="relative h-20 w-full overflow-hidden"
+          style={{ background: accent ?? "#f3eefc" }}
+        >
           {cover[0] ? (
-            <img src={cover[0]} alt="Capa" className="h-full w-full object-cover" />
+            <img
+              src={cover[0]}
+              alt={t("customize.coverAlt")}
+              className="h-full w-full object-cover"
+            />
           ) : (
-            <div className="h-full w-full" style={{ background: primary ?? "#8b5cf6", opacity: 0.15 }} />
+            <div
+              className="h-full w-full"
+              style={{ background: primary ?? "#8b5cf6", opacity: 0.15 }}
+            />
           )}
           <div
             className="absolute inset-x-0 bottom-0 h-8"
@@ -288,12 +367,19 @@ function PersonalizarPage() {
 
         <div
           className="relative flex items-end gap-3 px-4 pb-4 -mt-5"
-          style={{ justifyContent: logoPosition === "centro" ? "center" : logoPosition === "direita" ? "flex-end" : "flex-start" }}
+          style={{
+            justifyContent:
+              logoPosition === "centro"
+                ? "center"
+                : logoPosition === "direita"
+                  ? "flex-end"
+                  : "flex-start",
+          }}
         >
           {logo[0] ? (
             <img
               src={logo[0]}
-              alt="Logo"
+              alt={t("customize.logoAlt")}
               className={`${logoSizePx} shrink-0 rounded-full border-2 object-cover shadow-md`}
               style={{ borderColor: primary ?? "#8b5cf6" }}
             />
@@ -302,7 +388,7 @@ function PersonalizarPage() {
               className={`${logoSizePx} shrink-0 rounded-full border-2 border-dashed flex items-center justify-center text-[10px] text-muted-foreground`}
               style={{ borderColor: primary ?? "#8b5cf6" }}
             >
-              Logo
+              {t("customize.logoPlaceholder")}
             </div>
           )}
         </div>
@@ -312,11 +398,11 @@ function PersonalizarPage() {
             className="text-lg font-bold leading-tight text-foreground"
             style={{ fontFamily: getFontFamily(storeFont), color: primary ?? "#8b5cf6" }}
           >
-            {storeName || "Nome da loja"}
+            {storeName || t("customize.fields.storeName")}
           </p>
           <div className="mt-2 flex items-center gap-2">
             <CartIcon style={cartStyle} className="size-5" color={primary ?? "#8b5cf6"} />
-            <span className="text-xs text-muted-foreground">Carrinho</span>
+            <span className="text-xs text-muted-foreground">{t("customize.cartLabel")}</span>
           </div>
         </div>
 
@@ -328,7 +414,7 @@ function PersonalizarPage() {
       </div>
 
       {/* ── Dados da Loja ── */}
-      <Field label="Nome da loja">
+      <Field label={t("customize.fields.storeName")}>
         <input
           required
           value={storeName}
@@ -337,11 +423,11 @@ function PersonalizarPage() {
         />
       </Field>
 
-      <Field label="Endereço do link" hint={`/c/${slugify(slug) || catalog.slug}`}>
+      <Field label={t("customize.fields.slug")} hint={`/c/${slugify(slug) || catalog.slug}`}>
         <input value={slug} onChange={(e) => setSlug(e.target.value)} className="input-base" />
       </Field>
 
-      <Field label="WhatsApp para receber pedidos" hint="Ex.: 11988887777 (com DDD)">
+      <Field label={t("customize.fields.whatsapp")} hint={t("customize.hints.whatsapp")}>
         <input
           inputMode="numeric"
           value={whatsapp}
@@ -351,29 +437,55 @@ function PersonalizarPage() {
         />
       </Field>
 
-      <Field label="Logotipo">
+      {/* ── Moeda principal da loja ── */}
+      <Field label={t("customize.fields.currency")} hint={t("customize.hints.currency")}>
+        <CurrencyPicker value={currency} onChange={setCurrency} />
+        <div className="mt-3 rounded-xl bg-accent/60 px-3 py-2.5">
+          <p className="text-[11px] font-semibold text-foreground">
+            {t("customize.currency.example", {
+              money: formatMoney(202.4, currency),
+              code: getCurrency(currency).code,
+              name: getCurrency(currency).name,
+            })}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            {t("customize.currency.notePrefix")}{" "}
+            <strong>{t("customize.currency.noteStrong")}</strong>{" "}
+            {t("customize.currency.noteSuffix")}
+          </p>
+          <Link
+            to="/painel/conversor"
+            className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-primary"
+          >
+            <ArrowLeftRight className="size-3.5" />
+            {t("customize.currency.openConverter")}
+          </Link>
+        </div>
+      </Field>
+
+      <Field label={t("customize.fields.logo")}>
         <ImageUploader
           userId={user.id}
           value={logo}
           onChange={setLogo}
           max={1}
           shape="circle"
-          label="Logo"
+          label={t("customize.uploads.logo")}
         />
       </Field>
 
-      <Field label="Foto de capa">
+      <Field label={t("customize.fields.cover")}>
         <ImageUploader
           userId={user.id}
           value={cover}
           onChange={setCover}
           max={1}
           shape="wide"
-          label="Capa"
+          label={t("customize.uploads.cover")}
         />
       </Field>
 
-      <Field label="Cores do catálogo">
+      <Field label={t("customize.fields.colors")}>
         <div className="grid grid-cols-3 gap-2">
           {palettes.map((p) => {
             const active = p.primary === primary;
@@ -393,14 +505,14 @@ function PersonalizarPage() {
                   className="mb-2 block h-6 w-full rounded-lg"
                   style={{ background: p.primary }}
                 />
-                {p.label}
+                {t(p.labelKey)}
               </button>
             );
           })}
         </div>
         <div className="mt-3 flex items-center gap-3 text-sm text-muted-foreground">
           <label className="flex items-center gap-2">
-            Principal
+            {t("customize.colors.primary")}
             <input
               type="color"
               value={primary}
@@ -409,7 +521,7 @@ function PersonalizarPage() {
             />
           </label>
           <label className="flex items-center gap-2">
-            Destaque
+            {t("customize.colors.accent")}
             <input
               type="color"
               value={accent}
@@ -418,7 +530,7 @@ function PersonalizarPage() {
             />
           </label>
           <label className="flex items-center gap-2">
-            Fundo
+            {t("customize.colors.background")}
             <input
               type="color"
               value={backgroundColor}
@@ -430,7 +542,7 @@ function PersonalizarPage() {
       </Field>
 
       {/* ── Fonte do Nome da Loja ── */}
-      <Field label="Fonte do nome da loja">
+      <Field label={t("customize.fields.font")}>
         <div className="grid grid-cols-2 gap-2">
           {FONT_OPTIONS.map((f) => (
             <button
@@ -441,12 +553,14 @@ function PersonalizarPage() {
                 storeFont === f.key ? "border-primary bg-primary/5" : "border-border"
               }`}
             >
-              <span className="block text-xs text-muted-foreground">{f.label}</span>
+              <span className="block text-xs text-muted-foreground">
+                {t(FONT_LABEL_KEYS[f.key])}
+              </span>
               <span
                 className="mt-1 block truncate text-base font-bold text-foreground"
                 style={{ fontFamily: f.family }}
               >
-                {storeName || "Loja"}
+                {storeName || t("customize.fontPreviewName")}
               </span>
             </button>
           ))}
@@ -454,13 +568,15 @@ function PersonalizarPage() {
       </Field>
 
       {/* ── Tamanho da Logo ── */}
-      <Field label="Tamanho da logo">
+      <Field label={t("customize.fields.logoSize")}>
         <div className="flex gap-3">
-          {([
-            { key: "pequena", label: "Pequena", cls: "size-12" },
-            { key: "medio", label: "Média", cls: "size-16" },
-            { key: "grande", label: "Grande", cls: "size-36" },
-          ] as const).map((opt) => (
+          {(
+            [
+              { key: "pequena", labelKey: "customize.logoSize.small", cls: "size-12" },
+              { key: "medio", labelKey: "customize.logoSize.medium", cls: "size-16" },
+              { key: "grande", labelKey: "customize.logoSize.large", cls: "size-36" },
+            ] as const
+          ).map((opt) => (
             <button
               type="button"
               key={opt.key}
@@ -470,28 +586,34 @@ function PersonalizarPage() {
               }`}
             >
               {logo[0] ? (
-                <img src={logo[0]} alt="Logo" className={`${opt.cls} rounded-full object-cover`} />
+                <img
+                  src={logo[0]}
+                  alt={t("customize.logoAlt")}
+                  className={`${opt.cls} rounded-full object-cover`}
+                />
               ) : (
                 <div
                   className={`${opt.cls} rounded-full border-2 border-dashed flex items-center justify-center text-[9px] text-muted-foreground`}
                 >
-                  Logo
+                  {t("customize.logoPlaceholder")}
                 </div>
               )}
-              <span className="text-xs font-medium text-muted-foreground">{opt.label}</span>
+              <span className="text-xs font-medium text-muted-foreground">{t(opt.labelKey)}</span>
             </button>
           ))}
         </div>
       </Field>
 
       {/* ── Posição da Logo ── */}
-      <Field label="Posição da logo">
+      <Field label={t("customize.fields.logoPosition")}>
         <div className="flex gap-3">
-          {([
-            { key: "esquerda", label: "Esquerda" },
-            { key: "centro", label: "Centro" },
-            { key: "direita", label: "Direita" },
-          ] as const).map((opt) => (
+          {(
+            [
+              { key: "esquerda", labelKey: "customize.logoPosition.left" },
+              { key: "centro", labelKey: "customize.logoPosition.center" },
+              { key: "direita", labelKey: "customize.logoPosition.right" },
+            ] as const
+          ).map((opt) => (
             <button
               type="button"
               key={opt.key}
@@ -503,14 +625,19 @@ function PersonalizarPage() {
               <div
                 className="flex h-8 w-full items-center rounded bg-muted"
                 style={{
-                  justifyContent: opt.key === "centro" ? "center" : opt.key === "direita" ? "flex-end" : "flex-start",
+                  justifyContent:
+                    opt.key === "centro"
+                      ? "center"
+                      : opt.key === "direita"
+                        ? "flex-end"
+                        : "flex-start",
                   padding: "0 4px",
                 }}
               >
                 <div className="size-4 rounded-full" style={{ background: primary }} />
               </div>
               <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
-                {opt.label}
+                {t(opt.labelKey)}
               </span>
             </button>
           ))}
@@ -518,7 +645,7 @@ function PersonalizarPage() {
       </Field>
 
       {/* ── Estilo do Carrinho ── */}
-      <Field label="Ícone do carrinho">
+      <Field label={t("customize.fields.cartIcon")}>
         <div className="grid grid-cols-3 gap-2">
           {CART_STYLES.map((c) => (
             <button
@@ -531,7 +658,7 @@ function PersonalizarPage() {
             >
               <CartIcon style={c.key} className="size-8" color={primary ?? "#8b5cf6"} />
               <span className="text-[11px] font-medium leading-tight text-muted-foreground">
-                {c.label}
+                {t(CART_LABEL_KEYS[c.key])}
               </span>
             </button>
           ))}
@@ -539,18 +666,9 @@ function PersonalizarPage() {
       </Field>
 
       {/* ── Cor do botão flutuante WhatsApp ── */}
-      <Field
-        label="Cor do botão WhatsApp"
-        hint="Cor do botão flutuante que aparece no catálogo público"
-      >
+      <Field label={t("customize.fields.whatsappColor")} hint={t("customize.hints.whatsappColor")}>
         <div className="flex items-center gap-3">
-          {[
-            { color: "#8b5cf6", label: "Lilás" },
-            { color: "#25d366", label: "Verde" },
-            { color: "#128C7E", label: "Verde escuro" },
-            { color: "#d1477a", label: "Rosa" },
-            { color: "#1f2937", label: "Grafite" },
-          ].map((opt) => (
+          {WHATSAPP_BUTTON_COLORS.map((opt) => (
             <button
               type="button"
               key={opt.color}
@@ -563,7 +681,9 @@ function PersonalizarPage() {
                 className="size-7 rounded-full border border-white/30 shadow-sm"
                 style={{ background: opt.color }}
               />
-              <span className="text-[10px] font-medium text-muted-foreground">{opt.label}</span>
+              <span className="text-[10px] font-medium text-muted-foreground">
+                {t(opt.labelKey)}
+              </span>
             </button>
           ))}
           <label className="flex flex-col items-center gap-1">
@@ -573,13 +693,15 @@ function PersonalizarPage() {
               onChange={(e) => setWhatsappButtonColor(e.target.value)}
               className="size-7 rounded-full border border-border bg-card cursor-pointer"
             />
-            <span className="text-[10px] font-medium text-muted-foreground">Custom</span>
+            <span className="text-[10px] font-medium text-muted-foreground">
+              {t("customize.colors.custom")}
+            </span>
           </label>
         </div>
       </Field>
 
       {/* ── Banner / Carrossel ── */}
-      <Field label="Banner / Carrossel">
+      <Field label={t("customize.fields.banner")}>
         <div className="flex items-center gap-3">
           <label className="relative inline-flex cursor-pointer items-center">
             <input
@@ -591,17 +713,20 @@ function PersonalizarPage() {
             <div className="h-6 w-11 rounded-full bg-muted peer-checked:bg-primary transition-colors after:absolute after:left-[2px] after:top-[2px] after:size-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-full" />
           </label>
           <span className="text-sm text-muted-foreground">
-            {bannerEnabled ? "Ativado" : "Desativado"}
+            {bannerEnabled ? t("common.enabled") : t("common.disabled")}
           </span>
         </div>
 
         {bannerEnabled && (
           <div className="mt-4 space-y-4">
             {banners.map((b, idx) => (
-              <div key={b.id} className="flex items-start gap-3 rounded-xl border border-border p-3">
+              <div
+                key={b.id}
+                className="flex items-start gap-3 rounded-xl border border-border p-3"
+              >
                 <img
                   src={b.image_url}
-                  alt={`Banner ${idx + 1}`}
+                  alt={t("customize.banner.indexLabel", { index: idx + 1 })}
                   className="size-16 shrink-0 rounded-lg object-cover"
                 />
                 <div className="flex flex-1 flex-col gap-2">
@@ -610,6 +735,7 @@ function PersonalizarPage() {
                       type="button"
                       disabled={idx === 0}
                       onClick={() => moveBanner(idx, -1)}
+                      aria-label={t("customize.banner.moveUp")}
                       className="rounded-lg border border-border p-1 text-muted-foreground disabled:opacity-30"
                     >
                       <ChevronUp className="size-4" />
@@ -618,6 +744,7 @@ function PersonalizarPage() {
                       type="button"
                       disabled={idx === banners.length - 1}
                       onClick={() => moveBanner(idx, 1)}
+                      aria-label={t("customize.banner.moveDown")}
                       className="rounded-lg border border-border p-1 text-muted-foreground disabled:opacity-30"
                     >
                       <ChevronDown className="size-4" />
@@ -625,6 +752,7 @@ function PersonalizarPage() {
                     <button
                       type="button"
                       onClick={() => removeBanner(idx)}
+                      aria-label={t("customize.banner.remove")}
                       className="ml-auto rounded-lg border border-destructive/30 p-1 text-destructive"
                     >
                       <Trash2 className="size-4" />
@@ -633,7 +761,7 @@ function PersonalizarPage() {
                   <input
                     value={b.href ?? ""}
                     onChange={(e) => updateBannerHref(idx, e.target.value)}
-                    placeholder="Link opcional (https://...)"
+                    placeholder={t("customize.placeholders.bannerLink")}
                     className="input-base text-xs"
                   />
                   <BannerPositionEditor
@@ -651,11 +779,13 @@ function PersonalizarPage() {
               onChange={(urls) => urls.forEach(addBanner)}
               max={1}
               shape="wide"
-              label="Adicionar banner"
+              label={t("customize.uploads.banner")}
             />
 
             <div className="space-y-3 rounded-xl border border-border p-4">
-              <p className="text-xs font-semibold text-foreground">Configurações do banner</p>
+              <p className="text-xs font-semibold text-foreground">
+                {t("customize.banner.settings")}
+              </p>
 
               <label className="flex items-center gap-3 text-sm text-muted-foreground">
                 <input
@@ -664,11 +794,11 @@ function PersonalizarPage() {
                   onChange={(e) => setBannerAutoplay(e.target.checked)}
                   className="size-4 rounded border-border"
                 />
-                Reprodução automática
+                {t("customize.banner.autoplay")}
               </label>
 
               <div className="text-sm text-muted-foreground">
-                <p className="mb-1 text-xs font-medium">Intervalo</p>
+                <p className="mb-1 text-xs font-medium">{t("customize.banner.interval")}</p>
                 <div className="flex gap-2">
                   {[3, 4, 5, 6].map((s) => (
                     <button
@@ -694,7 +824,7 @@ function PersonalizarPage() {
                   onChange={(e) => setBannerIndicators(e.target.checked)}
                   className="size-4 rounded border-border"
                 />
-                Mostrar indicadores
+                {t("customize.banner.indicators")}
               </label>
             </div>
           </div>
@@ -702,28 +832,34 @@ function PersonalizarPage() {
       </Field>
 
       {/* ── Descrição da Loja ── */}
-      <Field label="Descrição da loja" hint="Texto que aparece na página de boas-vindas do catálogo">
+      <Field
+        label={t("customize.fields.storeDescription")}
+        hint={t("customize.hints.storeDescription")}
+      >
         <textarea
           value={storeDescription}
           onChange={(e) => setStoreDescription(e.target.value)}
-          placeholder="Ex: Papelaria personalizada com muito carinho..."
+          placeholder={t("customize.placeholders.storeDescription")}
           rows={3}
           className="input-base resize-none"
         />
       </Field>
 
       {/* ── Link do Instagram ── */}
-      <Field label="Link do Instagram" hint="URL do perfil da loja no Instagram">
+      <Field label={t("customize.fields.instagram")} hint={t("customize.hints.instagram")}>
         <input
           value={instagramUrl}
           onChange={(e) => setInstagramUrl(e.target.value)}
-          placeholder="https://instagram.com/sualoja"
+          placeholder={t("customize.placeholders.instagram")}
           className="input-base"
         />
       </Field>
 
       {/* ── Formas de pagamento ── */}
-      <Field label="Formas de pagamento" hint="Selecione as formas aceitas pela loja">
+      <Field
+        label={t("customize.fields.paymentMethods")}
+        hint={t("customize.hints.paymentMethods")}
+      >
         <div className="space-y-2">
           {PAYMENT_METHODS.map((m) => {
             const active = paymentMethods.includes(m.key);
@@ -746,7 +882,9 @@ function PersonalizarPage() {
                   }}
                   className="size-4 rounded border-border"
                 />
-                <span className="text-sm font-medium text-foreground">{m.label}</span>
+                <span className="text-sm font-medium text-foreground">
+                  {t(PAYMENT_LABEL_KEYS[m.key])}
+                </span>
               </label>
             );
           })}
@@ -754,7 +892,10 @@ function PersonalizarPage() {
       </Field>
 
       {/* ── Formas de entrega ── */}
-      <Field label="Formas de entrega" hint="Como você entrega os pedidos">
+      <Field
+        label={t("customize.fields.deliveryMethods")}
+        hint={t("customize.hints.deliveryMethods")}
+      >
         <div className="space-y-2">
           {DELIVERY_METHODS.map((m) => {
             const active = deliveryMethods.includes(m.key);
@@ -778,7 +919,7 @@ function PersonalizarPage() {
                   className="size-4 rounded border-border"
                 />
                 <span className="text-sm font-medium text-foreground">
-                  {m.icon} {m.label}
+                  {m.icon} {t(DELIVERY_LABEL_KEYS[m.key])}
                 </span>
               </label>
             );
@@ -786,7 +927,9 @@ function PersonalizarPage() {
         </div>
         {deliveryMethods.includes("melhor_envio") && (
           <div className="mt-3">
-            <p className="text-xs text-muted-foreground mb-1">CEP de origem (envio)</p>
+            <p className="text-xs text-muted-foreground mb-1">
+              {t("customize.delivery.originZip")}
+            </p>
             <input
               inputMode="numeric"
               value={shippingOriginZip}
@@ -796,53 +939,54 @@ function PersonalizarPage() {
               className="input-base"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Para calcular o frete você também precisa <strong>conectar sua loja à Melhor Envio</strong> e
-              informar o endereço de remetente.
+              {t("customize.delivery.notePrefix")}{" "}
+              <strong>{t("customize.delivery.noteStrong")}</strong>{" "}
+              {t("customize.delivery.noteSuffix")}
             </p>
           </div>
         )}
       </Field>
-      <Field label="Apresentação da loja" hint="Seção de apresentação que aparece no catálogo público">
+      <Field label={t("customize.fields.about")} hint={t("customize.hints.about")}>
         <div className="space-y-4">
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Foto pessoal</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("customize.about.photo")}</p>
             <ImageUploader
               userId={user.id}
               value={ownerPhotoUrl}
               onChange={setOwnerPhotoUrl}
               max={1}
               shape="circle"
-              label="Foto"
+              label={t("customize.about.photoLabel")}
             />
           </div>
 
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Nome ou título</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("customize.about.name")}</p>
             <input
               value={ownerName}
               onChange={(e) => setOwnerName(e.target.value)}
-              placeholder="Ex: Ana"
+              placeholder={t("customize.placeholders.ownerName")}
               className="input-base"
             />
           </div>
 
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Texto de apresentação</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("customize.about.bio")}</p>
             <textarea
               value={ownerBio}
               onChange={(e) => setOwnerBio(e.target.value)}
-              placeholder="Ex: Olá! Eu sou a Ana, criadora da loja. Trabalho com papelaria personalizada e preparo cada pedido com muito carinho."
+              placeholder={t("customize.placeholders.ownerBio")}
               rows={3}
               className="input-base resize-none"
             />
           </div>
 
           <div>
-            <p className="text-xs text-muted-foreground mb-1">Horários de atendimento</p>
+            <p className="text-xs text-muted-foreground mb-1">{t("customize.about.hours")}</p>
             <textarea
               value={ownerHours}
               onChange={(e) => setOwnerHours(e.target.value)}
-              placeholder="Ex: Segunda a sexta, das 8h às 18h."
+              placeholder={t("customize.placeholders.ownerHours")}
               rows={2}
               className="input-base resize-none"
             />
@@ -857,7 +1001,7 @@ function PersonalizarPage() {
         className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground shadow-lg shadow-primary/25 disabled:opacity-60"
       >
         {saving && <Loader2 className="size-4 animate-spin" />}
-        Salvar alterações
+        {t("customize.saveChanges")}
       </button>
     </form>
   );
@@ -892,6 +1036,7 @@ function BannerPositionEditor({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  const { t } = useI18n();
 
   const pct = Number((position ?? "50").replace("%", "")) || 50;
 
@@ -944,7 +1089,7 @@ function BannerPositionEditor({
   return (
     <div>
       <p className="text-[10px] text-muted-foreground mb-1">
-        Arraste pra reposicionar ({pct}%)
+        {t("customize.banner.dragHint", { percent: pct })}
       </p>
       <div
         ref={containerRef}
@@ -955,7 +1100,7 @@ function BannerPositionEditor({
       >
         <img
           src={imageUrl}
-          alt="Banner"
+          alt={t("customize.banner.imageAlt")}
           className="absolute left-0 w-full object-cover"
           style={{
             height: "400%",
@@ -973,7 +1118,14 @@ function BannerPositionEditor({
   );
 }
 
-function BannerPreviewCarousel({ banners, color }: { banners: { id: string; image_url: string; object_position?: string }[]; color?: string }) {
+function BannerPreviewCarousel({
+  banners,
+  color,
+}: {
+  banners: { id: string; image_url: string; object_position?: string }[];
+  color?: string;
+}) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const [idx, setIdx] = useState(0);
   const touchRef = useRef<{ x: number } | null>(null);
@@ -1044,7 +1196,7 @@ function BannerPreviewCarousel({ banners, color }: { banners: { id: string; imag
             <div key={b.id} className="w-full shrink-0 snap-center px-1 first:pl-0 last:pr-0">
               <img
                 src={b.image_url}
-                alt="Banner"
+                alt={t("customize.banner.imageAlt")}
                 className="h-24 w-full rounded-xl object-cover"
                 style={{ objectPosition: b.object_position ?? "center" }}
               />
@@ -1056,14 +1208,14 @@ function BannerPreviewCarousel({ banners, color }: { banners: { id: string; imag
             <button
               onClick={() => scrollToIdx(idx > 0 ? idx - 1 : banners.length - 1)}
               className="absolute left-1 top-1/2 -translate-y-1/2 grid size-6 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
-              aria-label="Anterior"
+              aria-label={t("common.previous")}
             >
               <ChevronLeft className="size-3" />
             </button>
             <button
               onClick={() => scrollToIdx(idx < banners.length - 1 ? idx + 1 : 0)}
               className="absolute right-1 top-1/2 -translate-y-1/2 grid size-6 place-items-center rounded-full bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/50 max-sm:hidden"
-              aria-label="Próximo"
+              aria-label={t("common.next")}
             >
               <ChevronLeft className="size-3 rotate-180" />
             </button>
@@ -1078,7 +1230,7 @@ function BannerPreviewCarousel({ banners, color }: { banners: { id: string; imag
               onClick={() => scrollToIdx(i)}
               className="inline-block size-1.5 rounded-full transition-colors"
               style={{ backgroundColor: i === idx ? (color ?? "#8b5cf6") : "#d1d5db" }}
-              aria-label={`Banner ${i + 1}`}
+              aria-label={t("customize.banner.indexLabel", { index: i + 1 })}
             />
           ))}
         </div>

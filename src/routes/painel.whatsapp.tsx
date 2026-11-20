@@ -14,6 +14,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
+import { useI18n } from "@/i18n";
 import {
   useCompleteOAuth,
   useDisconnectMeta,
@@ -54,6 +55,7 @@ function formatPhoneDisplay(phone: string): string {
 }
 
 function WhatsAppPage() {
+  const { t, formatNumber, formatDateTime } = useI18n();
   const { user } = useAuth();
   const { data: catalog } = useMyCatalog(user?.id);
   const catalogId = catalog?.id;
@@ -89,13 +91,11 @@ function WhatsAppPage() {
         { code, state },
         {
           onSuccess: () => {
-            toast.success("WhatsApp Business conectado com sucesso!");
+            toast.success(t("whatsapp.connectedToast"));
             window.history.replaceState({}, "", "/painel/whatsapp");
           },
           onError: (err: Error) => {
-            toast.error(
-              err.message || "Não foi possível conectar. Verifique sua conta Meta e tente novamente.",
-            );
+            toast.error(err.message || t("whatsapp.connectError"));
             window.history.replaceState({}, "", "/painel/whatsapp");
           },
         },
@@ -107,11 +107,11 @@ function WhatsAppPage() {
     if (!catalogId) return;
     const normalized = normalizePhone(phoneInput);
     if (!phoneInput.trim()) {
-      toast.error("Informe o número do WhatsApp Business.");
+      toast.error(t("whatsapp.phoneRequired"));
       return;
     }
     if (!/^\+\d{12,15}$/.test(normalized)) {
-      toast.error("Número inválido. Use o formato: DDD + número (ex: 51999999999).");
+      toast.error(t("whatsapp.phoneInvalid"));
       return;
     }
     try {
@@ -120,11 +120,9 @@ function WhatsAppPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
       if (msg.includes("não foi possível iniciar") || msg.includes("Meta App")) {
-        toast.error(
-          "A integração com a Meta ainda não está configurada. Entre em contato com o suporte.",
-        );
+        toast.error(t("whatsapp.notConfigured"));
       } else {
-        toast.error(msg || "Não foi possível iniciar a conexão. Tente novamente.");
+        toast.error(msg || t("whatsapp.connectStartError"));
       }
     }
   }
@@ -134,11 +132,14 @@ function WhatsAppPage() {
     syncProducts.mutate(undefined, {
       onSuccess: (data) => {
         toast.success(
-          `Sincronização concluída: ${data.items_created} criados, ${data.items_updated} atualizados`,
+          t("whatsapp.syncDoneToast", {
+            created: formatNumber(data.items_created),
+            updated: formatNumber(data.items_updated),
+          }),
         );
       },
       onError: (err: Error) => {
-        toast.error(err.message || "Erro na sincronização. Tente novamente.");
+        toast.error(err.message || t("whatsapp.syncError"));
       },
     });
   }
@@ -147,11 +148,11 @@ function WhatsAppPage() {
     if (!catalogId) return;
     disconnectMeta.mutate(undefined, {
       onSuccess: () => {
-        toast.success("Desconectado. Produtos no catálogo do WhatsApp foram mantidos.");
+        toast.success(t("whatsapp.disconnectedToast"));
         setShowDisconnectConfirm(false);
       },
       onError: (err: Error) => {
-        toast.error(err.message || "Erro ao desconectar. Tente novamente.");
+        toast.error(err.message || t("whatsapp.disconnectError"));
       },
     });
   }
@@ -159,7 +160,7 @@ function WhatsAppPage() {
   if (!catalog) {
     return (
       <div className="p-5 text-center text-muted-foreground">
-        <p>Crie sua loja primeiro para configurar o WhatsApp Business.</p>
+        <p>{t("whatsapp.noCatalog")}</p>
       </div>
     );
   }
@@ -167,14 +168,12 @@ function WhatsAppPage() {
   if (completeOAuth.isPending) {
     return (
       <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
-        <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
+        <h1 className="text-xl font-bold text-foreground">{t("whatsapp.title")}</h1>
         <div className="rounded-2xl border border-border p-8 text-center space-y-4">
           <Loader2 className="mx-auto size-8 animate-spin text-primary" />
           <div>
-            <p className="font-semibold text-foreground">Conectando sua conta...</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Aguarde enquanto configuramos a integração.
-            </p>
+            <p className="font-semibold text-foreground">{t("whatsapp.connectingTitle")}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{t("whatsapp.connectingHint")}</p>
           </div>
         </div>
       </div>
@@ -182,13 +181,12 @@ function WhatsAppPage() {
   }
 
   if (isConnected && connection) {
-    const displayPhone =
-      connection.phone_number
-        ? formatPhoneDisplay(connection.phone_number)
-        : connection.business_name || "—";
+    const displayPhone = connection.phone_number
+      ? formatPhoneDisplay(connection.phone_number)
+      : connection.business_name || "—";
     const syncedCount = syncLogs?.find((l) => l.status === "completed")?.items_created ?? 0;
     const lastSync = connection.last_synced_at
-      ? new Date(connection.last_synced_at).toLocaleString("pt-BR", {
+      ? formatDateTime(connection.last_synced_at, {
           day: "2-digit",
           month: "2-digit",
           year: "2-digit",
@@ -199,37 +197,37 @@ function WhatsAppPage() {
 
     return (
       <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
-        <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
+        <h1 className="text-xl font-bold text-foreground">{t("whatsapp.title")}</h1>
 
         <div className="rounded-2xl border border-border p-5 space-y-4">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="size-5 text-green-500" />
             <div>
-              <p className="font-semibold text-green-600">Conectado</p>
-              <p className="text-xs text-muted-foreground">Integração ativa</p>
+              <p className="font-semibold text-green-600">{t("whatsapp.connected")}</p>
+              <p className="text-xs text-muted-foreground">{t("whatsapp.integrationActive")}</p>
             </div>
           </div>
 
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Número</span>
+              <span className="text-muted-foreground">{t("whatsapp.number")}</span>
               <span className="font-medium text-foreground">{displayPhone}</span>
             </div>
             {connection.catalog_name && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Catálogo</span>
+                <span className="text-muted-foreground">{t("whatsapp.catalogName")}</span>
                 <span className="font-medium text-foreground">{connection.catalog_name}</span>
               </div>
             )}
             {syncedCount > 0 && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Produtos sincronizados</span>
-                <span className="font-medium text-foreground">{syncedCount}</span>
+                <span className="text-muted-foreground">{t("whatsapp.syncedProducts")}</span>
+                <span className="font-medium text-foreground">{formatNumber(syncedCount)}</span>
               </div>
             )}
             {lastSync && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Última sincronização</span>
+                <span className="text-muted-foreground">{t("whatsapp.lastSync")}</span>
                 <span className="font-medium text-foreground">{lastSync}</span>
               </div>
             )}
@@ -248,11 +246,12 @@ function WhatsAppPage() {
             ) : (
               <RefreshCw className="size-4" />
             )}
-            {isSyncing ? "Sincronizando..." : "Sincronizar agora"}
+            {isSyncing ? t("whatsapp.syncing") : t("whatsapp.syncNow")}
           </button>
           <button
             type="button"
             onClick={() => setShowDisconnectConfirm(true)}
+            aria-label={t("whatsapp.disconnect")}
             className="flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-muted"
           >
             <Unplug className="size-4" />
@@ -261,7 +260,7 @@ function WhatsAppPage() {
 
         {syncLogs && syncLogs.length > 0 && (
           <div className="rounded-2xl border border-border p-5 space-y-3">
-            <p className="text-sm font-semibold text-foreground">Histórico</p>
+            <p className="text-sm font-semibold text-foreground">{t("whatsapp.history")}</p>
             <div className="space-y-2">
               {syncLogs.slice(0, 5).map((log) => (
                 <div
@@ -278,21 +277,24 @@ function WhatsAppPage() {
                   <div className="flex-1">
                     <p className="font-medium text-foreground">
                       {log.operation === "incremental_sync"
-                        ? "Sincronização"
+                        ? t("whatsapp.operationIncremental")
                         : log.operation === "initial_sync"
-                          ? "Sync inicial"
+                          ? t("whatsapp.operationInitial")
                           : log.operation === "disconnect"
-                            ? "Desconexão"
+                            ? t("whatsapp.operationDisconnect")
                             : log.operation}
                     </p>
                     <p className="text-muted-foreground">
-                      {new Date(log.started_at).toLocaleString("pt-BR")}
+                      {formatDateTime(log.started_at)}
                       {log.status === "completed" &&
-                        ` — ${log.items_created} criados, ${log.items_updated} atualizados`}
+                        ` — ${t("whatsapp.syncResult", {
+                          created: formatNumber(log.items_created),
+                          updated: formatNumber(log.items_updated),
+                        })}`}
                       {log.status === "failed" && (
                         <span className="text-red-500">
                           {" — "}
-                          {(log.error_details as any)?.[0]?.message || "Erro"}
+                          {(log.error_details as any)?.[0]?.message || t("common.error")}
                         </span>
                       )}
                     </p>
@@ -309,26 +311,21 @@ function WhatsAppPage() {
   return (
     <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
       <div className="flex items-center gap-3">
-        <h1 className="text-xl font-bold text-foreground">WhatsApp Business</h1>
+        <h1 className="text-xl font-bold text-foreground">{t("whatsapp.title")}</h1>
         <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary">
-          Em breve
+          {t("common.comingSoon")}
         </span>
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        Conecte seu WhatsApp Business para que os produtos do seu catálogo apareçam automaticamente
-        na vitrine do WhatsApp.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("whatsapp.subtitle")}</p>
 
       <div className="rounded-2xl border border-primary/25 bg-accent/40 p-5 space-y-4">
         <div className="flex items-start gap-3">
           <span className="text-2xl">🚀</span>
           <div>
-            <p className="font-semibold text-foreground">Novidade chegando!</p>
+            <p className="font-semibold text-foreground">{t("whatsapp.newsTitle")}</p>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              A integração com o WhatsApp Business estará disponível em uma das próximas atualizações
-              do Vitrine Criativa. Em breve você poderá conectar seu WhatsApp e integrar seu catálogo
-              de forma ainda mais prática. 💜
+              {t("whatsapp.newsText")}
             </p>
           </div>
         </div>
@@ -336,26 +333,23 @@ function WhatsAppPage() {
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2">
             <MessageCircle className="size-4 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">WhatsApp Business</p>
+            <p className="text-sm font-medium text-foreground">{t("whatsapp.title")}</p>
             <span className="ml-auto inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-              Em breve
+              {t("common.comingSoon")}
             </span>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Lock className="size-3.5" />
-            <span>Integração em desenvolvimento</span>
+            <span>{t("whatsapp.integrationInProgress")}</span>
           </div>
-          <p className="text-xs text-muted-foreground">
-            A conexão direta com o WhatsApp Business estará disponível em uma das próximas
-            atualizações.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("whatsapp.comingSoonText")}</p>
           <button
             type="button"
             disabled
             className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-muted px-5 py-3.5 text-sm font-semibold text-muted-foreground opacity-70"
           >
             <Lock className="size-4" />
-            Autorizar e conectar
+            {t("whatsapp.authorize")}
           </button>
         </div>
       </div>
@@ -363,18 +357,15 @@ function WhatsAppPage() {
       {showDisconnectConfirm && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-5">
           <div className="w-full max-w-sm rounded-2xl bg-card p-6 space-y-4 shadow-xl">
-            <p className="font-semibold text-foreground">Desconectar WhatsApp Business?</p>
-            <p className="text-sm text-muted-foreground">
-              A autorização será removida, mas os produtos já sincronizados no catálogo do WhatsApp
-              serão mantidos. Você pode reconectar a qualquer momento.
-            </p>
+            <p className="font-semibold text-foreground">{t("whatsapp.disconnectTitle")}</p>
+            <p className="text-sm text-muted-foreground">{t("whatsapp.disconnectText")}</p>
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowDisconnectConfirm(false)}
                 className="flex-1 rounded-xl border border-border px-4 py-2.5 text-sm font-medium"
               >
-                Cancelar
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -385,7 +376,7 @@ function WhatsAppPage() {
                 {disconnectMeta.isPending ? (
                   <Loader2 className="mx-auto size-4 animate-spin" />
                 ) : (
-                  "Desconectar"
+                  t("whatsapp.disconnect")
                 )}
               </button>
             </div>

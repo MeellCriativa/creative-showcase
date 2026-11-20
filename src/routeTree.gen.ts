@@ -15,8 +15,10 @@ import { Route as PainelRouteImport } from './routes/painel'
 import { Route as CSlugRouteImport } from './routes/c.$slug'
 import { Route as PainelIndexRouteImport } from './routes/painel.index'
 import { Route as PainelCategoriasRouteImport } from './routes/painel.categorias'
+import { Route as PainelConversorRouteImport } from './routes/painel.conversor'
 import { Route as PainelEnvioRouteImport } from './routes/painel.envio'
 import { Route as PainelEstatisticasRouteImport } from './routes/painel.estatisticas'
+import { Route as PainelPagamentosRouteImport } from './routes/painel.pagamentos'
 import { Route as PainelPedidosRouteImport } from './routes/painel.pedidos'
 import { Route as PainelPersonalizarRouteImport } from './routes/painel.personalizar'
 import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
@@ -53,6 +55,11 @@ const PainelCategoriasRoute = PainelCategoriasRouteImport.update({
   path: '/categorias',
   getParentRoute: () => PainelRoute,
 } as any)
+const PainelConversorRoute = PainelConversorRouteImport.update({
+  id: '/conversor',
+  path: '/conversor',
+  getParentRoute: () => PainelRoute,
+} as any)
 const PainelEnvioRoute = PainelEnvioRouteImport.update({
   id: '/envio',
   path: '/envio',
@@ -61,6 +68,11 @@ const PainelEnvioRoute = PainelEnvioRouteImport.update({
 const PainelEstatisticasRoute = PainelEstatisticasRouteImport.update({
   id: '/estatisticas',
   path: '/estatisticas',
+  getParentRoute: () => PainelRoute,
+} as any)
+const PainelPagamentosRoute = PainelPagamentosRouteImport.update({
+  id: '/pagamentos',
+  path: '/pagamentos',
   getParentRoute: () => PainelRoute,
 } as any)
 const PainelPedidosRoute = PainelPedidosRouteImport.update({
@@ -95,8 +107,10 @@ export interface FileRoutesByFullPath {
   '/painel': typeof PainelRouteWithChildren
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pagamentos': typeof PainelPagamentosRoute
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
@@ -109,8 +123,10 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pagamentos': typeof PainelPagamentosRoute
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
@@ -125,8 +141,10 @@ export interface FileRoutesById {
   '/painel': typeof PainelRouteWithChildren
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
+  '/painel/conversor': typeof PainelConversorRoute
   '/painel/envio': typeof PainelEnvioRoute
   '/painel/estatisticas': typeof PainelEstatisticasRoute
+  '/painel/pagamentos': typeof PainelPagamentosRoute
   '/painel/pedidos': typeof PainelPedidosRoute
   '/painel/personalizar': typeof PainelPersonalizarRoute
   '/painel/produtos': typeof PainelProdutosRoute
@@ -142,8 +160,10 @@ export interface FileRouteTypes {
     | '/painel'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
+    | '/painel/pagamentos'
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
@@ -156,8 +176,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
+    | '/painel/pagamentos'
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
@@ -171,8 +193,10 @@ export interface FileRouteTypes {
     | '/painel'
     | '/c/$slug'
     | '/painel/categorias'
+    | '/painel/conversor'
     | '/painel/envio'
     | '/painel/estatisticas'
+    | '/painel/pagamentos'
     | '/painel/pedidos'
     | '/painel/personalizar'
     | '/painel/produtos'
@@ -232,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelCategoriasRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/painel/conversor': {
+      id: '/painel/conversor'
+      path: '/conversor'
+      fullPath: '/painel/conversor'
+      preLoaderRoute: typeof PainelConversorRouteImport
+      parentRoute: typeof PainelRoute
+    }
     '/painel/envio': {
       id: '/painel/envio'
       path: '/envio'
@@ -244,6 +275,13 @@ declare module '@tanstack/react-router' {
       path: '/estatisticas'
       fullPath: '/painel/estatisticas'
       preLoaderRoute: typeof PainelEstatisticasRouteImport
+      parentRoute: typeof PainelRoute
+    }
+    '/painel/pagamentos': {
+      id: '/painel/pagamentos'
+      path: '/pagamentos'
+      fullPath: '/painel/pagamentos'
+      preLoaderRoute: typeof PainelPagamentosRouteImport
       parentRoute: typeof PainelRoute
     }
     '/painel/pedidos': {
@@ -286,8 +324,10 @@ declare module '@tanstack/react-router' {
 
 interface PainelRouteChildren {
   PainelCategoriasRoute: typeof PainelCategoriasRoute
+  PainelConversorRoute: typeof PainelConversorRoute
   PainelEnvioRoute: typeof PainelEnvioRoute
   PainelEstatisticasRoute: typeof PainelEstatisticasRoute
+  PainelPagamentosRoute: typeof PainelPagamentosRoute
   PainelPedidosRoute: typeof PainelPedidosRoute
   PainelPersonalizarRoute: typeof PainelPersonalizarRoute
   PainelProdutosRoute: typeof PainelProdutosRoute
@@ -298,8 +338,10 @@ interface PainelRouteChildren {
 
 const PainelRouteChildren: PainelRouteChildren = {
   PainelCategoriasRoute: PainelCategoriasRoute,
+  PainelConversorRoute: PainelConversorRoute,
   PainelEnvioRoute: PainelEnvioRoute,
   PainelEstatisticasRoute: PainelEstatisticasRoute,
+  PainelPagamentosRoute: PainelPagamentosRoute,
   PainelPedidosRoute: PainelPedidosRoute,
   PainelPersonalizarRoute: PainelPersonalizarRoute,
   PainelProdutosRoute: PainelProdutosRoute,

@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowLeftRight,
   BarChart3,
+  Check,
   ClipboardList,
+  Coins,
   Copy,
   ExternalLink,
   Eye,
@@ -12,15 +15,19 @@ import {
   LogOut,
   Package,
   Palette,
+  Save,
   Share2,
   Store,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog, useProducts } from "@/hooks/useCatalog";
 import { slugify } from "@/lib/catalog";
+import { resolveStoreCurrency } from "@/lib/currency";
+import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/painel/")({
   component: PainelHome,
@@ -32,9 +39,78 @@ function PainelHome() {
   const queryClient = useQueryClient();
   const { data: catalog, isLoading } = useMyCatalog(user?.id);
   const { data: products } = useProducts(catalog?.id);
+  const { t } = useI18n();
 
   const [storeName, setStoreName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [slug, setSlug] = useState("");
+  const [currency, setCurrency] = useState("BRL");
+  const [savingStore, setSavingStore] = useState(false);
+
+  useEffect(() => {
+    if (!catalog) return;
+    setNameDraft(catalog.store_name);
+    setSlug(catalog.slug);
+    setCurrency(resolveStoreCurrency(catalog.currency));
+  }, [catalog]);
+
+  async function saveStoreName(e: React.FormEvent) {
+    e.preventDefault();
+    if (!catalog) return;
+    const nextName = nameDraft.trim();
+    if (!nextName) {
+      toast.error(t("panel.dashboard.storeNameRequired"));
+      return;
+    }
+    if (nextName === catalog.store_name) return;
+    setSavingName(true);
+    try {
+      const { error } = await supabase
+        .from("catalogs")
+        .update({ store_name: nextName })
+        .eq("id", catalog.id);
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
+      toast.success(t("panel.dashboard.storeNameSaved"));
+    } catch {
+      toast.error(t("panel.dashboard.storeNameSaveError"));
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  /** Salva o endereço do link e a moeda principal direto do painel. */
+  async function saveStore() {
+    if (!catalog) return;
+    setSavingStore(true);
+    try {
+      const nextSlug = slugify(slug) || catalog.slug;
+      const { error } = await supabase
+        .from("catalogs")
+        .update({ slug: nextSlug, currency: resolveStoreCurrency(currency) } as any)
+        .eq("id", catalog.id);
+
+      if (error) {
+        if (error.code === "23505") {
+          toast.error(t("panel.dashboard.storeLinkInUse"));
+        } else {
+          toast.error(
+            t("panel.dashboard.storeSaveError", {
+              message: error.message ?? t("common.tryAgain"),
+            }),
+          );
+        }
+        return;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
+      toast.success(t("panel.dashboard.storeSaved"));
+    } finally {
+      setSavingStore(false);
+    }
+  }
 
   async function createCatalog(e: React.FormEvent) {
     e.preventDefault();
@@ -48,9 +124,9 @@ function PainelHome() {
         .insert({ user_id: user.id, slug, store_name: storeName.trim() });
       if (error) throw error;
       await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
-      toast.success("Catálogo criado! Agora adicione seus produtos.");
+      toast.success(t("panel.dashboard.createdToast"));
     } catch {
-      toast.error("Não foi possível criar o catálogo.");
+      toast.error(t("panel.dashboard.createError"));
     } finally {
       setCreating(false);
     }
@@ -64,7 +140,7 @@ function PainelHome() {
   if (isLoading) {
     return (
       <div className="grid min-h-[60vh] place-items-center">
-        <Loader2 className="size-6 animate-spin text-primary" />
+        <Loader2 className="size-6 animate-spin text-primary" aria-label={t("common.loading")} />
       </div>
     );
   }
@@ -74,15 +150,15 @@ function PainelHome() {
       <div className="px-5 pb-10 pt-12">
         <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
           <div className="min-w-0">
-            <h1 className="text-3xl font-bold text-foreground">Criar catálogo</h1>
+            <h1 className="text-3xl font-bold text-foreground">{t("panel.dashboard.createTitle")}</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Vamos começar pelo nome da sua loja. Você pode mudar depois.
+              {t("panel.dashboard.createSubtitle")}
             </p>
           </div>
           <button
             type="button"
             onClick={logout}
-            aria-label="Sair"
+            aria-label={t("common.logout")}
             className="grid size-10 shrink-0 place-items-center rounded-full border border-border text-muted-foreground"
           >
             <LogOut className="size-4" />
@@ -93,7 +169,7 @@ function PainelHome() {
             required
             value={storeName}
             onChange={(e) => setStoreName(e.target.value)}
-            placeholder="Ex.: Ateliê da Ana"
+            placeholder={t("panel.dashboard.storeNamePlaceholder")}
             className="w-full rounded-2xl border border-input bg-card px-4 py-3.5 text-base outline-none focus:border-primary"
           />
           <button
@@ -102,38 +178,48 @@ function PainelHome() {
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 font-semibold text-primary-foreground shadow-lg shadow-primary/25 disabled:opacity-60"
           >
             {creating && <Loader2 className="size-4 animate-spin" />}
-            Criar minha vitrine
+            {creating ? t("panel.dashboard.creating") : t("panel.dashboard.createButton")}
           </button>
         </form>
       </div>
     );
   }
 
+  const currentSlug = slugify(slug) || catalog.slug;
   const link =
-    typeof window !== "undefined" ? `${window.location.origin}/c/${catalog.slug}` : `/c/${catalog.slug}`;
-  const message = `\u{1F49C} Venha ver meu catálogo\n${link}`;
+    typeof window !== "undefined" ? `${window.location.origin}/c/${currentSlug}` : `/c/${currentSlug}`;
+  const message = t("panel.dashboard.shareMessage", { link });
 
   const plan = catalog.plan ?? "free";
   const isVip = plan === "premium" || plan === "vitalicio";
   const planLabel =
     plan === "premium"
-      ? "Plano Premium"
+      ? t("panel.dashboard.planPremium")
       : plan === "vitalicio"
-        ? "Plano Vitalício"
+        ? t("panel.dashboard.planLifetime")
         : plan === "mensal"
-          ? "Plano Mensal"
+          ? t("panel.dashboard.planMonthly")
           : plan === "trimestral"
-            ? "Plano Trimestral"
+            ? t("panel.dashboard.planQuarterly")
             : plan === "anual"
-              ? "Plano Anual"
-              : "Plano Free";
+              ? t("panel.dashboard.planYearly")
+              : t("panel.dashboard.planFree");
+
+  const planDescription =
+    plan === "free"
+      ? t("panel.dashboard.planFreeText")
+      : plan === "vitalicio"
+        ? t("panel.dashboard.planLifetimeText")
+        : plan === "premium"
+          ? t("panel.dashboard.planPremiumText")
+          : t("panel.dashboard.planSubscriptionText");
 
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(link);
-      toast.success("Link copiado!");
+      toast.success(t("panel.dashboard.linkCopied"));
     } catch {
-      toast.error("Não foi possível copiar.");
+      toast.error(t("panel.dashboard.copyError"));
     }
   }
 
@@ -162,13 +248,13 @@ function PainelHome() {
         )}
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Painel da loja
+            {t("panel.dashboard.label")}
           </p>
           <h1 className="truncate text-2xl font-bold text-foreground">{catalog.store_name}</h1>
         </div>
         <button
           onClick={logout}
-          aria-label="Sair"
+          aria-label={t("common.logout")}
           className="grid size-10 shrink-0 place-items-center rounded-full border border-border text-muted-foreground"
         >
           <LogOut className="size-4" />
@@ -197,15 +283,7 @@ function PainelHome() {
               {planLabel}
               {isVip && <span className="text-xl">👑</span>}
             </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {plan === "free"
-                ? "Plano gratuito — aproveite todos os recursos básicos."
-                : plan === "vitalicio"
-                  ? "Plano Vitalício — acesso para sempre, sem mensalidade!"
-                  : plan === "premium"
-                    ? "Plano Premium — você é a rainha da vitrine!"
-                    : "Acesso liberado ao seu plano de assinatura."}
-            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{planDescription}</p>
           </div>
           <span
             className={
@@ -221,6 +299,32 @@ function PainelHome() {
       </section>
 
       <section className="mt-6 rounded-3xl border border-border bg-card p-5">
+        <p className="text-sm font-semibold text-foreground">{t("panel.dashboard.storeNameTitle")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("panel.dashboard.storeNameHint")}</p>
+        <form onSubmit={saveStoreName} className="mt-3 flex items-stretch gap-2">
+          <input
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            maxLength={80}
+            aria-label={t("panel.dashboard.storeNameTitle")}
+            className="input-base min-w-0 flex-1"
+          />
+          <button
+            type="submit"
+            disabled={savingName || !nameDraft.trim() || nameDraft.trim() === catalog.store_name}
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {savingName ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Check className="size-4" />
+            )}
+            {savingName ? t("common.saving") : t("common.save")}
+          </button>
+        </form>
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-border bg-card p-5">
         <div className="flex items-center gap-3">
           {(catalog.cover_url || catalog.logo_url) && (
             <img
@@ -230,24 +334,47 @@ function PainelHome() {
             />
           )}
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">Link da minha loja</p>
+            <p className="text-sm font-semibold text-foreground">{t("panel.dashboard.storeLink")}</p>
             <p className="mt-1 truncate rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
               {link}
             </p>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="mt-3 block">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("panel.dashboard.editStoreLink")}
+          </span>
+          <span className="mt-1 flex items-center rounded-xl border border-input bg-card px-3">
+            <span className="shrink-0 text-xs text-muted-foreground">/c/</span>
+            <input
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="minha-loja"
+              className="w-full bg-transparent py-2.5 text-sm text-foreground outline-none"
+            />
+          </span>
+        </label>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
           <button
             onClick={copyLink}
             className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground"
           >
-            <Copy className="size-4" /> Copiar
+            <Copy className="size-4" /> {t("panel.dashboard.copy")}
           </button>
           <button
             onClick={shareLink}
             className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
           >
-            <Share2 className="size-4" /> Compartilhar
+            <Share2 className="size-4" /> {t("panel.dashboard.share")}
+          </button>
+          <button
+            onClick={saveStore}
+            disabled={savingStore}
+            className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {savingStore ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            {t("common.save")}
           </button>
         </div>
         <div className="mt-3 grid grid-cols-4 gap-2 text-[11px] font-medium text-muted-foreground">
@@ -284,7 +411,7 @@ function PainelHome() {
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-2xl font-bold text-foreground">{products?.length ?? 0}</p>
-          <p className="text-xs text-muted-foreground">produtos cadastrados</p>
+          <p className="text-xs text-muted-foreground">{t("panel.dashboard.registeredProducts")}</p>
         </div>
         <a
           href={`/c/${catalog.slug}`}
@@ -293,21 +420,66 @@ function PainelHome() {
           className="flex flex-col justify-center rounded-2xl bg-accent p-4 text-accent-foreground"
         >
           <Eye className="size-5" />
-          <p className="mt-1 text-sm font-semibold">Visualizar catálogo</p>
+          <p className="mt-1 text-sm font-semibold">{t("panel.dashboard.viewCatalog")}</p>
         </a>
       </div>
 
       <nav className="mt-4 space-y-3">
-        <ShortcutLink to="/painel/produtos" icon={Package} title="Produtos" text="Adicionar, editar e ordenar" />
-        <ShortcutLink to="/painel/categorias" icon={Store} title="Categorias" text="Organize sua vitrine" />
-        <ShortcutLink to="/painel/pedidos" icon={ClipboardList} title="Pedidos" text="Acompanhe os pedidos" />
+        <ShortcutLink
+          to="/painel/produtos"
+          icon={Package}
+          title={t("panel.nav.products")}
+          text={t("panel.dashboard.productsText")}
+        />
+        <ShortcutLink
+          to="/painel/categorias"
+          icon={Store}
+          title={t("panel.nav.categories")}
+          text={t("panel.dashboard.categoriesText")}
+        />
+        <ShortcutLink
+          to="/painel/pedidos"
+          icon={ClipboardList}
+          title={t("panel.nav.orders")}
+          text={t("panel.dashboard.ordersText")}
+        />
         <ShortcutLink
           to="/painel/personalizar"
           icon={Palette}
-          title="Personalizar"
-          text="Logo, fonte, cores, carrinho e banners"
+          title={t("panel.dashboard.customizeTitle")}
+          text={t("panel.dashboard.customizeText")}
         />
-        <ShortcutLink to="/painel/estatisticas" icon={BarChart3} title="Estatísticas" text="Visitas ao catálogo" />
+        <ShortcutLink
+          to="/painel/estatisticas"
+          icon={BarChart3}
+          title={t("panel.nav.stats")}
+          text={t("panel.dashboard.statsText")}
+        />
+        {/* ── Moeda principal da loja ── */}
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Coins className="size-4" /> {t("customize.fields.currency")}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("customize.hints.currency")}</p>
+          <div className="mt-3">
+            <CurrencyPicker value={currency} onChange={setCurrency} />
+          </div>
+          <button
+            onClick={saveStore}
+            disabled={savingStore}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {savingStore ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            {t("common.save")}
+          </button>
+        </div>
+
+        <ShortcutLink
+          to="/painel/conversor"
+          icon={ArrowLeftRight}
+          title={t("panel.dashboard.shortcutConverter")}
+          text={t("panel.dashboard.converterText")}
+        />
         <PasswordLink to="/painel/senha" />
       </nav>
     </div>
@@ -315,6 +487,8 @@ function PainelHome() {
 }
 
 function PasswordLink({ to }: { to: string }) {
+  const { t } = useI18n();
+
   return (
     <Link
       to={to}
@@ -324,7 +498,7 @@ function PasswordLink({ to }: { to: string }) {
       }}
     >
       <KeyboardIcon className="size-4 shrink-0" />
-      <span className="text-sm font-semibold">Redefinir senha</span>
+      <span className="text-sm font-semibold">{t("panel.dashboard.resetPassword")}</span>
     </Link>
   );
 }
