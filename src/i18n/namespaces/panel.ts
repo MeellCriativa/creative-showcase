@@ -14,7 +14,7 @@ export const panel = defineNamespace({
       whatsapp: "WhatsApp",
       shipping: "Envio",
       payments: "Pagamentos",
-      stats: "Estatísticas",
+      stats: "Métricas",
       mainNavigation: "Navegação do painel",
     },
     dashboard: {
