@@ -574,6 +574,12 @@ function OrderCard({
                   {t("orders.digital.buyerEmail")}:{" "}
                   <span className="font-medium text-foreground">{delivery.customer_email}</span>
                 </p>
+                {delivery.approved_at && (
+                  <p>
+                    {t("orders.digital.approvedAt")}:{" "}
+                    {formatDateTime(new Date(delivery.approved_at))}
+                  </p>
+                )}
                 {delivery.sent_at && (
                   <p>
                     {t("orders.digital.sentAt")}: {formatDateTime(new Date(delivery.sent_at))}

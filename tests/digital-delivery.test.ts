@@ -174,6 +174,18 @@ test("checkout exige e-mail somente com produto digital e preserva fallback", ()
   assert.match(payments, /customerEmail: \(ctx\.body\.customer_email as string\)/);
 });
 
+test("painel expõe data de aprovação oficial, status e tentativas", () => {
+  const fn = read("supabase/functions/digital-delivery/index.ts");
+  assert.match(fn, /payment_transactions/);
+  assert.match(fn, /approved_at: tx\?\.last_event_at/);
+  const panel = read("src/routes/painel.pedidos.tsx");
+  assert.match(panel, /orders\.digital\.approvedAt/);
+  assert.match(panel, /orders\.digital\.attempts/);
+  assert.match(panel, /orders\.digital\.expiresAt/);
+  assert.match(panel, /orders\.digital\.resend/);
+  assert.match(panel, /orders\.digital\.revoke/);
+});
+
 test("RLS impede leitura anônima de entregas e tokens", () => {
   const migration = read("supabase/migrations/20261121120000_digital_delivery.sql");
   assert.match(migration, /revoke all on public\.digital_deliveries from anon/);

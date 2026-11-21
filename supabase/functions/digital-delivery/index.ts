@@ -47,7 +47,15 @@ serve(async (req) => {
       if (error) return json({ success: false, error: "Falha ao consultar entregas." }, 500);
       const deliveries = data ?? [];
       const ids = deliveries.map((d: { id: string }) => d.id);
+      const orderIds = [
+        ...new Set(
+          deliveries
+            .map((d: { order_id: string }) => String(d.order_id ?? ""))
+            .filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
+        ),
+      ];
       let tokens: Array<Record<string, unknown>> = [];
+      let transactions: Array<Record<string, unknown>> = [];
       if (ids.length) {
         const t = await admin
           .from("digital_download_tokens")
@@ -55,12 +63,24 @@ serve(async (req) => {
           .in("delivery_id", ids);
         tokens = (t.data ?? []) as Array<Record<string, unknown>>;
       }
+      if (orderIds.length) {
+        const tx = await admin
+          .from("payment_transactions")
+          .select("order_id, status, last_event_at, updated_at")
+          .in("order_id", orderIds);
+        transactions = (tx.data ?? []) as Array<Record<string, unknown>>;
+      }
       return json({
         success: true,
-        deliveries: deliveries.map((d: Record<string, unknown>) => ({
-          ...d,
-          token: tokens.find((t) => t.delivery_id === d.id) ?? null,
-        })),
+        deliveries: deliveries.map((d: Record<string, unknown>) => {
+          const tx = transactions.find((t) => t.order_id === d.order_id);
+          return {
+            ...d,
+            // Data da confirmação oficial do pagamento (nunca do navegador).
+            approved_at: tx?.last_event_at ?? tx?.updated_at ?? null,
+            token: tokens.find((t) => t.delivery_id === d.id) ?? null,
+          };
+        }),
       });
     }
 

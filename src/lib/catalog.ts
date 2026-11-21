@@ -194,6 +194,8 @@ export type DigitalDelivery = {
   status: "pending" | "sent" | "failed" | "revoked" | string;
   attempts: number;
   sent_at: string | null;
+  /** Confirmação oficial do pagamento (payment_transactions). */
+  approved_at?: string | null;
   revoked_at: string | null;
   last_error: string | null;
   created_at: string;
