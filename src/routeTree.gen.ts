@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as PainelRouteImport } from './routes/painel'
+import { Route as RedefinirSenhaRouteImport } from './routes/redefinir-senha'
 import { Route as CSlugRouteImport } from './routes/c.$slug'
 import { Route as PainelIndexRouteImport } from './routes/painel.index'
 import { Route as PainelCategoriasRouteImport } from './routes/painel.categorias'
@@ -39,6 +40,11 @@ const AuthRoute = AuthRouteImport.update({
 const PainelRoute = PainelRouteImport.update({
   id: '/painel',
   path: '/painel',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RedefinirSenhaRoute = RedefinirSenhaRouteImport.update({
+  id: '/redefinir-senha',
+  path: '/redefinir-senha',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CSlugRoute = CSlugRouteImport.update({
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/painel': typeof PainelRouteWithChildren
+  '/redefinir-senha': typeof RedefinirSenhaRoute
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
   '/painel/conversor': typeof PainelConversorRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/redefinir-senha': typeof RedefinirSenhaRoute
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
   '/painel/conversor': typeof PainelConversorRoute
@@ -147,6 +155,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/painel': typeof PainelRouteWithChildren
+  '/redefinir-senha': typeof RedefinirSenhaRoute
   '/c/$slug': typeof CSlugRoute
   '/painel/categorias': typeof PainelCategoriasRoute
   '/painel/conversor': typeof PainelConversorRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/painel'
+    | '/redefinir-senha'
     | '/c/$slug'
     | '/painel/categorias'
     | '/painel/conversor'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/redefinir-senha'
     | '/c/$slug'
     | '/painel/categorias'
     | '/painel/conversor'
@@ -202,6 +213,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/painel'
+    | '/redefinir-senha'
     | '/c/$slug'
     | '/painel/categorias'
     | '/painel/conversor'
@@ -221,6 +233,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   PainelRoute: typeof PainelRouteWithChildren
+  RedefinirSenhaRoute: typeof RedefinirSenhaRoute
   CSlugRoute: typeof CSlugRoute
 }
 
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/painel'
       fullPath: '/painel'
       preLoaderRoute: typeof PainelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/redefinir-senha': {
+      id: '/redefinir-senha'
+      path: '/redefinir-senha'
+      fullPath: '/redefinir-senha'
+      preLoaderRoute: typeof RedefinirSenhaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$slug': {
@@ -378,6 +398,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   PainelRoute: PainelRouteWithChildren,
+  RedefinirSenhaRoute: RedefinirSenhaRoute,
   CSlugRoute: CSlugRoute,
 }
 export const routeTree = rootRouteImport
