@@ -5,13 +5,15 @@
  *   - chamada somente depois de applyOfficialSnapshot() confirmar o pagamento
  *     na API oficial do provedor;
  *   - idempotente por (order_id, product_id);
- *   - e-mail só é marcado como enviado depois que o Resend aceitar o envio;
+ *   - e-mail só é marcado como enviado depois que o Brevo aceitar o envio;
  *   - o token completo nunca é persistido — apenas seu hash SHA-256;
  *   - falha de entrega NUNCA altera o resultado financeiro do webhook.
  */
 import { adminClient, getCatalog } from "./payments/db.ts";
 import { randomToken, sha256Hex } from "./payments/crypto.ts";
 import {
+  brevoFailureReason,
+  buildBrevoEmailPayload,
   buildDeliveryEmail,
   buildDownloadUrl,
   clampInteger,
@@ -58,48 +60,59 @@ function log(message: string, extra?: unknown): void {
   console.log(`[digital-delivery] ${message}`, extra ?? "");
 }
 
-function config(): { apiKey: string; from: string; functionBase: string } | null {
-  const apiKey = Deno.env.get("RESEND_API_KEY")?.trim() ?? "";
-  const from = Deno.env.get("RESEND_FROM")?.trim() ?? "";
+function config(): {
+  apiKey: string;
+  senderEmail: string;
+  senderName: string;
+  functionBase: string;
+} | null {
+  const apiKey = Deno.env.get("BREVO_API_KEY")?.trim() ?? "";
+  const senderEmail = Deno.env.get("BREVO_SENDER_EMAIL")?.trim() ?? "";
+  const senderName = Deno.env.get("BREVO_SENDER_NAME")?.trim() ?? "";
   const url = Deno.env.get("SUPABASE_URL")?.trim() ?? "";
-  if (!apiKey || !from || !url) return null;
-  return { apiKey, from, functionBase: `${url}/functions/v1` };
+  if (!apiKey || !senderEmail || !senderName || !url) return null;
+  return { apiKey, senderEmail, senderName, functionBase: `${url}/functions/v1` };
 }
 
-async function sendViaResend(input: {
+async function sendViaBrevo(input: {
   apiKey: string;
-  from: string;
+  senderEmail: string;
+  senderName: string;
   to: string;
   subject: string;
   html: string;
   text: string;
 }): Promise<{ ok: boolean; messageId?: string; error?: string }> {
   try {
-    const response = await fetch("https://api.resend.com/emails", {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${input.apiKey}`,
+        "api-key": input.apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: input.from,
-        to: [input.to],
-        subject: input.subject,
-        html: input.html,
-        text: input.text,
-      }),
+      body: JSON.stringify(
+        buildBrevoEmailPayload({
+          senderName: input.senderName,
+          senderEmail: input.senderEmail,
+          to: input.to,
+          subject: input.subject,
+          html: input.html,
+          text: input.text,
+        }),
+      ),
       signal: AbortSignal.timeout(20_000),
     });
     if (!response.ok) {
-      // Nunca imprime o corpo (pode conter dados da conta) nem o header de auth.
-      return { ok: false, error: `resend_http_${response.status}` };
+      // Nunca imprime o corpo nem o header "api-key": a resposta pode conter
+      // dados da conta e o header contém a credencial.
+      return { ok: false, error: brevoFailureReason(response.status) };
     }
     let messageId: string | undefined;
     try {
-      const payload = (await response.json()) as { id?: unknown };
-      if (typeof payload.id === "string") messageId = payload.id;
+      const payload = (await response.json()) as { messageId?: unknown };
+      if (typeof payload.messageId === "string") messageId = payload.messageId;
     } catch {
-      /* 2xx sem JSON ainda é aceitação válida pelo Resend */
+      /* 2xx sem JSON ainda é aceitação válida pelo Brevo */
     }
     return { ok: true, messageId };
   } catch (error) {
@@ -238,8 +251,8 @@ export async function deliverDigitalOrder(
 
   if (!cfg) {
     // Não inventa sucesso: deixa a entrega pendente para reprocessamento.
-    log("Resend não configurado", { orderId, products: digitalProducts.length });
-    return { ...outcome, ok: false, reason: "resend_not_configured", skipped: digitalProducts.length };
+    log("Brevo não configurado", { orderId, products: digitalProducts.length });
+    return { ...outcome, ok: false, reason: "brevo_not_configured", skipped: digitalProducts.length };
   }
 
   for (const product of digitalProducts) {
@@ -306,9 +319,10 @@ export async function deliverDigitalOrder(
         supportUrl: storeLink && /^https?:\/\//.test(storeLink) ? storeLink : null,
       });
 
-      const sent = await sendViaResend({
+      const sent = await sendViaBrevo({
         apiKey: cfg.apiKey,
-        from: cfg.from,
+        senderEmail: cfg.senderEmail,
+        senderName: cfg.senderName,
         to: customerEmail,
         subject: message.subject,
         html: message.html,
@@ -334,7 +348,7 @@ export async function deliverDigitalOrder(
 
       if (sent.ok) {
         outcome.delivered++;
-        log("e-mail aceito pelo Resend", { orderId, productId: product.id, produto: emailLabel });
+        log("e-mail aceito pelo Brevo", { orderId, productId: product.id, produto: emailLabel });
       } else {
         outcome.failed++;
         log("envio falhou", { orderId, productId: product.id, erro: safeError(sent.error) });

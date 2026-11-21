@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import {
   ALLOWED_EXTENSIONS,
   ALLOWED_MIME_TYPES,
+  brevoFailureReason,
+  buildBrevoEmailPayload,
   DIGITAL_BUCKET,
   MAX_FILE_BYTES,
   PAID_PAYMENT_STATUSES,
@@ -25,10 +27,12 @@ import {
 /**
  * Entrega digital — testes de regra e de integração estática.
  *
- * SIMULADO: validações puras, construção de e-mail/URL, limites e contrato de
- * código (migração + hook + revogação). Nenhum teste aqui afirma envio real.
- * REAL (pendente): recebimento no Resend e download pelo link do e-mail exigem
- * RESEND_API_KEY/RESEND_FROM em homologação + acesso à caixa do comprador.
+ * SIMULADO: validações puras, construção de e-mail/URL, payload/classificação
+ * de erros do Brevo, limites e contrato de código (migração + hook + revogação).
+ * Nenhum teste aqui afirma envio real.
+ * REAL (pendente): recebimento via Brevo e download pelo link do e-mail exigem
+ * BREVO_API_KEY/BREVO_SENDER_EMAIL/BREVO_SENDER_NAME em homologação + acesso
+ * à caixa do comprador.
  */
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (path: string) => readFileSync(`${root}${path}`, "utf8");
@@ -125,6 +129,35 @@ test("e-mail escapa conteúdo e não contém o token em texto claro", () => {
   assert.match(message.text, /Orientações: Use <script>/); // texto simples não é HTML
 });
 
+test("payload do Brevo usa remetente, HTML e texto sem credenciais (SIMULADO)", () => {
+  const payload = buildBrevoEmailPayload({
+    senderName: "Loja Teste",
+    senderEmail: "remetente@example.com",
+    to: "compradora@example.com",
+    subject: "Seu arquivo chegou",
+    html: "<p>Baixe aqui</p>",
+    text: "Baixe aqui",
+  });
+  assert.deepEqual(payload.sender, { name: "Loja Teste", email: "remetente@example.com" });
+  assert.deepEqual(payload.to, [{ email: "compradora@example.com" }]);
+  assert.equal(payload.subject, "Seu arquivo chegou");
+  assert.equal(payload.htmlContent, "<p>Baixe aqui</p>");
+  assert.equal(payload.textContent, "Baixe aqui");
+  const serialized = JSON.stringify(payload);
+  assert.ok(!/api-key|api[_-]?key|Bearer/i.test(serialized));
+});
+
+test("falhas HTTP do Brevo são classificadas sem expor credenciais (SIMULADO)", () => {
+  assert.equal(brevoFailureReason(401), "brevo_auth_failed");
+  assert.equal(brevoFailureReason(403), "brevo_auth_failed");
+  assert.equal(brevoFailureReason(429), "brevo_rate_limited");
+  assert.equal(brevoFailureReason(503), "brevo_server_error");
+  assert.equal(brevoFailureReason(400), "brevo_http_400");
+  for (const status of [400, 401, 403, 429, 503]) {
+    assert.ok(!brevoFailureReason(status).includes("key"));
+  }
+});
+
 test("logs e erros mascaram PII (SIMULADO)", () => {
   const masked = safeError("falha para maria@example.com em https://x.com/a?token=abcdef0123456789abcdef0123456789 +55 11 99999-9999");
   assert.ok(!masked.includes("maria@example.com"));
@@ -155,7 +188,22 @@ test("idempotência e reprocessamento por canal (SIMULADO)", () => {
   assert.match(fn, /status: sent\.ok \? "sent" : "failed"/);
   assert.match(fn, /attempts: Number\(delivery\.attempts \?\? 0\) \+ 1/);
   assert.match(fn, /last_error: sent\.ok \? null : safeError\(sent\.error\)/);
-  assert.match(fn, /resend_not_configured/);
+  assert.match(fn, /brevo_not_configured/);
+});
+
+test("Brevo é o único provedor de e-mail no fluxo digital (SIMULADO)", () => {
+  const fn = read("supabase/functions/_shared/digital_delivery.ts");
+  assert.match(fn, /https:\/\/api\.brevo\.com\/v3\/smtp\/email/);
+  assert.match(fn, /"api-key": input\.apiKey/);
+  assert.match(fn, /BREVO_API_KEY/);
+  assert.match(fn, /BREVO_SENDER_EMAIL/);
+  assert.match(fn, /BREVO_SENDER_NAME/);
+  assert.doesNotMatch(fn, /api\.resend\.com/);
+  assert.doesNotMatch(fn, /RESEND_API_KEY/);
+  assert.doesNotMatch(fn, /sendViaResend/);
+
+  const webhook = read("supabase/functions/_shared/payments/webhooks.ts");
+  assert.doesNotMatch(webhook, /falha do Resend/i);
 });
 
 test("checkout exige e-mail somente com produto digital e preserva fallback", () => {

@@ -340,8 +340,8 @@ export async function applyOfficialSnapshot(input: {
   }
 
   // Entrega digital: só acontece depois da confirmação oficial acima.
-  // É best-effort por design — uma falha do Resend não pode desfazer o
-  // pagamento confirmado nem fazer o provedor reenviar o webhook.
+  // É best-effort por design — uma falha no envio de e-mail não pode desfazer
+  // o pagamento confirmado nem fazer o provedor reenviar o webhook.
   try {
     await deliverDigitalOrder(input.transaction.order_id, { paymentStatus: merged.status });
   } catch (error) {

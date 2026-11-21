@@ -134,6 +134,32 @@ export function buildDownloadUrl(functionBase: string, token: string): string {
   return `${base}/digital-delivery?action=download&token=${encodeURIComponent(token)}`;
 }
 
+/** Corpo oficial da API transacional do Brevo (POST /v3/smtp/email). */
+export function buildBrevoEmailPayload(input: {
+  senderName: string;
+  senderEmail: string;
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+}): Record<string, unknown> {
+  return {
+    sender: { name: input.senderName, email: input.senderEmail },
+    to: [{ email: input.to }],
+    subject: input.subject,
+    htmlContent: input.html,
+    textContent: input.text,
+  };
+}
+
+/** Classifica falhas HTTP do Brevo sem expor corpo, header ou credenciais. */
+export function brevoFailureReason(status: number): string {
+  if (status === 401 || status === 403) return "brevo_auth_failed";
+  if (status === 429) return "brevo_rate_limited";
+  if (status >= 500) return "brevo_server_error";
+  return `brevo_http_${status}`;
+}
+
 function escapeHtml(value: string): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
