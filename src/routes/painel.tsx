@@ -48,7 +48,7 @@ function PainelLayout() {
   }
 
   return (
-    <div className="app-shell pb-32">
+    <div className="app-shell pb-20">
       {/* Primeira linha do painel: seletor de idioma sempre visível, no topo à direita. */}
       <header className="sticky top-0 z-30 flex items-center justify-between gap-2 border-b border-border bg-card/95 px-4 py-2 backdrop-blur">
         <span className="truncate text-sm font-semibold text-foreground">{t("common.panel")}</span>
@@ -61,20 +61,20 @@ function PainelLayout() {
         aria-label={t("panel.nav.mainNavigation")}
         className="fixed bottom-0 left-1/2 z-40 w-full max-w-[30rem] -translate-x-1/2 border-t border-border bg-card/95 backdrop-blur"
       >
-        <ul className="flex flex-wrap justify-center gap-y-1 px-1 py-2">
+        <ul className="flex flex-nowrap px-0.5 py-1.5">
           {tabs.map((tab) => {
             const active = tab.exact ? pathname === tab.to : pathname.startsWith(tab.to);
             return (
-              <li key={tab.to} className="flex w-1/5 justify-center">
+              <li key={tab.to} className="flex min-w-0 flex-1 justify-center">
                 <Link
                   to={tab.to}
                   className={cn(
-                    "flex w-full flex-col items-center gap-1 rounded-md px-0.5 py-1.5 text-[10px] font-medium leading-tight",
+                    "flex min-w-0 flex-col items-center gap-0.5 py-1 text-[clamp(6px,1.9vw,9px)] font-medium leading-tight tracking-[-0.03em]",
                     active ? "text-primary" : "text-muted-foreground",
                   )}
                   aria-current={active ? "page" : undefined}
                 >
-                  <tab.icon className="size-5" aria-hidden />
+                  <tab.icon className="size-4" aria-hidden />
                   <span className="whitespace-nowrap">{t(tab.labelKey)}</span>
                 </Link>
               </li>
