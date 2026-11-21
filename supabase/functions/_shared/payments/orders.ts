@@ -7,6 +7,7 @@
  *   recalculados aqui, a partir dos dados oficiais do banco.
  */
 import { adminClient, createCheckoutSession, type CatalogRow } from "./db.ts";
+import { isValidEmail, normalizeEmail } from "../digital_delivery_pure.ts";
 import { priceCart, computeTotals, type CartItemInput, type OfficialProduct, type PricedItem } from "./pricing.ts";
 import { fromMinorUnits, resolveStoreCurrency, toMinorUnits } from "../../../../src/lib/currency.ts";
 
@@ -14,6 +15,7 @@ export type SecureOrderInput = {
   catalogId: string;
   customerName: string;
   customerPhone?: string | null;
+  customerEmail?: string | null;
   note?: string | null;
   items: CartItemInput[];
   deliveryMethod?: string | null;
@@ -163,6 +165,20 @@ export async function createSecureOrder(input: SecureOrderInput): Promise<Secure
     return { ok: false, status: 400, code: priced.code, error: priced.error };
   }
 
+  // E-mail é obrigatório somente quando há produto digital no carrinho.
+  // O tipo vem do banco (nunca do navegador).
+  const customerEmail = normalizeEmail(String(input.customerEmail ?? ""));
+  if (priced.items.some((item) => item.product_type === "digital")) {
+    if (!isValidEmail(customerEmail)) {
+      return {
+        ok: false,
+        status: 400,
+        code: "invalid_customer_email",
+        error: "Informe um e-mail válido para receber o produto digital.",
+      };
+    }
+  }
+
   // ── Entrega ──────────────────────────────────────────────────────────────
   const deliveryMethods = Array.isArray(catalog.delivery_methods)
     ? (catalog.delivery_methods as string[])
@@ -248,6 +264,7 @@ export async function createSecureOrder(input: SecureOrderInput): Promise<Secure
     catalog_id: catalog.id,
     customer_name: customerName,
     customer_phone: cleanText(input.customerPhone, 40),
+    customer_email: customerEmail || null,
     items: priced.items,
     note: cleanText(input.note, MAX_NOTE),
     subtotal: totals.subtotal,

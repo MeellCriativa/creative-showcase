@@ -1,0 +1,207 @@
+/**
+ * Regras puras da entrega digital — sem dependências de runtime (Deno/Supabase).
+ * Este arquivo é importado tanto pela Edge Function quanto pelos testes Node.
+ */
+
+export const DIGITAL_BUCKET = "digital-products";
+export const MAX_FILE_BYTES = 50 * 1024 * 1024;
+
+/** Status em que a entrega é liberada. "authorized" (PayPal) ainda não é captura. */
+export const PAID_PAYMENT_STATUSES = new Set(["approved", "captured"]);
+
+/** Status em que nenhuma entrega nova pode começar e links devem ser revogados. */
+export const BLOCKED_PAYMENT_STATUSES = new Set([
+  "failed",
+  "cancelled",
+  "refunded",
+  "partially_refunded",
+  "disputed",
+]);
+
+/** Evita SVG/HTML/JS: arquivos servidos pelo Storage podem ser abertos no navegador. */
+export const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/octet-stream",
+  "application/x-7z-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "text/csv",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "audio/mpeg",
+  "audio/mp4",
+]);
+
+export const ALLOWED_EXTENSIONS = new Set([
+  "pdf",
+  "zip",
+  "7z",
+  "rar",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "txt",
+  "csv",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "mp4",
+  "mp3",
+  "m4a",
+]);
+
+export function isPaidPaymentStatus(status: unknown): boolean {
+  return typeof status === "string" && PAID_PAYMENT_STATUSES.has(status.toLowerCase());
+}
+
+export function isBlockedPaymentStatus(status: unknown): boolean {
+  return typeof status === "string" && BLOCKED_PAYMENT_STATUSES.has(status.toLowerCase());
+}
+
+export function normalizeEmail(value: string): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+export function isValidEmail(value: string): boolean {
+  const email = normalizeEmail(value);
+  if (email.length < 6 || email.length > 254) return false;
+  if (/\s/.test(email)) return false;
+  const [local, domain, ...rest] = email.split("@");
+  if (!local || !domain || rest.length > 0) return false;
+  if (local.length > 64 || local.startsWith(".") || local.endsWith(".") || local.includes(".."))
+    return false;
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) return false;
+  return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local);
+}
+
+export function fileExtension(fileName: string): string {
+  const name = String(fileName ?? "");
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+}
+
+export function validateDigitalFile(input: {
+  fileName: string;
+  mimeType: string;
+  size: number;
+}): { valid: boolean; reason?: string } {
+  const ext = fileExtension(input.fileName);
+  const mime = String(input.mimeType ?? "").toLowerCase().split(";")[0]!.trim();
+  const size = Number(input.size);
+  if (!ext || !ALLOWED_EXTENSIONS.has(ext)) return { valid: false, reason: "EXTENSAO_NAO_PERMITIDA" };
+  if (!ALLOWED_MIME_TYPES.has(mime)) return { valid: false, reason: "MIME_NAO_PERMITIDO" };
+  if (!Number.isFinite(size) || size <= 0) return { valid: false, reason: "TAMANHO_INVALIDO" };
+  if (size > MAX_FILE_BYTES) return { valid: false, reason: "ARQUIVO_GRANDE_DEMAIS" };
+  return { valid: true };
+}
+
+/** Remove PII/tokens de mensagens antes de gravar em log ou no banco. */
+export function safeError(value: unknown): string {
+  let text = String(value ?? "")
+    .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, "[email]")
+    .replace(/https?:\/\/\S+/gi, "[url]")
+    .replace(/\b[a-f0-9]{32,}\b/gi, "[token]")
+    .replace(/\+\d[\d\s()-]{7,}/g, "[telefone]");
+  if (text.length > 240) text = text.slice(0, 240) + "…";
+  return text || "erro_desconhecido";
+}
+
+export function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+export function buildDownloadUrl(functionBase: string, token: string): string {
+  const base = String(functionBase ?? "").replace(/\/+$/, "");
+  return `${base}/digital-delivery?action=download&token=${encodeURIComponent(token)}`;
+}
+
+function escapeHtml(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function buildDeliveryEmail(input: {
+  storeName: string;
+  customerName: string;
+  productName: string;
+  downloadUrl: string;
+  instructions?: string | null;
+  supportUrl?: string | null;
+}): { subject: string; html: string; text: string } {
+  const store = escapeHtml(input.storeName || "Vitrine Criativa");
+  const customer = escapeHtml(input.customerName || "cliente");
+  const product = escapeHtml(input.productName || "seu produto");
+  const url = String(input.downloadUrl ?? "");
+  const htmlUrl = escapeHtml(url);
+  const instructions = input.instructions?.trim()
+    ? `<div style="margin-top:22px;padding:14px 16px;border-radius:12px;background:#f7f4fd;color:#4b3f63;font-size:14px;line-height:1.6"><strong>Orientações da loja:</strong><br>${escapeHtml(input.instructions).replace(/\n/g, "<br>")}</div>`
+    : "";
+  const support = input.supportUrl
+    ? `<p style="margin:24px 0 0;text-align:center;font-size:12px;color:#8b839a">Precisa de ajuda? <a href="${escapeHtml(input.supportUrl)}" style="color:#8b5cf6">Fale com a loja</a>.</p>`
+    : `<p style="margin:24px 0 0;text-align:center;font-size:12px;color:#8b839a">Precisa de ajuda? Responda a este e-mail.</p>`;
+
+  const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Seu arquivo chegou</title></head>
+<body style="margin:0;padding:0;background:#f6f4fa;font-family:Arial,Helvetica,sans-serif;color:#2f2a3a">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f4fa;padding:28px 12px">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 28px rgba(80,50,140,.08)">
+        <tr><td style="background:#8b5cf6;padding:26px 28px;color:#ffffff">
+          <p style="margin:0;font-size:20px;font-weight:bold;letter-spacing:-.3px">Vitrine Criativa</p>
+          <p style="margin:4px 0 0;font-size:12px;opacity:.9">Entrega digital segura</p>
+        </td></tr>
+        <tr><td style="padding:30px 28px 8px">
+          <p style="margin:0 0 16px;font-size:16px">Olá, <strong>${customer}</strong>!</p>
+          <p style="margin:0 0 18px;font-size:15px;line-height:1.6">Sua compra foi confirmada. O arquivo de <strong>${product}</strong> está pronto para download.</p>
+          <div style="text-align:center;margin:26px 0">
+            <a href="${htmlUrl}" style="display:inline-block;background:#8b5cf6;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 26px;border-radius:12px">Baixar meu arquivo</a>
+          </div>
+          <p style="margin:0;font-size:13px;line-height:1.6;color:#6d657c">Se o botão não funcionar, copie e cole este link no navegador:<br><a href="${htmlUrl}" style="color:#8b5cf6;word-break:break-all">${htmlUrl}</a></p>
+          ${instructions}
+          <p style="margin:22px 0 0;font-size:13px;line-height:1.6;color:#6d657c">O link é pessoal, temporário e possui limite de downloads. Guarde-o até concluir o download. Não compartilhe este e-mail.</p>
+          <p style="margin:8px 0 0;font-size:13px;color:#6d657c">Obrigado por comprar na <strong>${store}</strong>!</p>
+          ${support}
+        </td></tr>
+        <tr><td style="padding:18px 28px;background:#faf9fd;text-align:center;font-size:11px;color:#9a93a8">Mensagem automática da Vitrine Criativa · Não responda com dados de pagamento.</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  const text = [
+    `Vitrine Criativa - ${store}`,
+    "",
+    `Olá, ${input.customerName || "cliente"}!`,
+    `Sua compra de ${input.productName || "seu produto"} foi confirmada.`,
+    `Baixe seu arquivo: ${url}`,
+    input.instructions?.trim() ? `Orientações: ${input.instructions.trim()}` : "",
+    "O link é temporário e possui limite de downloads. Não compartilhe.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { subject: `Seu arquivo chegou: ${input.productName || "produto digital"}`, html, text };
+}

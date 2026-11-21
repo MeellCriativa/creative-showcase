@@ -48,6 +48,15 @@ export const DELIVERY_METHODS = [
   { key: "melhor_envio", label: "Envio (Correios e transportadoras)", icon: "📦" },
 ] as const;
 
+/** Metadados do arquivo digital devolvidos pelo upload no painel. */
+export type DigitalFileMeta = {
+  path: string;
+  name: string;
+  mime: string;
+  size: number;
+  checksum: string;
+};
+
 export const PAYMENT_METHODS = [
   { key: "pix", label: "Pix", icon: "💳" },
   { key: "credit_card", label: "Cartão de crédito", icon: "💳" },
@@ -89,6 +98,15 @@ export type Product = {
   length_cm: number | null;
   width_cm: number | null;
   height_cm: number | null;
+  /** Arquivo digital privado (caminho interno no Storage — nunca exposto ao comprador). */
+  digital_file_path?: string | null;
+  digital_file_name?: string | null;
+  digital_file_mime?: string | null;
+  digital_file_size?: number | null;
+  digital_file_checksum?: string | null;
+  digital_instructions?: string | null;
+  digital_link_ttl_minutes?: number | null;
+  digital_max_downloads?: number | null;
 };
 
 export type ProductType = "fisico" | "digital";
@@ -107,6 +125,8 @@ export type Order = {
   catalog_id: string;
   customer_name: string;
   customer_phone: string | null;
+  /** Usado para entrega automática de produtos digitais (somente vendedor vê). */
+  customer_email?: string | null;
   items: OrderItem[];
   note: string | null;
   total: number;
@@ -157,12 +177,33 @@ export type OrderItem = {
   name: string;
   quantity: number;
   unitPrice: number;
+  product_id?: string;
   variation?: string;
   product_type?: "fisico" | "digital" | null;
   weight_grams?: number | null;
   length_cm?: number | null;
   width_cm?: number | null;
   height_cm?: number | null;
+};
+
+export type DigitalDelivery = {
+  id: string;
+  order_id: string;
+  product_id: string;
+  customer_email: string;
+  status: "pending" | "sent" | "failed" | "revoked" | string;
+  attempts: number;
+  sent_at: string | null;
+  revoked_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  products?: { name: string } | null;
+  token?: {
+    expires_at: string;
+    max_uses: number;
+    used_count: number;
+    revoked_at: string | null;
+  } | null;
 };
 
 export type ShippingQuote = {

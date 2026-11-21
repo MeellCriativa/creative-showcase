@@ -29,3 +29,8 @@ verify_jwt = false
 
 [functions.webhooks-paypal]
 verify_jwt = false
+
+# O download é público, mas somente via token opaco; as ações do vendedor
+# continuam exigindo JWT, validadas em código por `verifyUser`.
+[functions.digital-delivery]
+verify_jwt = false

@@ -8,6 +8,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
 import { useI18n, type MessageKey } from "@/i18n";
 import { formatMoney, resolveOrderCurrency, resolveStoreCurrency } from "@/lib/currency";
+import {
+  listDigitalDeliveries,
+  runDeliveryAction,
+  type DeliveryAction,
+} from "@/lib/digitalDelivery";
+import type { DigitalDelivery } from "@/lib/catalog";
 import { meApi } from "@/lib/shipping";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -30,6 +36,8 @@ type OrderRow = {
   catalog_id: string;
   customer_name: string;
   customer_phone: string | null;
+  customer_email?: string | null;
+  payment_status?: string | null;
   items: OrderItem[];
   note: string | null;
   total: number;
@@ -118,6 +126,14 @@ function PedidosPage() {
       if (error) throw error;
       return (data ?? []) as OrderRow[];
     },
+  });
+
+  // O e-mail do comprador e os detalhes das entregas vêm de uma Edge Function
+  // autenticada: RLS direta não expõe hash de token nem dados a anônimos.
+  const { data: deliveries } = useQuery<DigitalDelivery[]>({
+    queryKey: ["digital-deliveries", catalog?.id],
+    enabled: !!catalog,
+    queryFn: async () => (catalog ? await listDigitalDeliveries(catalog.id) : []),
   });
 
   const filtered = (orders ?? []).filter((o) => {
@@ -213,7 +229,17 @@ function PedidosPage() {
           </p>
         )}
         {filtered.map((order) => (
-          <OrderCard key={order.id} order={order} onStatusChange={updateStatus} />
+          <OrderCard
+            key={order.id}
+            order={order}
+            deliveries={(deliveries ?? []).filter((d) => d.order_id === order.id)}
+            onStatusChange={updateStatus}
+            onDeliveryChanged={() => {
+              void queryClient.invalidateQueries({
+                queryKey: ["digital-deliveries", catalog?.id],
+              });
+            }}
+          />
         ))}
       </div>
     </div>
@@ -231,10 +257,14 @@ function StatCard({ label, value }: { label: string; value: string }) {
 
 function OrderCard({
   order,
+  deliveries,
   onStatusChange,
+  onDeliveryChanged,
 }: {
   order: OrderRow;
+  deliveries: DigitalDelivery[];
   onStatusChange: (id: string, status: string) => void;
+  onDeliveryChanged: () => void;
 }) {
   const { t, formatDate, formatDateTime } = useI18n();
   const orderCurrency = resolveOrderCurrency(order.currency);
@@ -243,8 +273,33 @@ function OrderCard({
   const formattedDate = formatDate(dt, { day: "2-digit", month: "2-digit", year: "numeric" });
   const formattedTime = formatDateTime(dt, { hour: "2-digit", minute: "2-digit" });
   const [meBusy, setMeBusy] = useState<string | null>(null);
+  const [deliveryBusy, setDeliveryBusy] = useState<string | null>(null);
 
   const isMeShipping = order.delivery_method === "melhor_envio";
+
+  async function runDelivery(action: DeliveryAction, deliveryId: string) {
+    setDeliveryBusy(`${action}:${deliveryId}`);
+    try {
+      const result = await runDeliveryAction(action, deliveryId);
+      if (!result.success) {
+        toast.error(String(result.error ?? t("orders.digital.actionFailed")));
+        return;
+      }
+      toast.success(t("orders.digital.actionDone"));
+      onDeliveryChanged();
+    } catch {
+      toast.error(t("orders.digital.actionFailed"));
+    } finally {
+      setDeliveryBusy(null);
+    }
+  }
+
+  function deliveryStatusLabel(status: string): MessageKey {
+    if (status === "sent") return "orders.digital.statusSent";
+    if (status === "failed") return "orders.digital.statusFailed";
+    if (status === "revoked") return "orders.digital.statusRevoked";
+    return "orders.digital.statusPending";
+  }
   const statusLabelKey = STATUS_LABEL_KEYS[order.status];
 
   async function runMe(action: string) {
@@ -494,6 +549,86 @@ function OrderCard({
               )}
             </>
           )}
+        </div>
+      )}
+
+      {deliveries.length > 0 && (
+        <div className="mt-3 space-y-2 rounded-xl border border-border bg-accent/40 px-3 py-3">
+          <p className="text-xs font-bold text-foreground">{t("orders.digital.title")}</p>
+          {deliveries.map((delivery) => {
+            const busy = deliveryBusy;
+            return (
+              <div
+                key={delivery.id}
+                className="space-y-1.5 rounded-lg bg-card px-3 py-2.5 text-xs text-muted-foreground"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-foreground">
+                    {delivery.products?.name ?? t("orders.digital.unknownProduct")}
+                  </span>
+                  <span className="rounded-full bg-muted px-2 py-0.5 font-medium">
+                    {t(deliveryStatusLabel(delivery.status))}
+                  </span>
+                </div>
+                <p>
+                  {t("orders.digital.buyerEmail")}:{" "}
+                  <span className="font-medium text-foreground">{delivery.customer_email}</span>
+                </p>
+                {delivery.sent_at && (
+                  <p>
+                    {t("orders.digital.sentAt")}: {formatDateTime(new Date(delivery.sent_at))}
+                  </p>
+                )}
+                <p>
+                  {t("orders.digital.attempts")}: {delivery.attempts}
+                  {delivery.token
+                    ? ` · ${t("orders.digital.downloads")}: ${delivery.token.used_count}/${delivery.token.max_uses}`
+                    : ""}
+                </p>
+                {delivery.token?.expires_at && (
+                  <p>
+                    {t("orders.digital.expiresAt")}:{" "}
+                    {formatDateTime(new Date(delivery.token.expires_at))}
+                    {delivery.token.revoked_at ? ` · ${t("orders.digital.statusRevoked")}` : ""}
+                  </p>
+                )}
+                {delivery.last_error && (
+                  <p className="text-destructive">{t("orders.digital.lastError")}</p>
+                )}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void runDelivery("retry", delivery.id)}
+                    className="rounded-lg border border-border bg-card px-2.5 py-1.5 font-semibold text-foreground disabled:opacity-50"
+                  >
+                    {busy === `retry:${delivery.id}` ? <Loader2 className="size-3 animate-spin" /> : null}
+                    {t("orders.digital.resend")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void runDelivery("regenerate", delivery.id)}
+                    className="rounded-lg border border-border bg-card px-2.5 py-1.5 font-semibold text-foreground disabled:opacity-50"
+                  >
+                    {busy === `regenerate:${delivery.id}` ? <Loader2 className="size-3 animate-spin" /> : null}
+                    {t("orders.digital.newLink")}
+                  </button>
+                  {!delivery.revoked_at && (
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => void runDelivery("revoke", delivery.id)}
+                      className="rounded-lg border border-border bg-card px-2.5 py-1.5 font-semibold text-destructive disabled:opacity-50"
+                    >
+                      {busy === `revoke:${delivery.id}` ? <Loader2 className="size-3 animate-spin" /> : null}
+                      {t("orders.digital.revoke")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

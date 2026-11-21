@@ -31,6 +31,7 @@ import {
   type TransactionRow,
 } from "./db.ts";
 import { maskEmail } from "./crypto.ts";
+import { deliverDigitalOrder } from "../digital_delivery.ts";
 import { loadCredentials } from "./connections.ts";
 import { getProvider, providerEnvironment } from "./index.ts";
 import {
@@ -336,6 +337,18 @@ export async function applyOfficialSnapshot(input: {
       captured,
       regressed: merged.regressed,
     };
+  }
+
+  // Entrega digital: só acontece depois da confirmação oficial acima.
+  // É best-effort por design — uma falha do Resend não pode desfazer o
+  // pagamento confirmado nem fazer o provedor reenviar o webhook.
+  try {
+    await deliverDigitalOrder(input.transaction.order_id, { paymentStatus: merged.status });
+  } catch (error) {
+    log(input.provider, "falha ao agendar entrega digital", {
+      order: input.transaction.order_id,
+      erro: error instanceof Error ? error.message : "erro",
+    });
   }
 
   return { ok: true, snapshot: effectiveSnapshot, captured, regressed: merged.regressed };

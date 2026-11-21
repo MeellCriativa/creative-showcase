@@ -173,6 +173,7 @@ export function createSecureOrder(input: {
   catalogId: string;
   customerName: string;
   customerPhone?: string | null;
+  customerEmail?: string | null;
   note?: string | null;
   items: CreateOrderItem[];
   deliveryMethod?: string | null;
@@ -186,6 +187,7 @@ export function createSecureOrder(input: {
       catalog_id: input.catalogId,
       customer_name: input.customerName,
       customer_phone: input.customerPhone ?? null,
+      customer_email: input.customerEmail ?? null,
       note: input.note ?? null,
       items: input.items,
       delivery_method: input.deliveryMethod ?? null,

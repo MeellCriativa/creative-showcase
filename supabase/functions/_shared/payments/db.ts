@@ -5,6 +5,7 @@
  * cliente service_role (nunca com o token do navegador).
  */
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isBlockedPaymentStatus } from "../digital_delivery_pure.ts";
 import {
   decryptSecret,
   encryptSecret,
@@ -678,6 +679,29 @@ export async function syncOrderPayment(input: {
   if (error) {
     console.error("[payments] syncOrderPayment", error.message);
     return { ok: false, error: error.message };
+  }
+
+  // Reembolso/chargeback/cancelamento revoga links ainda válidos.
+  // Best-effort: nunca altera o resultado financeiro da sincronização.
+  if (isBlockedPaymentStatus(input.status)) {
+    try {
+      const now = new Date().toISOString();
+      await admin
+        .from("digital_download_tokens")
+        .update({ revoked_at: now })
+        .eq("order_id", input.orderId)
+        .is("revoked_at", null);
+      await admin
+        .from("digital_deliveries")
+        .update({ revoked_at: now, updated_at: now })
+        .eq("order_id", input.orderId)
+        .is("revoked_at", null);
+    } catch (revokeError) {
+      console.error(
+        "[payments] syncOrderPayment: falha ao revogar links digitais",
+        revokeError instanceof Error ? revokeError.message : "erro",
+      );
+    }
   }
   return { ok: true };
 }

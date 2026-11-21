@@ -314,6 +314,7 @@ async function createOrderAction(ctx: PublicCtx): Promise<Response> {
     catalogId,
     customerName: String(ctx.body.customer_name ?? ""),
     customerPhone: (ctx.body.customer_phone as string) ?? null,
+    customerEmail: (ctx.body.customer_email as string) ?? null,
     note: (ctx.body.note as string) ?? null,
     items: Array.isArray(ctx.body.items) ? (ctx.body.items as never) : [],
     deliveryMethod: (ctx.body.delivery_method as string) ?? null,

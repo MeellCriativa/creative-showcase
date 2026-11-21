@@ -473,6 +473,7 @@ function PublicCatalog() {
     async (
       customerName: string,
       customerPhone: string,
+      customerEmail: string,
       note: string,
       shipping: {
         deliveryMethod: string;
@@ -596,11 +597,14 @@ function PublicCatalog() {
           catalog_id: catalog.id,
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim() || null,
+          customer_email: customerEmail.trim().toLowerCase() || null,
           items: cart.map((i) => ({
+            product_id: i.productId,
             name: i.name,
             quantity: i.quantity,
             unitPrice: i.unitPrice,
             variation: i.variation,
+            product_type: i.product_type ?? null,
             weight_grams: i.weight_grams ?? null,
             length_cm: i.length_cm ?? null,
             width_cm: i.width_cm ?? null,
@@ -636,6 +640,7 @@ function PublicCatalog() {
         catalogId: catalog.id,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || null,
+        customerEmail: customerEmail.trim().toLowerCase() || null,
         note: note.trim() || null,
         items: cart.map((i) => ({
           product_id: i.productId,
@@ -1591,6 +1596,7 @@ function CartSheet({
   onFinish: (
     name: string,
     phone: string,
+    email: string,
     note: string,
     shipping: {
       deliveryMethod: string;
@@ -1606,6 +1612,8 @@ function CartSheet({
   const money = (value: number) => formatMoney(value, currency);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [observation, setObservation] = useState("");
   const [deliveryMethod, setDeliveryMethod] = useState<string>("");
   const [cep, setCep] = useState("");
@@ -1636,6 +1644,7 @@ function CartSheet({
 
   const hasMelhorEnvio = deliveryMethods.includes("melhor_envio");
   const hasPhysical = items.some((i) => i.product_type !== "digital");
+  const hasDigital = items.some((i) => i.product_type === "digital");
   useEffect(() => {
     if (!deliveryMethod && deliveryMethods.length === 1) {
       setDeliveryMethod(deliveryMethods[0]!);
@@ -1788,6 +1797,7 @@ function CartSheet({
       await onFinish(
         customerName,
         customerPhone,
+        customerEmail,
         observation,
         shipping,
         paymentProvider ? { provider: paymentProvider } : null,
@@ -1803,6 +1813,17 @@ function CartSheet({
     if (!customerName.trim()) {
       toast.error(t("catalog.errors.nameRequired"));
       return;
+    }
+    if (hasDigital) {
+      const email = customerEmail.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        toast.error(t("catalog.errors.emailRequired"));
+        return;
+      }
+      if (email !== confirmEmail.trim().toLowerCase()) {
+        toast.error(t("catalog.errors.emailMismatch"));
+        return;
+      }
     }
     if (hasMelhorEnvio && deliveryMethod === "melhor_envio") {
       const physical = items.filter((i) => i.product_type !== "digital");
@@ -2100,6 +2121,43 @@ function CartSheet({
                   className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                 />
               </div>
+              {hasDigital && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-foreground">
+                      {t("catalog.cart.emailLabel")} <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      autoComplete="email"
+                      inputMode="email"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      placeholder={t("catalog.cart.emailPlaceholder")}
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-foreground">
+                      {t("catalog.cart.confirmEmailLabel")} <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      autoComplete="email"
+                      inputMode="email"
+                      value={confirmEmail}
+                      onChange={(e) => setConfirmEmail(e.target.value)}
+                      placeholder={t("catalog.cart.confirmEmailPlaceholder")}
+                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("catalog.cart.digitalEmailHint")}
+                    </p>
+                  </div>
+                </>
+              )}
               <div>
                 <label className="mb-1 block text-sm font-semibold text-foreground">
                   {t("catalog.cart.noteLabel")}

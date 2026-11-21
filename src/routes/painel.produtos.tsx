@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -12,6 +12,11 @@ import { useMetaConnection, useMetaMappings } from "@/hooks/useMetaCatalog";
 import { useI18n } from "@/i18n";
 import { type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
 import { formatMoney, getCurrencySymbol, resolveStoreCurrency } from "@/lib/currency";
+import {
+  formatFileSize,
+  removeDigitalFile,
+  uploadDigitalFile,
+} from "@/lib/digitalDelivery";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/produtos")({
@@ -32,6 +37,14 @@ type Draft = {
   is_new: boolean;
   is_bestseller: boolean;
   product_type: "fisico" | "digital";
+  digital_file_path: string | null;
+  digital_file_name: string | null;
+  digital_file_mime: string | null;
+  digital_file_size: number | null;
+  digital_file_checksum: string | null;
+  digital_instructions: string;
+  digital_link_ttl_minutes: string;
+  digital_max_downloads: string;
   weight_grams: string;
   length_cm: string;
   width_cm: string;
@@ -51,6 +64,14 @@ const emptyDraft: Draft = {
   is_new: false,
   is_bestseller: false,
   product_type: "fisico",
+  digital_file_path: null,
+  digital_file_name: null,
+  digital_file_mime: null,
+  digital_file_size: null,
+  digital_file_checksum: null,
+  digital_instructions: "",
+  digital_link_ttl_minutes: "1440",
+  digital_max_downloads: "5",
   weight_grams: "",
   length_cm: "",
   width_cm: "",
@@ -112,6 +133,14 @@ function ProdutosPage() {
       is_new: product.is_new,
       is_bestseller: product.is_bestseller,
       product_type: product.product_type === "digital" ? "digital" : "fisico",
+      digital_file_path: product.digital_file_path ?? null,
+      digital_file_name: product.digital_file_name ?? null,
+      digital_file_mime: product.digital_file_mime ?? null,
+      digital_file_size: product.digital_file_size ?? null,
+      digital_file_checksum: product.digital_file_checksum ?? null,
+      digital_instructions: product.digital_instructions ?? "",
+      digital_link_ttl_minutes: String(product.digital_link_ttl_minutes ?? 1440),
+      digital_max_downloads: String(product.digital_max_downloads ?? 5),
       weight_grams: product.weight_grams != null ? String(product.weight_grams) : "",
       length_cm: product.length_cm != null ? String(product.length_cm) : "",
       width_cm: product.width_cm != null ? String(product.width_cm) : "",
@@ -201,6 +230,12 @@ function ProdutosPage() {
                     money(Number(product.price))
                   )}
                 </p>
+                {product.product_type === "digital" && (
+                  <span className="mt-1 mr-1 inline-block rounded-full bg-[var(--shop-accent)] px-2 py-0.5 text-[11px] font-semibold text-primary">
+                    {t("products.digitalBadge")}
+                    {product.digital_file_name ? ` · ${product.digital_file_name}` : ""}
+                  </span>
+                )}
                 {!product.available && (
                   <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
                     {t("products.outOfStock")}
@@ -300,9 +335,53 @@ function ProductEditor({
   onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { t } = useI18n();
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft({ ...draft, [key]: value });
+
+  async function handleDigitalFile(file: File | undefined) {
+    if (!file) return;
+    setUploadingFile(true);
+    try {
+      const meta = await uploadDigitalFile({
+        file,
+        userId,
+        catalogId,
+        productId: draft.id ?? null,
+      });
+      if (draft.digital_file_path && draft.digital_file_path !== meta.path) {
+        await removeDigitalFile(draft.digital_file_path);
+      }
+      setDraft({
+        ...draft,
+        digital_file_path: meta.path,
+        digital_file_name: meta.name,
+        digital_file_mime: meta.mime,
+        digital_file_size: meta.size,
+        digital_file_checksum: meta.checksum,
+      });
+      toast.success(t("products.digital.fileUploaded"));
+    } catch {
+      toast.error(t("products.digital.fileUploadFailed"));
+    } finally {
+      setUploadingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function clearDigitalFile() {
+    await removeDigitalFile(draft.digital_file_path);
+    setDraft({
+      ...draft,
+      digital_file_path: null,
+      digital_file_name: null,
+      digital_file_mime: null,
+      digital_file_size: null,
+      digital_file_checksum: null,
+    });
+  }
 
   function updateVariation(index: number, patch: Partial<VariationGroup>) {
     const next = draft.variations.map((v, i) => (i === index ? { ...v, ...patch } : v));
@@ -340,6 +419,18 @@ function ProductEditor({
       is_new: draft.is_new,
       is_bestseller: draft.is_bestseller,
       product_type: isPhysical ? "fisico" : "digital",
+      digital_file_path: isPhysical ? null : draft.digital_file_path,
+      digital_file_name: isPhysical ? null : draft.digital_file_name,
+      digital_file_mime: isPhysical ? null : draft.digital_file_mime,
+      digital_file_size: isPhysical ? null : draft.digital_file_size,
+      digital_file_checksum: isPhysical ? null : draft.digital_file_checksum,
+      digital_instructions: isPhysical ? null : draft.digital_instructions.trim() || null,
+      digital_link_ttl_minutes: isPhysical
+        ? null
+        : Math.min(10080, Math.max(5, Number(draft.digital_link_ttl_minutes) || 1440)),
+      digital_max_downloads: isPhysical
+        ? null
+        : Math.min(100, Math.max(1, Number(draft.digital_max_downloads) || 5)),
       weight_grams:
         isPhysical && draft.weight_grams ? Number(draft.weight_grams.replace(",", ".")) : null,
       length_cm: isPhysical && draft.length_cm ? Number(draft.length_cm.replace(",", ".")) : null,
@@ -532,6 +623,101 @@ function ProductEditor({
               </button>
             </div>
           </div>
+
+          {draft.product_type === "digital" && (
+            <div className="space-y-3 rounded-2xl border border-border p-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {t("products.digital.fileTitle")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t("products.digital.fileHint")}
+                </p>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.zip,.7z,.rar,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.mp4,.mp3,.m4a"
+                onChange={(e) => void handleDigitalFile(e.target.files?.[0])}
+                className="hidden"
+              />
+              <button
+                type="button"
+                disabled={uploadingFile}
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full rounded-xl border border-dashed border-border py-3 text-sm font-semibold text-muted-foreground disabled:opacity-60"
+              >
+                {uploadingFile
+                  ? t("products.digital.uploading")
+                  : draft.digital_file_name
+                    ? t("products.digital.replaceFile")
+                    : t("products.digital.chooseFile")}
+              </button>
+
+              {draft.digital_file_name && (
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-muted/60 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {draft.digital_file_name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatFileSize(draft.digital_file_size)}
+                      {draft.digital_file_mime ? ` · ${draft.digital_file_mime}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={t("products.digital.removeFile")}
+                    onClick={() => void clearDigitalFile()}
+                    className="grid size-8 shrink-0 place-items-center rounded-lg border border-border text-destructive"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              )}
+
+              <textarea
+                rows={2}
+                placeholder={t("products.digital.instructionsPlaceholder")}
+                value={draft.digital_instructions}
+                onChange={(e) => set("digital_instructions", e.target.value)}
+                className="input-base resize-none"
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-foreground">
+                    {t("products.digital.ttlLabel")}
+                  </span>
+                  <input
+                    type="number"
+                    min={5}
+                    max={10080}
+                    value={draft.digital_link_ttl_minutes}
+                    onChange={(e) => set("digital_link_ttl_minutes", e.target.value)}
+                    className="input-base"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-foreground">
+                    {t("products.digital.maxDownloadsLabel")}
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={draft.digital_max_downloads}
+                    onChange={(e) => set("digital_max_downloads", e.target.value)}
+                    className="input-base"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("products.digital.limitsHint")}
+              </p>
+            </div>
+          )}
 
           {draft.product_type !== "digital" && (
             <div className="rounded-2xl border border-border p-4">
