@@ -24,6 +24,9 @@ export const orders = defineNamespace({
       toastBody: "{{name}} — {{total}}. Clique em Pedidos para ver.",
       viewOrders: "Ver pedidos",
       newBadge: "novo",
+      bannerTitle: "Novos pedidos",
+      bannerBody: "Você tem {{count}} aviso(s) de novos pedidos.",
+      markRead: "Marcar como lidos",
     },
     status: {
       novo: "Novo",
@@ -32,6 +35,7 @@ export const orders = defineNamespace({
       pronto: "Pronto",
       finalizado: "Finalizado",
       cancelado: "Cancelado",
+      test: "Teste",
     },
     shipping: {
       melhorEnvio: "📦 Envio (Correios e transportadoras)",
@@ -70,6 +74,15 @@ export const orders = defineNamespace({
       generateLabel: "Gerar etiqueta",
       track: "Rastrear",
       printLabel: "Imprimir etiqueta",
+      markTest: "Marcar como teste",
+      unmarkTest: "Desmarcar teste",
+      deleteTest: "Excluir pedido de teste",
+      confirmDeleteTest:
+        "Excluir este pedido de teste? O valor dele será removido do total de vendas. Esta ação não pode ser desfeita.",
+      marked: "Pedido marcado como teste.",
+      unmarked: "Pedido desmarcado como teste.",
+      deleted: "Pedido de teste excluído. O total foi atualizado.",
+      deleteError: "Não foi possível excluir este pedido. Verifique se ele está marcado como teste e não teve cobrança real.",
     },
     toast: {
       connectFirst: "Conecte sua loja à Melhor Envio antes.",
@@ -107,6 +120,9 @@ export const orders = defineNamespace({
       toastBody: "{{name}} — {{total}}. Tap Orders to view it.",
       viewOrders: "View orders",
       newBadge: "new",
+      bannerTitle: "New orders",
+      bannerBody: "You have {{count}} new order alert(s).",
+      markRead: "Mark as read",
     },
     status: {
       novo: "New",
@@ -115,6 +131,7 @@ export const orders = defineNamespace({
       pronto: "Ready",
       finalizado: "Completed",
       cancelado: "Canceled",
+      test: "Test",
     },
     shipping: {
       melhorEnvio: "📦 Shipping (Correios and carriers)",
@@ -153,6 +170,15 @@ export const orders = defineNamespace({
       generateLabel: "Generate label",
       track: "Track",
       printLabel: "Print label",
+      markTest: "Mark as test",
+      unmarkTest: "Unmark test",
+      deleteTest: "Delete test order",
+      confirmDeleteTest:
+        "Delete this test order? Its amount will be removed from total sales. This cannot be undone.",
+      marked: "Order marked as test.",
+      unmarked: "Order unmarked as test.",
+      deleted: "Test order deleted. The total was updated.",
+      deleteError: "Could not delete this order. Make sure it is marked as test and had no real charge.",
     },
     toast: {
       connectFirst: "Connect your store to Melhor Envio first.",
@@ -190,6 +216,9 @@ export const orders = defineNamespace({
       toastBody: "{{name}} — {{total}}. Toca Pedidos para verlo.",
       viewOrders: "Ver pedidos",
       newBadge: "nuevo",
+      bannerTitle: "Nuevos pedidos",
+      bannerBody: "Tienes {{count}} aviso(s) de nuevos pedidos.",
+      markRead: "Marcar como leídos",
     },
     status: {
       novo: "Nuevo",
@@ -198,6 +227,7 @@ export const orders = defineNamespace({
       pronto: "Listo",
       finalizado: "Finalizado",
       cancelado: "Cancelado",
+      test: "Teste",
     },
     shipping: {
       melhorEnvio: "📦 Envío (Correios y transportistas)",
@@ -236,6 +266,15 @@ export const orders = defineNamespace({
       generateLabel: "Generar etiqueta",
       track: "Rastrear",
       printLabel: "Imprimir etiqueta",
+      markTest: "Marcar como prueba",
+      unmarkTest: "Desmarcar prueba",
+      deleteTest: "Eliminar pedido de prueba",
+      confirmDeleteTest:
+        "¿Eliminar este pedido de prueba? Su valor se quitará del total de ventas. Esta acción no se puede deshacer.",
+      marked: "Pedido marcado como prueba.",
+      unmarked: "Pedido desmarcado como prueba.",
+      deleted: "Pedido de prueba eliminado. El total se actualizó.",
+      deleteError: "No se pudo eliminar este pedido. Verifica que esté marcado como prueba y sin cobro real.",
     },
     toast: {
       connectFirst: "Conecta tu tienda a Melhor Envio primero.",

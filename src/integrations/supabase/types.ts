@@ -946,6 +946,7 @@ export type Database = {
           customer_street: string | null
           delivery_method: string | null
           id: string
+          is_test_order: boolean
           items: Json
           me_agency_id: string | null
           me_label_id: string | null
@@ -988,6 +989,7 @@ export type Database = {
           customer_street?: string | null
           delivery_method?: string | null
           id?: string
+          is_test_order?: boolean
           items?: Json
           me_agency_id?: string | null
           me_label_id?: string | null
@@ -1030,6 +1032,7 @@ export type Database = {
           customer_street?: string | null
           delivery_method?: string | null
           id?: string
+          is_test_order?: boolean
           items?: Json
           me_agency_id?: string | null
           me_label_id?: string | null

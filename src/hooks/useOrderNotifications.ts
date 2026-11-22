@@ -10,11 +10,31 @@ import { useMyCatalog } from "@/hooks/useCatalog";
 import { useI18n } from "@/i18n";
 import { formatMoney, resolveOrderCurrency } from "@/lib/currency";
 
-/** Evita dois toasts iguais (layout + tela de pedidos assinam o mesmo canal). */
-const announcedOrders = new Set<string>();
+/**
+ * Dedupe entre as duas instâncias do hook (layout + tela de pedidos).
+ * Com expiração: um recarregamento posterior volta a avisar.
+ */
+const announcedAt = new Map<string, number>();
+const ANNOUNCE_TTL_MS = 60_000;
+
+function shouldAnnounce(orderId: string): boolean {
+  const now = Date.now();
+  const last = announcedAt.get(orderId) ?? 0;
+  if (now - last < ANNOUNCE_TTL_MS) return false;
+  announcedAt.set(orderId, now);
+  if (announcedAt.size > 200) {
+    for (const [id, at] of announcedAt) {
+      if (now - at > ANNOUNCE_TTL_MS) announcedAt.delete(id);
+    }
+  }
+  return true;
+}
+
+const TOAST_WINDOW_MS = 30 * 60 * 1000;
 
 export type SellerOrderNotification = {
   order_id: string;
+  catalog_id: string;
   customer_name: string | null;
   total: number | null;
   currency: string | null;
@@ -36,7 +56,7 @@ export function useOrderNotifications() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("seller_order_notifications")
-        .select("order_id,customer_name,total,currency,created_at,read_at")
+        .select("order_id,catalog_id,customer_name,total,currency,created_at,read_at")
         .eq("catalog_id", catalogId!)
         .is("read_at", null)
         .order("created_at", { ascending: false })
@@ -45,6 +65,35 @@ export function useOrderNotifications() {
       return (data ?? []) as unknown as SellerOrderNotification[];
     },
   });
+
+  const announce = useCallback(
+    (row: Partial<SellerOrderNotification>) => {
+      if (row.catalog_id && catalogId && String(row.catalog_id) !== catalogId) return;
+      const orderId = String(row.order_id ?? "");
+      if (!orderId || !shouldAnnounce(orderId)) return;
+      const name = String(row.customer_name ?? t("orders.notification.newBadge"));
+      const total = formatMoney(
+        Number(row.total) || 0,
+        resolveOrderCurrency(row.currency ?? null),
+      );
+      toast(t("orders.notification.toastTitle"), {
+        description: t("orders.notification.toastBody", { name, total }),
+        duration: 12000,
+      });
+    },
+    [catalogId, t],
+  );
+
+  // Também avisa quando o pedido já estava na fila antes da inscrição no Realtime
+  // (recarregou a página, ou a aba estava fechada quando o pedido chegou).
+  useEffect(() => {
+    if (!notifications?.length) return;
+    const now = Date.now();
+    for (const row of notifications) {
+      const age = now - new Date(row.created_at).getTime();
+      if (Number.isFinite(age) && age >= 0 && age <= TOAST_WINDOW_MS) announce(row);
+    }
+  }, [notifications, announce]);
 
   useEffect(() => {
     if (!catalogId) return;
@@ -60,23 +109,12 @@ export function useOrderNotifications() {
           event: "INSERT",
           schema: "public",
           table: "seller_order_notifications",
-          filter: `catalog_id=eq.${catalogId}`,
+          // Sem filtro: o filtro por catalog_id é rejeitado para alguns papéis
+          // pelo Realtime; o próprio callback filtra pelo catálogo da loja.
         },
         (payload) => {
           refresh();
-          const row = (payload.new ?? {}) as Partial<SellerOrderNotification>;
-          const orderId = String(row.order_id ?? "");
-          if (orderId && announcedOrders.has(orderId)) return;
-          if (orderId) announcedOrders.add(orderId);
-          const name = String(row.customer_name ?? t("orders.notification.newBadge"));
-          const total = formatMoney(
-            Number(row.total) || 0,
-            resolveOrderCurrency(row.currency ?? null),
-          );
-          toast(t("orders.notification.toastTitle"), {
-            description: t("orders.notification.toastBody", { name, total }),
-            duration: 12000,
-          });
+          announce((payload.new ?? {}) as Partial<SellerOrderNotification>);
         },
       )
       .on(
@@ -85,16 +123,23 @@ export function useOrderNotifications() {
           event: "UPDATE",
           schema: "public",
           table: "seller_order_notifications",
-          filter: `catalog_id=eq.${catalogId}`,
         },
-        refresh,
+        (payload) => {
+          const row = (payload.new ?? {}) as Partial<SellerOrderNotification>;
+          if (row.catalog_id && String(row.catalog_id) !== catalogId) return;
+          refresh();
+        },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") {
+          console.warn("[notificações] status do realtime:", status);
+        }
+      });
 
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [catalogId, queryClient, t]);
+  }, [catalogId, queryClient, announce]);
 
   const unreadCount = notifications?.length ?? 0;
 

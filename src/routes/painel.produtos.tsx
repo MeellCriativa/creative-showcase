@@ -26,6 +26,7 @@ import { type PriceOption, type Product, type VariationGroup } from "@/lib/catal
 import { writeToClipboard } from "@/lib/clipboard";
 import { formatMoney, getCurrencySymbol, resolveStoreCurrency } from "@/lib/currency";
 import { normalizeDecimalInput, parseDecimalInput } from "@/lib/decimalInput";
+import { isValidExternalUrl } from "@/lib/checkoutConfig";
 import { buildProductCheckoutUrl } from "@/lib/productLinks";
 import {
   formatFileSize,
@@ -493,21 +494,15 @@ function ProductEditor({
     let externalUrl: string | null = null;
     if (isLinkMode) {
       const candidate = draft.digital_external_url.trim();
-      let valid = false;
-      try {
-        const parsed = new URL(candidate);
-        valid = parsed.protocol === "https:" && Boolean(parsed.hostname);
-      } catch {
-        valid = false;
-      }
-      if (!valid) {
+      if (!isValidExternalUrl(candidate)) {
         toast.error(t("products.digital.externalInvalid"));
         return;
       }
       externalUrl = candidate;
     }
     setSaving(true);
-    const payload = {
+    try {
+      const payload = {
       catalog_id: catalogId,
       name: draft.name.trim(),
       description: draft.description.trim() || null,
@@ -548,19 +543,26 @@ function ProductEditor({
       width_cm: isPhysical && draft.width_cm ? Number(draft.width_cm.replace(",", ".")) : null,
       height_cm: isPhysical && draft.height_cm ? Number(draft.height_cm.replace(",", ".")) : null,
     };
-    const { error } = draft.id
-      ? await supabase
-          .from("products")
-          .update(payload as any)
-          .eq("id", draft.id)
-      : await supabase.from("products").insert({ ...payload, position: nextPosition } as any);
-    setSaving(false);
-    if (error) {
+      const { error } = draft.id
+        ? await supabase
+            .from("products")
+            .update(payload as any)
+            .eq("id", draft.id)
+        : await supabase.from("products").insert({ ...payload, position: nextPosition } as any);
+      if (error) {
+        console.error("[produtos] falha ao salvar:", error);
+        toast.error(t("products.errors.saveFailed"));
+        return;
+      }
+      toast.success(t("products.saved"));
+      onSaved();
+    } catch (error) {
+      // Nunca deixa a exceção escapar: o Start/Worker converteria em página de erro.
+      console.error("[produtos] erro inesperado ao salvar:", error);
       toast.error(t("products.errors.saveFailed"));
-      return;
+    } finally {
+      setSaving(false);
     }
-    toast.success(t("products.saved"));
-    onSaved();
   }
 
   return (
@@ -932,8 +934,10 @@ function ProductEditor({
                     {t("products.digital.externalHint")}
                   </p>
                   <input
-                    type="url"
+                    type="text"
                     inputMode="url"
+                    autoCapitalize="off"
+                    autoCorrect="off"
                     placeholder={t("products.digital.externalPlaceholder")}
                     value={draft.digital_external_url}
                     onChange={(e) => set("digital_external_url", e.target.value)}

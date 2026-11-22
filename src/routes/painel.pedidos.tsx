@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -40,7 +40,9 @@ type OrderRow = {
   customer_phone: string | null;
   customer_email?: string | null;
   payment_status?: string | null;
+  payment_provider?: string | null;
   payment_method?: string | null;
+  is_test_order?: boolean | null;
   pix_declared_at?: string | null;
   pix_confirmed_at?: string | null;
   items: OrderItem[];
@@ -117,13 +119,9 @@ function PedidosPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: catalog } = useMyCatalog(user?.id);
-  const { unreadCount, markAllAsRead } = useOrderNotifications();
+  const { notifications, unreadCount, markAllAsRead } = useOrderNotifications();
   const [filter, setFilter] = useState<Filter>("todos");
-
-  // Abrir a tela de pedidos já baixa o aviso de "novo" e atualiza a lista.
-  useEffect(() => {
-    if (catalog && unreadCount > 0) void markAllAsRead();
-  }, [catalog, unreadCount]);
+  const [markingRead, setMarkingRead] = useState(false);
 
   const { data: orders, isLoading } = useQuery<OrderRow[]>({
     queryKey: ["orders", catalog?.id],
@@ -187,6 +185,34 @@ function PedidosPage() {
     <div className="px-5 pb-10 pt-10">
       <h1 className="text-2xl font-bold text-foreground">{t("orders.title")}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{t("orders.subtitle")}</p>
+
+      {unreadCount > 0 && (
+        <div className="mt-4 rounded-2xl border border-primary/30 bg-primary/10 p-4">
+          <p className="text-sm font-semibold text-foreground">
+            🎉 {t("orders.notification.bannerTitle")}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("orders.notification.bannerBody", { count: unreadCount })}
+          </p>
+          {notifications[0] && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {notifications[0].customer_name || t("orders.notification.newBadge")}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={markingRead}
+            onClick={async () => {
+              setMarkingRead(true);
+              await markAllAsRead();
+              setMarkingRead(false);
+            }}
+            className="mt-3 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {markingRead ? "…" : t("orders.notification.markRead")}
+          </button>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label={t("orders.stats.today")} value={String(todayCount)} />
@@ -286,8 +312,57 @@ function OrderCard({
   const [meBusy, setMeBusy] = useState<string | null>(null);
   const [deliveryBusy, setDeliveryBusy] = useState<string | null>(null);
   const [pixBusy, setPixBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
+  const cardQueryClient = useQueryClient();
 
   const isMeShipping = order.delivery_method === "melhor_envio";
+
+  async function toggleTest() {
+    if (testBusy) return;
+    setTestBusy(true);
+    try {
+      const next = !order.is_test_order;
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_test_order: next })
+        .eq("id", order.id);
+      if (error) {
+        toast.error(error.message || t("orders.actions.deleteError"));
+        return;
+      }
+      toast.success(next ? t("orders.actions.marked") : t("orders.actions.unmarked"));
+      await cardQueryClient.invalidateQueries({ queryKey: ["orders", order.catalog_id] });
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
+  async function deleteTest() {
+    if (testBusy) return;
+    if (!window.confirm(t("orders.actions.confirmDeleteTest"))) return;
+    setTestBusy(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", order.id)
+        .eq("catalog_id", order.catalog_id);
+      if (error) {
+        console.error("[pedidos] falha ao excluir pedido de teste:", error);
+        toast.error(t("orders.actions.deleteError"));
+        return;
+      }
+      toast.success(t("orders.actions.deleted"));
+      await Promise.all([
+        cardQueryClient.invalidateQueries({ queryKey: ["orders", order.catalog_id] }),
+        cardQueryClient.invalidateQueries({
+          queryKey: ["seller-order-notifications", order.catalog_id],
+        }),
+      ]);
+    } finally {
+      setTestBusy(false);
+    }
+  }
 
   async function runDelivery(action: DeliveryAction, deliveryId: string) {
     setDeliveryBusy(`${action}:${deliveryId}`);
@@ -452,11 +527,18 @@ function OrderCard({
             <p className="text-xs text-muted-foreground">{order.customer_phone}</p>
           )}
         </div>
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[order.status] ?? "bg-muted text-muted-foreground"}`}
-        >
-          {statusLabelKey ? t(statusLabelKey) : order.status}
-        </span>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {order.is_test_order && (
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+              {t("orders.status.test")}
+            </span>
+          )}
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[order.status] ?? "bg-muted text-muted-foreground"}`}
+          >
+            {statusLabelKey ? t(statusLabelKey) : order.status}
+          </span>
+        </div>
       </div>
 
       {order.payment_method === "pix_manual" && (
@@ -723,6 +805,27 @@ function OrderCard({
             );
           })}
         </select>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={testBusy}
+          onClick={() => void toggleTest()}
+          className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted-foreground disabled:opacity-50"
+        >
+          {order.is_test_order ? t("orders.actions.unmarkTest") : t("orders.actions.markTest")}
+        </button>
+        {order.is_test_order && (
+          <button
+            type="button"
+            disabled={testBusy}
+            onClick={() => void deleteTest()}
+            className="rounded-xl bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive disabled:opacity-50"
+          >
+            {t("orders.actions.deleteTest")}
+          </button>
+        )}
       </div>
     </div>
   );

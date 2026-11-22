@@ -121,9 +121,16 @@ export function parseCheckoutConfig(raw: unknown): CheckoutConfig {
   return defaultCheckoutConfig(raw as Partial<CheckoutConfig>);
 }
 
+/**
+ * Validação única do link do entregável.
+ * Exige `https://` também no começo do texto para casar com a constraint
+ * `products_digital_link_requires_https` do banco (regex `^https://`, case-insensitive).
+ */
 export function isValidExternalUrl(value: string): boolean {
+  const candidate = value.trim();
+  if (!/^https:\/\/\S+$/i.test(candidate)) return false;
   try {
-    const url = new URL(value.trim());
+    const url = new URL(candidate);
     return url.protocol === "https:" && Boolean(url.hostname);
   } catch {
     return false;
