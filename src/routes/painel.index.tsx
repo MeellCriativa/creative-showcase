@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog, useProducts } from "@/hooks/useCatalog";
+import { useUnreadOrderCount } from "@/hooks/useOrderNotifications";
 import {
   normalizeWhatsappNumber,
   slugify,
@@ -51,6 +52,7 @@ function PainelHome() {
   const queryClient = useQueryClient();
   const { data: catalog, isLoading } = useMyCatalog(user?.id);
   const { data: products } = useProducts(catalog?.id);
+  const unreadOrders = useUnreadOrderCount();
   const { t } = useI18n();
 
   const [storeName, setStoreName] = useState("");
@@ -657,6 +659,8 @@ function PainelHome() {
           icon={ClipboardList}
           title={t("panel.nav.orders")}
           text={t("panel.dashboard.ordersText")}
+          badge={unreadOrders}
+          badgeLabel={t("orders.notification.newBadge")}
         />
         <ShortcutLink
           to="/painel/categorias"
@@ -735,19 +739,31 @@ function ShortcutLink({
   icon: Icon,
   title,
   text,
+  badge = 0,
+  badgeLabel,
 }: {
   to: string;
   icon: typeof Package;
   title: string;
   text: string;
+  badge?: number;
+  badgeLabel?: string;
 }) {
   return (
     <Link
       to={to}
       className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4"
     >
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
+      <span className="relative grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
         <Icon className="size-5" />
+        {badge > 0 && (
+          <span
+            className="absolute -right-1.5 -top-1.5 grid min-w-[18px] place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold leading-[18px] text-destructive-foreground shadow-sm"
+            aria-label={`${badge} ${badgeLabel ?? ""}`.trim()}
+          >
+            {badge > 9 ? "9+" : badge}
+          </span>
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block font-semibold text-foreground">{title}</span>

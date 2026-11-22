@@ -75,3 +75,25 @@ test("toda criação de pedido dispara a notificação e o painel ouve a tabela"
   assert.match(sql, /add table public\.seller_order_notifications/);
   assert.match(panel, /postgres_changes/);
 });
+
+test("contador de não lidos aparece no atalho e na tela de Pedidos", () => {
+  const dashboard = read("src/routes/painel.index.tsx");
+  const ordersPage = read("src/routes/painel.pedidos.tsx");
+  const hook = read("src/hooks/useOrderNotifications.ts");
+
+  // O atalho "Pedidos" do painel exibe o mesmo contador do ícone inferior.
+  assert.match(dashboard, /useUnreadOrderCount\(\)/);
+  assert.match(dashboard, /to="\/painel\/pedidos"[\s\S]{0,200}badge=\{unreadOrders\}/);
+  assert.match(dashboard, /bg-destructive/);
+  assert.match(dashboard, /badge > 0 && \(/);
+
+  // E a própria tela de Pedidos também mostra o número em vermelho no título.
+  assert.match(ordersPage, /\{unreadCount > 0 && \([\s\S]{0,400}bg-destructive/);
+  assert.match(ordersPage, /t\("orders\.notification\.newBadge"\)/);
+
+  // O atalho só lê o cache: não cria outro canal Realtime (causa do erro anterior).
+  assert.match(hook, /export function useUnreadOrderCount/);
+  assert.match(hook, /enabled: false,/);
+  const countHook = hook.slice(hook.indexOf("export function useUnreadOrderCount"));
+  assert.doesNotMatch(countHook, /\.channel\(/);
+});

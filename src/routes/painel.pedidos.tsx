@@ -183,7 +183,17 @@ function PedidosPage() {
 
   return (
     <div className="px-5 pb-10 pt-10">
-      <h1 className="text-2xl font-bold text-foreground">{t("orders.title")}</h1>
+      <h1 className="flex items-center gap-2 text-2xl font-bold text-foreground">
+        {t("orders.title")}
+        {unreadCount > 0 && (
+          <span
+            className="grid min-w-[22px] place-items-center rounded-full bg-destructive px-1.5 py-0.5 text-xs font-bold text-destructive-foreground"
+            aria-label={`${unreadCount} ${t("orders.notification.newBadge")}`}
+          >
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </h1>
       <p className="mt-1 text-sm text-muted-foreground">{t("orders.subtitle")}</p>
 
       {unreadCount > 0 && (

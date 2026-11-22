@@ -170,3 +170,17 @@ export function useOrderNotifications() {
 
   return { notifications: notifications ?? [], unreadCount, markAllAsRead };
 }
+
+/**
+ * Só a contagem para atalhos/cards do painel. Lê o cache da mesma query da hook
+ * principal — não abre outro canal Realtime nem repete o toast de novo pedido.
+ */
+export function useUnreadOrderCount() {
+  const { user } = useAuth();
+  const { data: catalog } = useMyCatalog(user?.id);
+  const { data } = useQuery<SellerOrderNotification[]>({
+    queryKey: ["seller-order-notifications", catalog?.id],
+    enabled: false,
+  });
+  return data?.length ?? 0;
+}
