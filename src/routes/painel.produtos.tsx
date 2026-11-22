@@ -25,6 +25,7 @@ import { useI18n } from "@/i18n";
 import { type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
 import { writeToClipboard } from "@/lib/clipboard";
 import { formatMoney, getCurrencySymbol, resolveStoreCurrency } from "@/lib/currency";
+import { normalizeDecimalInput, parseDecimalInput } from "@/lib/decimalInput";
 import { buildProductCheckoutUrl } from "@/lib/productLinks";
 import {
   formatFileSize,
@@ -399,6 +400,8 @@ function ProductEditor({
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft({ ...draft, [key]: value });
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  /** Texto bruto dos valores das opções: preserva a vírgula enquanto o usuário digita. */
+  const [priceOptionInputs, setPriceOptionInputs] = useState<Record<string, string>>({});
 
   /** Link direto do produto (ou de uma opção de valor), já salvo no catálogo. */
   const checkoutLink = (priceOptionId?: string) =>
@@ -510,7 +513,13 @@ function ProductEditor({
       description: draft.description.trim() || null,
       price: Number(draft.price.replace(",", ".")) || 0,
       sale_price: draft.sale_price ? Number(draft.sale_price.replace(",", ".")) : null,
-      price_options: draft.price_options.filter((o) => o.label.trim() && o.price > 0),
+      price_options: draft.price_options
+        .map((o) => {
+          const raw = priceOptionInputs[o.id];
+          const price = raw == null ? o.price : parseDecimalInput(raw);
+          return { ...o, price: Number.isNaN(price) ? 0 : price };
+        })
+        .filter((o) => o.label.trim() && o.price > 0),
       category_id: draft.category_id || null,
       images: draft.images,
       variations: draft.variations.filter((v) => v.name.trim() && v.options.length),
@@ -651,13 +660,23 @@ function ProductEditor({
                   <input
                     inputMode="decimal"
                     placeholder={t("products.editor.optionPricePlaceholder")}
-                    value={opt.price === 0 ? "" : String(opt.price)}
+                    value={priceOptionInputs[opt.id] ?? (opt.price ? String(opt.price) : "")}
                     onChange={(e) => {
-                      const val = Number(e.target.value.replace(",", ".")) || 0;
+                      const raw = e.target.value;
+                      setPriceOptionInputs((current) => ({ ...current, [opt.id]: raw }));
+                      const parsed = parseDecimalInput(raw);
                       const next = draft.price_options.map((o, i) =>
-                        i === index ? { ...o, price: val } : o,
+                        i === index ? { ...o, price: Number.isNaN(parsed) ? 0 : parsed } : o,
                       );
                       set("price_options", next);
+                    }}
+                    onBlur={() => {
+                      const raw = priceOptionInputs[opt.id];
+                      if (raw == null) return;
+                      setPriceOptionInputs((current) => ({
+                        ...current,
+                        [opt.id]: normalizeDecimalInput(raw),
+                      }));
                     }}
                     className="input-base w-24 py-2 text-sm"
                   />
