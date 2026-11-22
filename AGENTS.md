@@ -53,6 +53,7 @@
   - Admin "Formas de entrega" + CEP de origem (painel.personalizar.tsx); weight/dims on product form (painel.produtos.tsx) reference Melhor Envio
 
 ### Blocked / Pending
+- **Notificação de novo pedido (22/11, commit `c8cec39`)**: e-mail ao vendedor via Brevo + toast/badge no painel em tempo real. Código, testes (573/573), Edge Functions (`payments` e `seller-order-notify`) e worker de homologação (`0a9c0788`) publicados. **Falta o usuário rodar os 4 blocos de `supabase/fixes/blocos_notificacoes_vendedor/` no SQL Editor da homologação (`ardpqimdllzbbdvwamkh`) e depois da produção (`wdcufpvlbisnqtvmbyso`)** — sem o trigger/RLS/Realtime nada é disparado. Só publicar em produção após validar um pedido de teste em homologação. Migration canônica: `supabase/migrations/20261122150000_seller_order_notifications.sql`.
 - **SQL migration applied SUCCESSFULLY** (3 parts, user-confirmed; verified all columns + `melhor_envio_accounts` table exist)
 - **Supabase CLI logged in + project `wdcufpvlbisnqtvmbyso` linked** (verified via `supabase projects list`)
 - **Front auto-freight live**: buyer types CEP → freight calculated automatically + product+freight total shown immediately (commit `270b1e5`, worker Version `9aa3c206`)
