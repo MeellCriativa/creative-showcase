@@ -178,7 +178,7 @@ export type DeliveryEmailItem = {
   kind?: "file" | "link";
 };
 
-function formatExpiry(value: string | null | undefined): string | null {
+function formatDate(value: string | null | undefined): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -190,6 +190,18 @@ function formatExpiry(value: string | null | undefined): string | null {
     }).format(date);
   } catch {
     return date.toISOString();
+  }
+}
+
+function formatMoney(value: string | number | null | undefined, currency?: string | null): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  const code = (currency || "BRL").toUpperCase();
+  try {
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: code }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${code}`.trim();
   }
 }
 
@@ -207,6 +219,9 @@ export function buildDeliveryEmail(input: {
   expiresAt?: string | null;
   items?: DeliveryEmailItem[];
   supportUrl?: string | null;
+  orderTotal?: string | number | null;
+  currency?: string | null;
+  purchasedAt?: string | null;
 }): { subject: string; html: string; text: string } {
   const store = escapeHtml(input.storeName || "Vitrine Criativa");
   const customerName = input.customerName || "cliente";
@@ -226,7 +241,7 @@ export function buildDeliveryEmail(input: {
     .map((item, index) => {
       const product = escapeHtml(item.productName || "produto digital");
       const htmlUrl = escapeHtml(String(item.downloadUrl ?? ""));
-      const expiry = formatExpiry(item.expiresAt);
+      const expiry = formatDate(item.expiresAt);
       const isLink = item.kind === "link";
       const actionLabel = isLink ? "Acessar produto" : "Baixar arquivo";
       const label = items.length > 1 ? `${index + 1}. ${product}` : product;
@@ -249,6 +264,20 @@ export function buildDeliveryEmail(input: {
     ? `<p style="margin:16px 0 0;text-align:center;font-size:12px;color:#8b839a">Precisa de ajuda? <a href="${escapeHtml(input.supportUrl)}" style="color:#8b5cf6">Fale com a loja</a>.</p>`
     : `<p style="margin:16px 0 0;text-align:center;font-size:12px;color:#8b839a">Precisa de ajuda? Responda a este e-mail.</p>`;
 
+  const purchasedAt = formatDate(input.purchasedAt);
+  const total = formatMoney(input.orderTotal, input.currency);
+  const summaryRows = [
+    `<p style="margin:0 0 6px;font-size:13px;line-height:1.6;color:#4b3f63"><strong>Cliente:</strong> ${customer}</p>`,
+    purchasedAt
+      ? `<p style="margin:0 0 6px;font-size:13px;line-height:1.6;color:#4b3f63"><strong>Data da compra:</strong> ${escapeHtml(purchasedAt)}</p>`
+      : "",
+    total
+      ? `<p style="margin:0 0 6px;font-size:13px;line-height:1.6;color:#4b3f63"><strong>Valor da compra:</strong> ${escapeHtml(total)}</p>`
+      : "",
+    `<p style="margin:0;font-size:13px;line-height:1.6;color:#4b3f63"><strong>Loja:</strong> ${store}</p>`,
+  ].filter(Boolean).join("");
+  const summary = `<div style="margin:0 0 22px;padding:14px 16px;border-radius:12px;background:#faf9fd;border:1px solid #eee9f5">${summaryRows}</div>`;
+
   const html = `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Compra confirmada</title></head>
 <body style="margin:0;padding:0;background:#f6f4fa;font-family:Arial,Helvetica,sans-serif;color:#2f2a3a">
@@ -262,6 +291,7 @@ export function buildDeliveryEmail(input: {
         <tr><td style="padding:30px 28px 8px">
           <p style="margin:0 0 16px;font-size:16px">Olá, <strong>${customer}</strong>!</p>
           <p style="margin:0 0 22px;font-size:15px;line-height:1.6">Sua compra foi <strong>aprovada</strong>${items.length ? " e seus arquivos digitais estão prontos para download" : ""}.</p>
+          ${summary}
           ${blocks}
           <p style="margin:8px 0 0;font-size:13px;line-height:1.6;color:#6d657c">Os links são pessoais, temporários e possuem limite de downloads. Guarde este e-mail até concluir. Não o compartilhe.</p>
           <p style="margin:14px 0 0;font-size:13px;color:#6d657c">Obrigado por comprar na <strong>${store}</strong>!</p>
@@ -279,9 +309,14 @@ export function buildDeliveryEmail(input: {
     `Olá, ${customerName}!`,
     "Sua compra foi aprovada e seus arquivos digitais estão prontos para download.",
     "",
+    `Cliente: ${customerName}`,
+    `Loja: ${input.storeName || "Vitrine Criativa"}`,
   ];
+  if (purchasedAt) textLines.push(`Data da compra: ${purchasedAt}`);
+  if (total) textLines.push(`Valor da compra: ${total}`);
+  textLines.push("");
   items.forEach((item, index) => {
-    const expiry = formatExpiry(item.expiresAt);
+    const expiry = formatDate(item.expiresAt);
     textLines.push(`${items.length > 1 ? `${index + 1}. ` : ""}Produto: ${item.productName || "produto digital"}`);
     textLines.push(`${item.kind === "link" ? "Acesse seu produto" : "Baixe seu arquivo"}: ${item.downloadUrl}`);
     if (expiry) textLines.push(`Válido até: ${expiry}`);

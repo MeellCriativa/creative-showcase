@@ -1625,7 +1625,7 @@ function ProductSheet({
               style={{ color: checkoutConfig.guarantee.color, borderColor: checkoutConfig.guarantee.color }}
             >
               🛡 {checkoutConfig.guarantee.text} · {checkoutConfig.guarantee.days}{" "}
-              {t("checkoutEditor.guarantee.days").toLowerCase()}
+              {t("checkoutEditor.guarantee.daysSuffix")}
             </p>
           )}
 

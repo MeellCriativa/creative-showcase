@@ -321,7 +321,7 @@ async function rebuildBundleForLinks(
   const admin = adminClient();
   const { data: order } = await admin
     .from("orders")
-    .select("customer_name, catalog_id")
+    .select("customer_name, catalog_id, total, currency, created_at")
     .eq("id", orderId)
     .maybeSingle();
   const row = order as Record<string, unknown> | null;
@@ -329,6 +329,9 @@ async function rebuildBundleForLinks(
   const message = buildDeliveryEmail({
     storeName: catalog?.store_name ?? "Vitrine Criativa",
     customerName: String(row?.customer_name ?? "cliente"),
+    orderTotal: row?.total as string | number | null | undefined,
+    currency: row?.currency as string | null | undefined,
+    purchasedAt: row?.created_at as string | null | undefined,
     items: links.map((link) => ({
       productName: link.productName,
       downloadUrl: buildDownloadUrl(functionBase, link.rawToken),
@@ -363,7 +366,7 @@ export async function deliverDigitalOrder(
 
   const { data: order, error: orderError } = await admin
     .from("orders")
-    .select("id, catalog_id, customer_name, customer_email, payment_status, items")
+    .select("id, catalog_id, customer_name, customer_email, payment_status, items, total, currency, created_at")
     .eq("id", orderId)
     .maybeSingle();
   if (orderError || !order) {
@@ -519,6 +522,9 @@ export async function deliverDigitalOrder(
     const message = buildDeliveryEmail({
       storeName: catalog?.store_name ?? "Vitrine Criativa",
       customerName: String(record.customer_name ?? "cliente"),
+      orderTotal: record.total as string | number | null | undefined,
+      currency: record.currency as string | null | undefined,
+      purchasedAt: record.created_at as string | null | undefined,
       items: emailItems,
       supportUrl: supportLink(catalog),
     });
@@ -680,7 +686,7 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
 
   const { data: regenOrder } = await admin
     .from("orders")
-    .select("customer_name")
+    .select("customer_name, total, currency, created_at")
     .eq("id", delivery.order_id)
     .maybeSingle();
 
@@ -742,9 +748,13 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
     };
     const links = [...kept, newLink];
     const catalog = await getCatalog(delivery.catalog_id);
+    const regenRow = regenOrder as Record<string, unknown> | null;
     const message = buildDeliveryEmail({
       storeName: catalog?.store_name ?? "Vitrine Criativa",
-      customerName: String((regenOrder as Record<string, unknown> | null)?.customer_name ?? "cliente"),
+      customerName: String(regenRow?.customer_name ?? "cliente"),
+      orderTotal: regenRow?.total as string | number | null | undefined,
+      currency: regenRow?.currency as string | null | undefined,
+      purchasedAt: regenRow?.created_at as string | null | undefined,
       items: links.map((link) => ({
         productName: link.productName,
         downloadUrl: buildDownloadUrl(cfg.functionBase, link.rawToken),

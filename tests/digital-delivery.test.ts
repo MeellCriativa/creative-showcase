@@ -234,6 +234,25 @@ test("painel expõe data de aprovação oficial, status e tentativas", () => {
   assert.match(panel, /orders\.digital\.revoke/);
 });
 
+test("resumo da compra traz cliente, data, valor e loja", () => {
+  const message = buildDeliveryEmail({
+    storeName: "Loja da Ana",
+    customerName: "Maria & João",
+    orderTotal: 123.4,
+    currency: "BRL",
+    purchasedAt: "2026-11-22T03:00:00Z",
+    productName: "Apostila",
+    downloadUrl: "https://exemplo/delivery?token=AAA",
+  });
+  assert.match(message.html, /<strong>Cliente:<\/strong> Maria &amp; João/);
+  assert.match(message.html, /<strong>Data da compra:<\/strong>/);
+  assert.match(message.html, /<strong>Valor da compra:<\/strong> R\$\s?123,40/);
+  assert.match(message.html, /<strong>Loja:<\/strong> Loja da Ana/);
+  assert.match(message.text, /Cliente: Maria & João/);
+  assert.match(message.text, /Loja: Loja da Ana/);
+  assert.match(message.text, /Valor da compra: R\$\s?123,40/);
+});
+
 test("um único e-mail de compra confirmada reúne todos os produtos e prazos", () => {
   const message = buildDeliveryEmail({
     storeName: "Loja Teste",

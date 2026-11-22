@@ -342,7 +342,7 @@ export function CheckoutDesignEditor({ product, catalogId, storeName, currency, 
                   )}
                   {config.guarantee.enabled && (
                     <p className="rounded-lg px-2 py-1 text-center text-xs" style={{ color: config.guarantee.color }}>
-                      🛡 {config.guarantee.text} · {config.guarantee.days} {t("checkoutEditor.guarantee.days").toLowerCase()}
+                      🛡 {config.guarantee.text} · {config.guarantee.days} {t("checkoutEditor.guarantee.daysSuffix")}
                     </p>
                   )}
                   <div
