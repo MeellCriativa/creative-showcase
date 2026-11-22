@@ -76,6 +76,21 @@ test("toda criação de pedido dispara a notificação e o painel ouve a tabela"
   assert.match(panel, /postgres_changes/);
 });
 
+test("toast de novo pedido tem botão para fechar no lado direito", () => {
+  const panel = read("src/hooks/useOrderNotifications.ts");
+  const toaster = read("src/components/ui/sonner.tsx");
+
+  assert.match(
+    panel,
+    /toast\(t\("orders\.notification\.toastTitle"\)[\s\S]{0,300}closeButton: true/,
+  );
+  assert.match(toaster, /closeButtonAriaLabel: t\("common\.close"\)/);
+  assert.match(toaster, /closeButton: "text-muted-foreground hover:text-foreground"/);
+  assert.match(toaster, /"--toast-close-button-start": "auto"/);
+  assert.match(toaster, /"--toast-close-button-end": "0"/);
+  assert.match(toaster, /"--toast-close-button-transform": "translate\(35%, -35%\)"/);
+});
+
 test("contador de não lidos aparece no atalho e na tela de Pedidos", () => {
   const dashboard = read("src/routes/painel.index.tsx");
   const ordersPage = read("src/routes/painel.pedidos.tsx");

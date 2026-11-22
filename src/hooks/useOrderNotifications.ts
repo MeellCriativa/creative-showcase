@@ -82,6 +82,7 @@ export function useOrderNotifications() {
       toast(t("orders.notification.toastTitle"), {
         description: t("orders.notification.toastBody", { name, total }),
         duration: 12000,
+        closeButton: true,
       });
     },
     [catalogId, t],
