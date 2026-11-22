@@ -84,24 +84,49 @@ const CREDENTIALS: ProviderCredentials = {
 };
 
 /* ────────────────────────────────────────────────────────────────────────────
- * M1 — decisão registrada: sem PKCE; state/nonce e assinatura de webhook
+ * PKCE — challenge na autorização, verifier cifrado na troca do código
  * ──────────────────────────────────────────────────────────────────────────── */
 
-test("M1: PKCE permanece fora do escopo — sem challenge/verifier no fluxo", async () => {
+const RFC_VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+const RFC_CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+
+test("PKCE: autorização contém challenge S256 e preserva os parâmetros atuais", async () => {
   const env = {
     MP_CLIENT_ID: "app-id",
     MP_CLIENT_SECRET: "app-secret",
     PAYMENT_STATE_SECRET: STATE_SECRET,
   };
   await withEnv(env, async () => {
+    const redirectUri = "https://projeto.supabase.co/functions/v1/payments-callback";
     const url = await mercadopagoProvider.buildAuthorizeUrl({
       state: "state-valido",
-      redirectUri: "https://projeto.supabase.co/functions/v1/payments-callback",
+      redirectUri,
+      siteId: "mlb",
+      codeChallenge: RFC_CHALLENGE,
+      codeChallengeMethod: "S256",
     });
-    assert.doesNotMatch(url, /code_challenge/);
-    assert.doesNotMatch(url, /code_challenge_method/);
-    assert.doesNotMatch(url, /[?&]scope=/);
+    const parsed = new URL(url);
+    assert.equal(parsed.searchParams.get("client_id"), "app-id");
+    assert.equal(parsed.searchParams.get("response_type"), "code");
+    assert.equal(parsed.searchParams.get("platform_id"), "mp");
+    assert.equal(parsed.searchParams.get("state"), "state-valido");
+    assert.equal(parsed.searchParams.get("redirect_uri"), redirectUri);
+    assert.equal(parsed.searchParams.get("site_id"), "MLB");
+    assert.equal(parsed.searchParams.get("code_challenge"), RFC_CHALLENGE);
+    assert.equal(parsed.searchParams.get("code_challenge_method"), "S256");
+    assert.equal(parsed.searchParams.has("code_verifier"), false, "verifier nunca vai na URL");
+    assert.equal(parsed.searchParams.has("scope"), false);
 
+    await assert.rejects(
+      () => mercadopagoProvider.buildAuthorizeUrl({ state: "s", redirectUri }),
+      /pkce_challenge_invalid/,
+    );
+  });
+});
+
+test("PKCE: troca de código envia o verifier e falha fechado sem ele", async () => {
+  const env = { MP_CLIENT_ID: "app-id", MP_CLIENT_SECRET: "app-secret" };
+  await withEnv(env, async () => {
     let tokenBody: Record<string, unknown> | null = null;
     await withFetch(async (input, init) => {
       const target = String(input);
@@ -117,28 +142,34 @@ test("M1: PKCE permanece fora do escopo — sem challenge/verifier no fluxo", as
       await mercadopagoProvider.completeAuthorization({
         query: { code: "codigo" },
         redirectUri: "https://projeto.supabase.co/functions/v1/payments-callback",
+        codeVerifier: RFC_VERIFIER,
       });
     });
     assert.ok(tokenBody);
-    assert.equal((tokenBody as Record<string, unknown>).code_verifier, undefined);
+    const body = tokenBody as Record<string, unknown>;
+    assert.equal(body.code_verifier, RFC_VERIFIER);
+    assert.equal(body.grant_type, "authorization_code");
+    assert.equal(body.code, "codigo");
 
-    // Comentários explicam a decisão; aqui verificamos que nenhum código foi
-    // adicionado (only comments mention PKCE).
-    assert.doesNotMatch(source("supabase/functions/_shared/payments/types.ts"), /codeChallenge\?:|codeVerifier\?:/);
-    assert.doesNotMatch(
-      source("supabase/functions/_shared/payments/mercadopago.ts"),
-      /query\.set\("code_challenge"|code_verifier:\s*codeVerifier|mpPkceEnabled/,
+    await assert.rejects(
+      () => mercadopagoProvider.completeAuthorization({
+        query: { code: "codigo" }, redirectUri: "https://x/cb",
+      }),
+      /pkce_verifier_missing/,
     );
-    assert.doesNotMatch(
-      source("supabase/functions/payments/index.ts"),
-      /usePkce|codeVerifierEnc|mpPkceEnabled|pkceChallenge/,
+    await assert.rejects(
+      () => mercadopagoProvider.completeAuthorization({
+        query: { code: "codigo" }, redirectUri: "https://x/cb", codeVerifier: "curto",
+      }),
+      /pkce_verifier_invalid/,
     );
-    assert.doesNotMatch(
-      source("supabase/functions/payments-callback/index.ts"),
-      /consumeOAuthStateWithVerifier|payload\.pkce|codeVerifier:/,
-    );
-    assert.doesNotMatch(source("supabase/functions/_shared/payments/db.ts"), /code_verifier_enc/);
   });
+});
+
+test("PKCE: PayPal permanece sem challenge/verifier na integração", () => {
+  assert.doesNotMatch(source("supabase/functions/_shared/payments/paypal.ts"), /code_challenge|code_verifier/);
+  assert.match(source("supabase/functions/_shared/payments/types.ts"), /codeChallenge\?:/);
+  assert.match(source("supabase/functions/_shared/payments/types.ts"), /codeVerifier\?:/);
 });
 
 test("M1: state assinado aceita campos de ambiente/loja e continua expirando", async () => {
@@ -173,8 +204,9 @@ test("M1: nonce de uso único não pode ser reutilizado", async () => {
   assert.equal(consume("nonce-valido"), false);
   assert.equal(consume("nonce-inexistente"), false);
   const callback = source("supabase/functions/payments-callback/index.ts");
-  assert.match(callback, /consumeOAuthState\(nonce\)/);
+  assert.match(callback, /consumeOAuthStateGrant\(nonce\)/);
   assert.match(callback, /state_already_used/);
+  assert.match(callback, /pkce_verifier_missing/);
 });
 
 test("M1: assinatura de webhook MP válida/inválida é verificada localmente", async () => {
@@ -222,7 +254,9 @@ test("M2: scope ausente ou parcial nunca vira permissão concedida", async () =>
       return jsonResponse({ id: 123 });
     }, async () => {
       await assert.rejects(
-        () => mercadopagoProvider.completeAuthorization({ query: { code: "c" }, redirectUri: "https://x/cb" }),
+        () => mercadopagoProvider.completeAuthorization({
+          query: { code: "c" }, redirectUri: "https://x/cb", codeVerifier: RFC_VERIFIER,
+        }),
         /permissions_not_granted/,
       );
     });
@@ -291,9 +325,13 @@ test("M3: desconectar apaga o local e devolve o aviso de revogação", () => {
 test("M4: URL usa MLB por padrão e o site informado quando válido", async () => {
   await withEnv({ MP_CLIENT_ID: "app-id", MP_CLIENT_SECRET: "app-secret" }, async () => {
     const base = "https://auth.mercadopago.com.br/authorization";
-    const fallback = await mercadopagoProvider.buildAuthorizeUrl({ state: "s", redirectUri: "https://x/cb" });
+    const fallback = await mercadopagoProvider.buildAuthorizeUrl({
+      state: "s", redirectUri: "https://x/cb", codeChallenge: RFC_CHALLENGE,
+    });
     assert.match(fallback, /site_id=MLB/);
-    const explicit = await mercadopagoProvider.buildAuthorizeUrl({ state: "s", redirectUri: "https://x/cb", siteId: "mla" });
+    const explicit = await mercadopagoProvider.buildAuthorizeUrl({
+      state: "s", redirectUri: "https://x/cb", siteId: "mla", codeChallenge: RFC_CHALLENGE,
+    });
     assert.match(explicit, /site_id=MLA/);
     assert.ok(explicit.startsWith(base));
     assert.equal(MERCADOPAGO_SITE_CURRENCIES["MLZ"], undefined);

@@ -370,15 +370,22 @@ export async function saveOAuthState(input: {
   provider: PaymentProviderKey;
   userId: string;
   expiresAt: string;
+  /** PKCE: challenge S256 enviado na URL de autorização. */
+  codeChallenge?: string | null;
+  /** PKCE: verifier cifrado com AES-256-GCM; nunca em texto puro no banco. */
+  codeVerifierEncrypted?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = adminClient();
-  const { error } = await admin.from("payment_oauth_states").insert({
+  const row: Record<string, unknown> = {
     nonce: input.nonce,
     catalog_id: input.catalogId,
     provider: input.provider,
     user_id: input.userId,
     expires_at: input.expiresAt,
-  });
+  };
+  if (input.codeChallenge) row.code_challenge = input.codeChallenge;
+  if (input.codeVerifierEncrypted) row.code_verifier_encrypted = input.codeVerifierEncrypted;
+  const { error } = await admin.from("payment_oauth_states").insert(row);
   if (error) {
     // P11: falha precisa ser propagada. Sem o nonce gravado o callback
     // terminaria em `state_already_used` depois da autorização do vendedor.
@@ -388,7 +395,51 @@ export async function saveOAuthState(input: {
   return { ok: true };
 }
 
-/** Consome o nonce. `false` = já usado, inexistente ou expirado. */
+/** Dados ligados a uma tentativa OAuth, devolvidos no consumo atômico do nonce. */
+export type OAuthStateGrant = {
+  nonce: string;
+  catalogId: string;
+  provider: PaymentProviderKey;
+  userId: string;
+  codeChallenge: string | null;
+  codeVerifierEncrypted: string | null;
+};
+
+/**
+ * Consome o nonce e devolve os dados da tentativa (inclusive o verifier PKCE
+ * cifrado). A atualização é atômica: `consumed_at IS NULL` + `expires_at > now()`
+ * garante uso único e expiração também para o verifier.
+ */
+export async function consumeOAuthStateGrant(nonce: string): Promise<OAuthStateGrant | null> {
+  const id = String(nonce ?? "").trim();
+  if (!id) return null;
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("payment_oauth_states")
+    .update({ consumed_at: new Date().toISOString() })
+    .eq("nonce", id)
+    .is("consumed_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .select("nonce, catalog_id, provider, user_id, code_challenge, code_verifier_encrypted")
+    .maybeSingle();
+  if (error) {
+    console.error("[payments] consumeOAuthStateGrant", error.message);
+    return null;
+  }
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    nonce: String(row.nonce),
+    catalogId: String(row.catalog_id),
+    provider: row.provider as PaymentProviderKey,
+    userId: String(row.user_id),
+    codeChallenge: typeof row.code_challenge === "string" ? row.code_challenge : null,
+    codeVerifierEncrypted:
+      typeof row.code_verifier_encrypted === "string" ? row.code_verifier_encrypted : null,
+  };
+}
+
+/** Consome o nonce sem precisar do verifier (PayPal — fluxo inalterado). */
 export async function consumeOAuthState(nonce: string): Promise<boolean> {
   const id = String(nonce ?? "").trim();
   if (!id) return false;

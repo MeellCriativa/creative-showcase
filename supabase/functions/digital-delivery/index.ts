@@ -104,7 +104,20 @@ serve(async (req) => {
         action === "retry"
           ? await retryDelivery(deliveryId)
           : await regenerateDelivery(deliveryId);
-      return json({ success: result.ok && result.failed === 0, ...result });
+      const friendly: Record<string, string> = {
+        link_expired_need_new: "O link expirou ou foi revogado. Gere um novo link para reenviar.",
+        no_confirmation_email: "Não há e-mail de confirmação registrado para este pedido.",
+        send_in_progress_or_recent:
+          "Um envio já está em andamento ou foi feito agora. Aguarde alguns segundos.",
+        brevo_not_configured: "Envio de e-mail não configurado.",
+        not_found: "Entrega não encontrada.",
+        no_file: "O arquivo deste produto não está mais disponível.",
+      };
+      return json({
+        success: result.ok && result.failed === 0,
+        ...result,
+        ...(result.ok || !result.reason ? {} : { error: friendly[result.reason] ?? result.message ?? result.reason }),
+      });
     }
 
     return json({ success: false, error: "Ação inválida." }, 400);

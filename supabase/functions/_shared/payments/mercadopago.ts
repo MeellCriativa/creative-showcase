@@ -98,10 +98,10 @@ export function mpEnvironment(): "sandbox" | "production" {
 }
 
 /**
- * M1 — PKCE NÃO é implementado nesta etapa (decisão registrada no relatório).
- * O fluxo é authorization code com `state` HMAC + nonce; o aplicativo MP deve
- * permanecer com PKCE desabilitado. Um `code_challenge` sem o fluxo completo
- * do `code_verifier` quebraria a troca do código.
+ * PKCE S256 (RFC 7636) é obrigatório no OAuth do Mercado Pago em produção.
+ * O `code_challenge` vai na autorização; o `code_verifier` correspondente fica
+ * cifrado no servidor, ligado ao nonce do `state`, e é enviado apenas na troca
+ * do código por token. Nenhum dos dois valores volta ao navegador.
  */
 
 /** Escopos mínimos para criar preferência, consultar e reembolsar. */
@@ -325,28 +325,47 @@ export const mercadopagoProvider: PaymentProvider = {
     return null;
   },
 
-  async buildAuthorizeUrl({ state, redirectUri, siteId }): Promise<string> {
+  async buildAuthorizeUrl({
+    state,
+    redirectUri,
+    siteId,
+    codeChallenge,
+    codeChallengeMethod,
+  }): Promise<string> {
     const { clientId, authBase, siteId: defaultSiteId } = config();
     if (!clientId) throw new Error("MP_CLIENT_ID ausente.");
+    // Fail closed: sem challenge válido o MP recusaria a troca do código com
+    // `code_verifier is a required parameter`. Melhor falhar antes de redirecionar.
+    if (!codeChallenge || !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge)) {
+      throw new Error("pkce_challenge_invalid: challenge S256 ausente ou inválido.");
+    }
+    if (codeChallengeMethod && codeChallengeMethod !== "S256") {
+      throw new Error("pkce_challenge_invalid: método PKCE não suportado.");
+    }
     const query = new URLSearchParams({
       client_id: clientId,
       response_type: "code",
       platform_id: "mp",
       state,
       redirect_uri: redirectUri,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
       // M4: o site vem do connect (quando informado) ou do env; `/users/me`
       // continua sendo a fonte da verdade persistida no callback.
       site_id: String(siteId || defaultSiteId).toUpperCase(),
     });
-    // M1: sem PKCE — o aplicativo MP cadastrado deve permanecer com PKCE off.
     return `${authBase}/authorization?${query.toString()}`;
   },
 
-  async completeAuthorization({ query, redirectUri }): Promise<ProviderCredentials> {
+  async completeAuthorization({ query, redirectUri, codeVerifier }): Promise<ProviderCredentials> {
     const { clientId, clientSecret } = config();
     if (!clientId || !clientSecret) throw new Error("Credenciais Mercado Pago ausentes.");
     const code = String(query.code ?? "").trim();
     if (!code) throw new Error("O Mercado Pago não retornou o código de autorização.");
+    if (!codeVerifier) throw new Error("pkce_verifier_missing: verifier não associado ao state.");
+    if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(codeVerifier)) {
+      throw new Error("pkce_verifier_invalid: verifier fora do formato RFC 7636.");
+    }
 
     const res = await mpFetch("/oauth/token", {
       method: "POST",
@@ -356,6 +375,7 @@ export const mercadopagoProvider: PaymentProvider = {
         code,
         grant_type: "authorization_code",
         redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
       }),
     });
     if (!res.ok || !res.body?.access_token) {

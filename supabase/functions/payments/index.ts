@@ -52,7 +52,14 @@ import {
   providerEnvironment,
   PROVIDER_KEYS,
 } from "../_shared/payments/index.ts";
-import { signState, encryptionConfigured, sha256Hex } from "../_shared/payments/crypto.ts";
+import {
+  encryptSecret,
+  generateCodeVerifier,
+  pkceChallenge,
+  sha256Hex,
+  signState,
+  encryptionConfigured,
+} from "../_shared/payments/crypto.ts";
 import {
   EnvironmentConfigError,
   panelBaseUrl,
@@ -730,8 +737,19 @@ async function connectAction(ctx: OwnerCtx): Promise<Response> {
     }
   }
 
-  // M1: PKCE permanece desligado por decisão registrada. A proteção CSRF é o
-  // `state` assinado + nonce de uso único; não enviamos challenge/verifier.
+  // PKCE S256 (obrigatório no MP): o verifier nasce aqui, nunca sai do servidor.
+  // Fica cifrado na linha do nonce; o challenge vai assinado na URL de autorização.
+  let codeChallenge: string | undefined;
+  let codeVerifierEncrypted: string | undefined;
+  if (provider === "mercadopago") {
+    const verifier = generateCodeVerifier();
+    codeChallenge = await pkceChallenge(verifier);
+    const encrypted = await encryptSecret(verifier);
+    if (!encrypted) {
+      throw new HttpError(503, "Não foi possível proteger a autorização (PKCE).");
+    }
+    codeVerifierEncrypted = encrypted;
+  }
 
   // Nonce de uso único (auditoria M8): o `state` continua assinado e expirando,
   // mas agora também precisa existir e estar livre em `payment_oauth_states`.
@@ -753,6 +771,8 @@ async function connectAction(ctx: OwnerCtx): Promise<Response> {
     provider,
     userId: ctx.userId,
     expiresAt,
+    codeChallenge,
+    codeVerifierEncrypted,
   });
   if (!savedState.ok) {
     throw new HttpError(503, "Não foi possível iniciar a autorização. Tente novamente.");
@@ -763,6 +783,8 @@ async function connectAction(ctx: OwnerCtx): Promise<Response> {
     redirectUri: callbackUrl(),
     trackingId: `${catalog.id}-${Date.now()}`,
     siteId: requestedSiteId,
+    codeChallenge,
+    codeChallengeMethod: codeChallenge ? "S256" : undefined,
   });
 
   return jsonRes({ success: true, url: authorizeUrl, provider });

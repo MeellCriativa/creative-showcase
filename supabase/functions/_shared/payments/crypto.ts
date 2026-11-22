@@ -27,6 +27,31 @@ function fromBase64Url(value: string): Uint8Array {
   return bytes;
 }
 
+/* ── PKCE (RFC 7636, S256) ──────────────────────────────────────────────── */
+
+/**
+ * Verifier criptograficamente aleatório em base64url.
+ * 32 bytes produzem 43 caracteres; o limite superior (128) equivale a 96 bytes.
+ */
+export function generateCodeVerifier(bytes = 32): string {
+  if (!Number.isInteger(bytes) || bytes < 32 || bytes > 96) {
+    throw new Error("Tamanho de verifier PKCE fora do intervalo permitido.");
+  }
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
+}
+
+/** RFC 7636: caracteres não reservados, de 43 a 128 posições. */
+export function isValidCodeVerifier(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9\-._~]{43,128}$/.test(value);
+}
+
+/** `BASE64URL(SHA256(ASCII(verifier)))`, sem padding. */
+export async function pkceChallenge(verifier: string): Promise<string> {
+  if (!isValidCodeVerifier(verifier)) throw new Error("Verifier PKCE inválido.");
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(verifier));
+  return toBase64Url(new Uint8Array(digest));
+}
+
 /** Lê uma variável de ambiente sem quebrar quando `Deno` não existe (testes). */
 export function readEnv(name: string): string | null {
   try {

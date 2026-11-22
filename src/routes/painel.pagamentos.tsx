@@ -152,11 +152,15 @@ function PagamentosPage() {
       toast.success(t("payments.connectedToast", { provider: label }));
     } else {
       console.error("[payments] callback retornou erro:", detail);
-      toast.error(
-        detail
-          ? t("payments.connectError", { provider: label, detail })
-          : t("payments.connectFailed", { provider: label }),
-      );
+      if (detail.startsWith("pkce_")) {
+        toast.error(t("payments.pkceError", { provider: label, detail }));
+      } else {
+        toast.error(
+          detail
+            ? t("payments.connectError", { provider: label, detail })
+            : t("payments.connectFailed", { provider: label }),
+        );
+      }
     }
     if (params.get("currency_warning") === "1") {
       toast.warning(t("payments.currencyWarning"));

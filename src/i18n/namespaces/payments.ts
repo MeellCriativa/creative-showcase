@@ -48,6 +48,8 @@ export const payments = defineNamespace({
       "Você precisa de uma conta {{provider}} (grátis). Ao autorizar, o dinheiro das vendas é depositado diretamente na sua conta.",
     connectedToast: "{{provider}} conectado! Verifique a conta e habilite o método no checkout.",
     connectError: "Não foi possível conectar {{provider}}: {{detail}}",
+    pkceError:
+      "Não foi possível concluir a conexão com {{provider}}: falha na verificação PKCE ({{detail}}). Tente autorizar novamente.",
     connectFailed: "A conexão com {{provider}} não pôde ser concluída.",
     currencyWarning:
       "A moeda da loja não é compatível com esse provedor. O método não será exibido no checkout.",
@@ -149,6 +151,8 @@ export const payments = defineNamespace({
       "You need a {{provider}} account (free). Once you authorize, sales money is deposited straight into your account.",
     connectedToast: "{{provider}} connected! Check the account and enable the method at checkout.",
     connectError: "Could not connect {{provider}}: {{detail}}",
+    pkceError:
+      "Could not complete the connection to {{provider}}: PKCE verification failed ({{detail}}). Please authorize again.",
     connectFailed: "The connection to {{provider}} could not be completed.",
     currencyWarning:
       "The store currency is not supported by this provider. The method will not be shown at checkout.",
@@ -251,6 +255,8 @@ export const payments = defineNamespace({
     connectedToast:
       "¡{{provider}} conectado! Verifica la cuenta y habilita el método en el checkout.",
     connectError: "No fue posible conectar {{provider}}: {{detail}}",
+    pkceError:
+      "No se pudo completar la conexión con {{provider}}: falló la verificación PKCE ({{detail}}). Vuelve a autorizar.",
     connectFailed: "No se pudo completar la conexión con {{provider}}.",
     currencyWarning:
       "La moneda de la tienda no es compatible con este proveedor. El método no se mostrará en el checkout.",

@@ -16,13 +16,19 @@ import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import {
   adminClient,
   consumeOAuthState,
+  consumeOAuthStateGrant,
   getCatalog,
   markConnectionState,
   saveConnection,
+  type OAuthStateGrant,
 } from "../_shared/payments/db.ts";
 import {
+  decryptSecret,
+  isValidCodeVerifier,
   maskAccountId,
   maskEmail,
+  pkceChallenge,
+  timingSafeEqual,
   verifyState,
   encryptionConfigured,
 } from "../_shared/payments/crypto.ts";
@@ -82,6 +88,15 @@ function stableError(raw: string): string {
   if (/merchant.?id/.test(value)) return "missing_merchant_id";
   if (/credential|not configured|indispon/i.test(value)) return "provider_not_configured";
   if (/expired|invalid.*token/.test(value)) return "authorization_expired";
+  // Rótulos PKCE já estáveis não podem ser achatados para `provider_error`.
+  if (
+    /^pkce_(verifier_missing|verifier_invalid|challenge_mismatch|challenge_invalid|failed)$/.test(
+      value,
+    )
+  ) {
+    return value;
+  }
+  if (/pkce|code_verifier|code_challenge/.test(value)) return "pkce_failed";
   return "provider_error";
 }
 
@@ -135,7 +150,20 @@ serve(async (req) => {
     // troca é aceita.
     const nonce = String(payload.nonce ?? "");
     if (!nonce) return redirectError(provider, "missing_nonce");
-    if (!(await consumeOAuthState(nonce))) {
+    // No Mercado Pago o consumo atômico devolve também o verifier cifrado e o
+    // dono da tentativa. No PayPal o consumo permanece exatamente como antes.
+    let grant: OAuthStateGrant | null = null;
+    if (provider === "mercadopago") {
+      grant = await consumeOAuthStateGrant(nonce);
+      if (!grant) {
+        return redirectError(provider, "state_already_used");
+      }
+      // O state é assinado, mas a linha gravada no connect também precisa bater:
+      // impede que o verifier de outra tentativa seja usado por este retorno.
+      if (grant.catalogId !== catalogId || grant.userId !== userId || grant.provider !== provider) {
+        return redirectError(provider, "invalid_state_binding");
+      }
+    } else if (!(await consumeOAuthState(nonce))) {
       return redirectError(provider, "state_already_used");
     }
 
@@ -171,9 +199,29 @@ serve(async (req) => {
       throw error;
     }
 
+    // ── 4.1 PKCE: recupera o verifier cifrado da tentativa consumida ───────
+    // Nunca é logado, devolvido ao navegador nem reutilizado: o nonce já foi
+    // marcado como consumido acima, na mesma transação atômica.
+    let codeVerifier: string | undefined;
+    if (provider === "mercadopago") {
+      const encryptedVerifier = grant?.codeVerifierEncrypted;
+      if (!encryptedVerifier) {
+        return redirectError(provider, "pkce_verifier_missing");
+      }
+      const decrypted = await decryptSecret(encryptedVerifier);
+      if (!decrypted || !isValidCodeVerifier(decrypted)) {
+        return redirectError(provider, "pkce_verifier_invalid");
+      }
+      const challenge = grant?.codeChallenge;
+      if (challenge && !timingSafeEqual(await pkceChallenge(decrypted), challenge)) {
+        return redirectError(provider, "pkce_challenge_mismatch");
+      }
+      codeVerifier = decrypted;
+    }
+
     let credentials;
     try {
-      credentials = await providerImpl.completeAuthorization({ query, redirectUri });
+      credentials = await providerImpl.completeAuthorization({ query, redirectUri, codeVerifier });
     } catch (error) {
       console.error("[payments-callback] completeAuthorization:", stableError((error as Error).message));
       return redirectError(provider, stableError((error as Error).message));

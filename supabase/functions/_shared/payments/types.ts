@@ -245,21 +245,27 @@ export interface PaymentProvider {
   /**
    * URL de autorização/onboarding do vendedor (state assinado).
    *
-   * M1 (decisão registrada): PKCE permanece FORA desta etapa. O OAuth do MP
-   * usado aqui é authorization code com `state` HMAC + nonce; o aplicativo deve
-   * manter PKCE desabilitado. `siteId` só informa o país da conta na URL.
+   * PKCE S256 é obrigatório no Mercado Pago: o challenge é gerado no `connect`
+   * e enviado junto com o `state`. `siteId` só informa o país da conta na URL.
+   * Parâmetros opcionais mantêm o onboarding do PayPal inalterado.
    */
   buildAuthorizeUrl(input: {
     state: string;
     redirectUri: string;
     trackingId?: string;
     siteId?: string | null;
+    codeChallenge?: string;
+    codeChallengeMethod?: "S256";
   }): Promise<string>;
 
-  /** Troca o retorno do OAuth/onboarding por credenciais da conta do vendedor. */
+  /**
+   * Troca o retorno do OAuth/onboarding por credenciais da conta do vendedor.
+   * `codeVerifier` é recuperado no servidor a partir do state consumido.
+   */
   completeAuthorization(input: {
     query: Record<string, string>;
     redirectUri: string;
+    codeVerifier?: string;
   }): Promise<ProviderCredentials>;
 
   /** Renova o token de acesso da conta do vendedor. */

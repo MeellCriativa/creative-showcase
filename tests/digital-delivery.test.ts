@@ -234,6 +234,55 @@ test("painel expõe data de aprovação oficial, status e tentativas", () => {
   assert.match(panel, /orders\.digital\.revoke/);
 });
 
+test("um único e-mail de compra confirmada reúne todos os produtos e prazos", () => {
+  const message = buildDeliveryEmail({
+    storeName: "Loja Teste",
+    customerName: "Maria",
+    items: [
+      {
+        productName: "Apostila",
+        downloadUrl: "https://exemplo/delivery?token=AAA",
+        instructions: "Abra o PDF.",
+        expiresAt: "2026-11-23T12:00:00Z",
+      },
+      {
+        productName: "Vídeo",
+        downloadUrl: "https://exemplo/delivery?token=BBB",
+        expiresAt: "2026-11-24T12:00:00Z",
+      },
+    ],
+  });
+  assert.match(message.subject, /Compra confirmada: 2 produtos digitais/);
+  assert.equal(message.html.match(/Baixar arquivo/g)?.length, 2);
+  assert.ok(message.html.includes("Apostila") && message.html.includes("Vídeo"));
+  assert.ok(message.html.includes("token=AAA") && message.html.includes("token=BBB"));
+  assert.ok(message.html.includes("Válido até"));
+  assert.ok(message.text.includes("Produto: Apostila") && message.text.includes("Produto: Vídeo"));
+});
+
+test("idempotência de e-mail usa reserva atômica, janela de cliques e bundle criptografado", () => {
+  const migration = read(
+    "supabase/migrations/20261122010000_digital_order_email_idempotency.sql",
+  );
+  assert.match(migration, /create table if not exists public\.digital_order_emails/);
+  assert.match(migration, /create or replace function public\.claim_digital_order_email/);
+  assert.match(migration, /create or replace function public\.finish_digital_order_email/);
+  assert.match(migration, /p_lock_seconds/);
+  assert.match(migration, /p_cooldown_seconds/);
+  assert.match(migration, /email_bundle_cipher text/);
+  assert.match(migration, /revoke all on public\.digital_order_emails from anon/);
+  assert.match(migration, /for select to authenticated/);
+
+  const fn = read("supabase/functions/_shared/digital_delivery.ts");
+  assert.match(fn, /claimEmailSlot\(orderId, \["pending"\], 0\)/);
+  assert.match(fn, /claimEmailSlot\(delivery\.order_id, \["sent", "failed"\], RESEND_COOLDOWN_SECONDS\)/);
+  assert.match(fn, /encryptSecret\(JSON\.stringify\(bundle\)\)/);
+  assert.match(fn, /link_expired_need_new/);
+  assert.match(fn, /revokeTokensForDelivery\(deliveryId\)/);
+  assert.match(fn, /bundle\.links\.find\(\(link\) => link\.deliveryId === deliveryId\)/);
+  assert.match(fn, /rebuildBundleForLinks/);
+});
+
 test("RLS impede leitura anônima de entregas e tokens", () => {
   const migration = read("supabase/migrations/20261121120000_digital_delivery.sql");
   assert.match(migration, /revoke all on public\.digital_deliveries from anon/);

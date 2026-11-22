@@ -1,4 +1,4 @@
-project_id = "wdcufpvlbisnqtvmbyso"
+project_id = "ardpqimdllzbbdvwamkh"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # verify_jwt = false APENAS nos endpoints que recebem chamadas sem JWT:
