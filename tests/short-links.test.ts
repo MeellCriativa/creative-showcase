@@ -3,11 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import {
-  isValidShortCode,
-  normalizeShortCode,
-  shortLinkUrl,
-} from "../src/lib/shortLink.ts";
+import { isValidShortCode, normalizeShortCode, shortLinkUrl } from "../src/lib/shortLink.ts";
 import { normalizeWhatsappNumber, whatsappLink } from "../src/lib/whatsapp.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -46,7 +42,10 @@ test("rota pública, SQL e cards do painel estão ligados", () => {
   assert.match(sql, /add column if not exists short_code/);
   assert.match(sql, /whatsapp_welcome_message/);
   assert.match(sql, /create or replace view public\.store_short_links_public/);
-  assert.match(panel, /shortLinkTitle/);
+  // O card do link curto foi removido do painel a pedido do lojista; a rota
+  // pública continua funcionando para links já compartilhados.
+  assert.doesNotMatch(panel, /shortLinkTitle/);
+  assert.doesNotMatch(panel, /shortLinkUrl/);
   assert.match(panel, /whatsappLinkTitle/);
   // Cards permanentes do painel não podem ter sido removidos.
   assert.match(panel, /panel\.dashboard\.editStoreLink/);

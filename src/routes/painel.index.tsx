@@ -11,7 +11,6 @@ import {
   ExternalLink,
   Eye,
   KeyboardIcon,
-  Link2,
   Loader2,
   LogOut,
   MessageCircle,
@@ -35,11 +34,6 @@ import {
   whatsappLink,
 } from "@/lib/catalog";
 import { resolveStoreCurrency } from "@/lib/currency";
-import {
-  isValidShortCode,
-  normalizeShortCode,
-  shortLinkUrl,
-} from "@/lib/shortLink";
 import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/painel/")({
@@ -62,8 +56,6 @@ function PainelHome() {
   const [slug, setSlug] = useState("");
   const [currency, setCurrency] = useState("BRL");
   const [savingStore, setSavingStore] = useState(false);
-  const [shortCode, setShortCode] = useState("");
-  const [savingShort, setSavingShort] = useState(false);
   const [whatsappDraft, setWhatsappDraft] = useState("");
   const [welcomeDraft, setWelcomeDraft] = useState("");
   const [savingWhatsapp, setSavingWhatsapp] = useState(false);
@@ -73,7 +65,6 @@ function PainelHome() {
     setNameDraft(catalog.store_name);
     setSlug(catalog.slug);
     setCurrency(resolveStoreCurrency(catalog.currency));
-    setShortCode(catalog.short_code ?? "");
     setWhatsappDraft(catalog.whatsapp ?? "");
     setWelcomeDraft(catalog.whatsapp_welcome_message ?? "");
   }, [catalog]);
@@ -255,51 +246,6 @@ function PainelHome() {
       }
     }
     void copyLink();
-  }
-
-  // ── Link curto personalizável (/s/CODIGO) ────────────────────────────────
-  const normalizedShort = normalizeShortCode(shortCode);
-  const shortLink = normalizedShort ? shortLinkUrl(normalizedShort) : "";
-
-  async function saveShortCode() {
-    if (!catalog) return;
-    const code = normalizeShortCode(shortCode);
-    if (!isValidShortCode(code)) {
-      toast.error(t("panel.dashboard.shortLinkInvalid"));
-      return;
-    }
-    setSavingShort(true);
-    try {
-      const { error } = await supabase
-        .from("catalogs")
-        .update({ short_code: code })
-        .eq("id", catalog.id);
-      if (error) {
-        if (error.code === "23505") {
-          toast.error(t("panel.dashboard.shortLinkInUse"));
-        } else if (/código curto|reservado/i.test(error.message)) {
-          toast.error(error.message);
-        } else {
-          toast.error(t("panel.dashboard.storeSaveError", { message: error.message }));
-        }
-        return;
-      }
-      setShortCode(code);
-      await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
-      toast.success(t("panel.dashboard.shortLinkSaved"));
-    } finally {
-      setSavingShort(false);
-    }
-  }
-
-  async function copyShortLink() {
-    if (!shortLink) return;
-    try {
-      await navigator.clipboard.writeText(shortLink);
-      toast.success(t("panel.dashboard.shortLinkCopied"));
-    } catch {
-      toast.error(t("panel.dashboard.copyError"));
-    }
   }
 
   // ── Link direto do WhatsApp com a mensagem de boas-vindas ────────────────
@@ -516,51 +462,6 @@ function PainelHome() {
           </a>
           <button onClick={copyLink} className="rounded-xl border border-border py-2 text-center">
             Instagram
-          </button>
-        </div>
-      </section>
-
-      {/* ── Link curto personalizável ── */}
-      <section className="mt-6 rounded-3xl border border-border bg-card p-5">
-        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Link2 className="size-4" /> {t("panel.dashboard.shortLinkTitle")}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{t("panel.dashboard.shortLinkHint")}</p>
-        <label className="mt-3 block">
-          <span className="text-xs font-medium text-muted-foreground">
-            {t("panel.dashboard.shortLinkCode")}
-          </span>
-          <span className="mt-1 flex items-center rounded-xl border border-input bg-card px-3">
-            <span className="shrink-0 text-xs text-muted-foreground">/s/</span>
-            <input
-              value={shortCode}
-              onChange={(e) => setShortCode(e.target.value)}
-              placeholder={t("panel.dashboard.shortLinkPlaceholder")}
-              maxLength={24}
-              className="w-full bg-transparent py-2.5 text-sm text-foreground outline-none"
-            />
-          </span>
-        </label>
-        <div className="mt-3 truncate rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
-          {shortLink || `…/s/${t("panel.dashboard.shortLinkPlaceholder")}`}
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={copyShortLink}
-            disabled={!shortLink}
-            className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground disabled:opacity-50"
-          >
-            <Copy className="size-4" /> {t("panel.dashboard.copy")}
-          </button>
-          <button
-            type="button"
-            onClick={saveShortCode}
-            disabled={savingShort || !isValidShortCode(normalizedShort)}
-            className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-          >
-            {savingShort ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            {t("common.save")}
           </button>
         </div>
       </section>
