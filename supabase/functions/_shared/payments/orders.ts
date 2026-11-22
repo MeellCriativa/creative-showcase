@@ -10,6 +10,7 @@ import { adminClient, createCheckoutSession, type CatalogRow } from "./db.ts";
 import { isValidEmail, normalizeEmail } from "../digital_delivery_pure.ts";
 import { priceCart, computeTotals, type CartItemInput, type OfficialProduct, type PricedItem } from "./pricing.ts";
 import { fromMinorUnits, resolveStoreCurrency, toMinorUnits } from "../../../../src/lib/currency.ts";
+import { notifySellerNewOrder } from "../seller_notifications.ts";
 
 export type SecureOrderInput = {
   catalogId: string;
@@ -307,6 +308,9 @@ export async function createSecureOrder(input: SecureOrderInput): Promise<Secure
   }
 
   const orderId = order.id as string;
+  // Best-effort: falha no e-mail nunca impede a criação do pedido.
+  await notifySellerNewOrder(orderId);
+
   let checkoutToken = "";
   try {
     checkoutToken = await createCheckoutSession(orderId, catalog.id);

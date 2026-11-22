@@ -45,6 +45,7 @@ import {
   type PixPublicConfig,
 } from "@/lib/pixManual";
 import { parseProductCheckoutParams } from "@/lib/productLinks";
+import { notifySellerAboutOrder } from "@/lib/sellerNotifications";
 import { SITE_OG_IMAGE } from "@/lib/site";
 import { quoteShipping } from "@/lib/shipping";
 import {
@@ -743,8 +744,14 @@ function PublicCatalog() {
           customer_city: shipAddress?.city || null,
           customer_state: shipAddress?.state || null,
         } as never);
-        if (error) console.error("[checkout] gravação direta do pedido falhou:", error);
-        return !error;
+        if (error) {
+          console.error("[checkout] gravação direta do pedido falhou:", error);
+          return false;
+        }
+        // Não há SELECT público em orders: a função localiza o pedido recém-criado
+        // pelo catálogo + nome do cliente e dispara o aviso ao vendedor.
+        void notifySellerAboutOrder({ catalogId: catalog.id, customerName: customerName.trim() });
+        return true;
       };
 
       // ── Pix manual: pedido + dados de pagamento sem provedor automático ───

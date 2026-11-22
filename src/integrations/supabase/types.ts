@@ -1659,6 +1659,66 @@ export type Database = {
           },
         ]
       }
+      seller_order_notifications: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          currency: string | null
+          customer_name: string | null
+          email_attempts: number
+          email_last_error: string | null
+          email_sent_at: string | null
+          email_status: string
+          order_id: string
+          payment_method: string | null
+          read_at: string | null
+          total: number | null
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          currency?: string | null
+          customer_name?: string | null
+          email_attempts?: number
+          email_last_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          order_id: string
+          payment_method?: string | null
+          read_at?: string | null
+          total?: number | null
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          currency?: string | null
+          customer_name?: string | null
+          email_attempts?: number
+          email_last_error?: string | null
+          email_sent_at?: string | null
+          email_status?: string
+          order_id?: string
+          payment_method?: string | null
+          read_at?: string | null
+          total?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seller_order_notifications_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_order_notifications_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       catalogs_public: {

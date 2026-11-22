@@ -3,6 +3,7 @@ import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tan
 import { BarChart3, ClipboardList, CreditCard, LayoutGrid, Loader2, MessageCircle, Package, Palette, Store, Truck } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
+import { useOrderNotifications } from "@/hooks/useOrderNotifications";
 import { LanguageSelector, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,7 @@ function PainelLayout() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { unreadCount } = useOrderNotifications();
 
   useEffect(() => {
     if (!loading && !session) navigate({ to: "/auth" });
@@ -80,7 +82,17 @@ function PainelLayout() {
                   )}
                   aria-current={active ? "page" : undefined}
                 >
-                  <tab.icon className="size-4" aria-hidden />
+                  <span className="relative">
+                    <tab.icon className="size-4" aria-hidden />
+                    {tab.to === "/painel/pedidos" && unreadCount > 0 && (
+                      <span
+                        className="absolute -right-2 -top-1.5 min-w-[14px] rounded-full bg-destructive px-1 text-center text-[8px] font-bold leading-[14px] text-destructive-foreground"
+                        aria-label={`${unreadCount} ${t("orders.notification.newBadge")}`}
+                      >
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    )}
+                  </span>
                   <span className="whitespace-nowrap">
                     {"bottomLabelKey" in tab ? t(tab.bottomLabelKey) : t(tab.labelKey)}
                   </span>

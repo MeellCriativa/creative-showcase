@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
+import { useOrderNotifications } from "@/hooks/useOrderNotifications";
 import { useI18n, type MessageKey } from "@/i18n";
 import { formatMoney, resolveOrderCurrency, resolveStoreCurrency } from "@/lib/currency";
 import {
@@ -116,7 +117,13 @@ function PedidosPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { data: catalog } = useMyCatalog(user?.id);
+  const { unreadCount, markAllAsRead } = useOrderNotifications();
   const [filter, setFilter] = useState<Filter>("todos");
+
+  // Abrir a tela de pedidos já baixa o aviso de "novo" e atualiza a lista.
+  useEffect(() => {
+    if (catalog && unreadCount > 0) void markAllAsRead();
+  }, [catalog, unreadCount]);
 
   const { data: orders, isLoading } = useQuery<OrderRow[]>({
     queryKey: ["orders", catalog?.id],

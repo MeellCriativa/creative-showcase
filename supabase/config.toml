@@ -39,3 +39,9 @@ verify_jwt = false
 # vendedor autenticada em código por `verifyUser`.
 [functions.pix-manual]
 verify_jwt = false
+
+# Notificação de novo pedido: chamada best-effort após o insert anônimo de
+# fallback. Sem JWT porque o pedido pode ser criado por um comprador anônimo;
+# a reserva atômica no banco impede e-mails duplicados.
+[functions.seller-order-notify]
+verify_jwt = false

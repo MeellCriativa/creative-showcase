@@ -19,6 +19,12 @@ export const orders = defineNamespace({
     },
     empty: "Nenhum pedido encontrado.",
     updateError: "Erro ao atualizar status.",
+    notification: {
+      toastTitle: "Novo pedido recebido! 🎉",
+      toastBody: "{{name}} — {{total}}. Clique em Pedidos para ver.",
+      viewOrders: "Ver pedidos",
+      newBadge: "novo",
+    },
     status: {
       novo: "Novo",
       confirmado: "Confirmado",
@@ -96,6 +102,12 @@ export const orders = defineNamespace({
     },
     empty: "No orders found.",
     updateError: "Couldn't update the status.",
+    notification: {
+      toastTitle: "New order received! 🎉",
+      toastBody: "{{name}} — {{total}}. Tap Orders to view it.",
+      viewOrders: "View orders",
+      newBadge: "new",
+    },
     status: {
       novo: "New",
       confirmado: "Confirmed",
@@ -173,6 +185,12 @@ export const orders = defineNamespace({
     },
     empty: "No se encontraron pedidos.",
     updateError: "No se pudo actualizar el estado.",
+    notification: {
+      toastTitle: "¡Nuevo pedido recibido! 🎉",
+      toastBody: "{{name}} — {{total}}. Toca Pedidos para verlo.",
+      viewOrders: "Ver pedidos",
+      newBadge: "nuevo",
+    },
     status: {
       novo: "Nuevo",
       confirmado: "Confirmado",
