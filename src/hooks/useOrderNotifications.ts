@@ -1,6 +1,6 @@
 /** Avisos de novos pedidos: badge no painel + toast em tempo real. */
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -49,6 +49,12 @@ export function useOrderNotifications() {
   const { t } = useI18n();
 
   const catalogId = catalog?.id;
+  // O layout do painel e a tela de pedidos montam esta hook ao mesmo tempo.
+  // O cliente Supabase reaproveita canais pelo nome: se as duas instâncias
+  // usassem o mesmo tópico, a segunda chamaria `.on()` depois do `subscribe()`
+  // da primeira e o Realtime lançaria "cannot add postgres_changes callbacks
+  // ... after subscribe()", derrubando a tela. Cada instância tem seu tópico.
+  const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
 
   const { data: notifications } = useQuery<SellerOrderNotification[]>({
     queryKey: ["seller-order-notifications", catalogId],
@@ -72,10 +78,7 @@ export function useOrderNotifications() {
       const orderId = String(row.order_id ?? "");
       if (!orderId || !shouldAnnounce(orderId)) return;
       const name = String(row.customer_name ?? t("orders.notification.newBadge"));
-      const total = formatMoney(
-        Number(row.total) || 0,
-        resolveOrderCurrency(row.currency ?? null),
-      );
+      const total = formatMoney(Number(row.total) || 0, resolveOrderCurrency(row.currency ?? null));
       toast(t("orders.notification.toastTitle"), {
         description: t("orders.notification.toastBody", { name, total }),
         duration: 12000,
@@ -84,6 +87,14 @@ export function useOrderNotifications() {
     [catalogId, t],
   );
 
+  // `t` muda de identidade quando o idioma muda. Sem a ref, o effect do Realtime
+  // reinscreveria no mesmo tópico — o Supabase devolve o canal já inscrito e
+  // `.on()` estoura "cannot add postgres_changes callbacks after subscribe()".
+  const announceRef = useRef(announce);
+  useEffect(() => {
+    announceRef.current = announce;
+  }, [announce]);
+
   // Também avisa quando o pedido já estava na fila antes da inscrição no Realtime
   // (recarregou a página, ou a aba estava fechada quando o pedido chegou).
   useEffect(() => {
@@ -91,9 +102,9 @@ export function useOrderNotifications() {
     const now = Date.now();
     for (const row of notifications) {
       const age = now - new Date(row.created_at).getTime();
-      if (Number.isFinite(age) && age >= 0 && age <= TOAST_WINDOW_MS) announce(row);
+      if (Number.isFinite(age) && age >= 0 && age <= TOAST_WINDOW_MS) announceRef.current(row);
     }
-  }, [notifications, announce]);
+  }, [notifications]);
 
   useEffect(() => {
     if (!catalogId) return;
@@ -102,7 +113,7 @@ export function useOrderNotifications() {
       void queryClient.invalidateQueries({ queryKey: ["seller-order-notifications", catalogId] });
 
     const channel = supabase
-      .channel(`seller-order-notifications:${catalogId}`)
+      .channel(`seller-order-notifications:${catalogId}:${instanceId}`)
       .on(
         "postgres_changes",
         {
@@ -114,7 +125,7 @@ export function useOrderNotifications() {
         },
         (payload) => {
           refresh();
-          announce((payload.new ?? {}) as Partial<SellerOrderNotification>);
+          announceRef.current((payload.new ?? {}) as Partial<SellerOrderNotification>);
         },
       )
       .on(
@@ -139,7 +150,7 @@ export function useOrderNotifications() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [catalogId, queryClient, announce]);
+  }, [catalogId, instanceId, queryClient]);
 
   const unreadCount = notifications?.length ?? 0;
 

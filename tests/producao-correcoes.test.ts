@@ -21,7 +21,10 @@ test("link do entregável é validado uma vez e aceita só HTTPS", () => {
   const products = read("src/routes/painel.produtos.tsx");
   assert.match(products, /isValidExternalUrl\(candidate\)/);
   // Nada de deixar a exceção escapar para a página de erro do Start/Worker.
-  assert.match(products, /try \{[\s\S]*setSaving\(true\)[\s\S]*catch \(error\)[\s\S]*finally \{[\s\S]*setSaving\(false\)/);
+  assert.match(
+    products,
+    /try \{[\s\S]*setSaving\(true\)[\s\S]*catch \(error\)[\s\S]*finally \{[\s\S]*setSaving\(false\)/,
+  );
   assert.match(products, /toast\.success\(t\("products\.saved"\)\)/);
   // A validação nativa do input url não pode bloquear o submit sem toast.
   assert.doesNotMatch(products, /type="url"[\s\S]{0,120}digital_external_url/);
@@ -60,4 +63,16 @@ test("notificações aparecem na tela de pedidos sem sumir automaticamente", () 
   for (const key of ["bannerTitle", "bannerBody", "markRead"]) {
     assert.equal(i18n.split(key).length - 1, 3, `chave ${key} falta em algum idioma`);
   }
+});
+
+test("canal Realtime de notificações é único por instância da hook", () => {
+  const hook = read("src/hooks/useOrderNotifications.ts");
+  // Layout do painel e tela de pedidos montam a hook juntos. Se o tópico for
+  // igual, o Supabase reaproveita o canal já inscrito e `.on()` estoura.
+  assert.match(hook, /useCallback, useEffect, useId/);
+  assert.match(hook, /const instanceId = useId\(\)\.replace/);
+  assert.match(hook, /\.channel\(`seller-order-notifications:\$\{catalogId\}:\$\{instanceId\}`\)/);
+  assert.doesNotMatch(hook, /\.channel\(`seller-order-notifications:\$\{catalogId\}`\)/);
+  // Duas instâncias recebem o evento, mas o toast continua deduplicado.
+  assert.match(hook, /if \(!orderId \|\| !shouldAnnounce\(orderId\)\) return;/);
 });
