@@ -8,7 +8,9 @@ import {
   CreditCard,
   Loader2,
   Plug,
+  QrCode,
   RefreshCw,
+  Save,
   ShieldCheck,
   Unplug,
   Wallet,
@@ -16,6 +18,7 @@ import {
 
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
+import { supabase } from "@/integrations/supabase/client";
 import {
   connectProvider,
   disconnectProvider,
@@ -477,6 +480,8 @@ function PagamentosPage() {
         />
       ))}
 
+      <ManualPixCard />
+
       {providers.every((p) => !p.connected) && (
         <p className="rounded-xl bg-accent/50 px-3 py-2 text-xs text-muted-foreground">
           {t("payments.noneConnected")}
@@ -598,6 +603,196 @@ function PagamentosPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Pix manual — configuração da chave/QR e habilitação no checkout. */
+function ManualPixCard() {
+  const { user } = useAuth();
+  const { data: catalog } = useMyCatalog(user?.id);
+  const queryClient = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<"key" | "qr" | "both">("key");
+  const [keyType, setKeyType] = useState("cpf");
+  const [keyValue, setKeyValue] = useState("");
+  const [holderName, setHolderName] = useState("");
+  const [holderDocument, setHolderDocument] = useState("");
+  const [qrName, setQrName] = useState("");
+  const [qrPath, setQrPath] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!catalog) return;
+    setMode((catalog.pix_mode as "key" | "qr" | "both") ?? "key");
+    setKeyType(catalog.pix_key_type ?? "cpf");
+    setKeyValue(catalog.pix_key_value ?? "");
+    setHolderName(catalog.pix_holder_name ?? "");
+    setHolderDocument(catalog.pix_holder_document ?? "");
+    setQrName(catalog.pix_qr_name ?? "");
+    setQrPath(catalog.pix_qr_path ?? null);
+  }, [catalog]);
+
+  const enabled = Array.isArray(catalog?.payment_methods)
+    ? (catalog!.payment_methods as string[]).includes("pix")
+    : false;
+
+  async function uploadQr(file: File) {
+    if (!catalog || !file.type.startsWith("image/")) return;
+    setSaving(true);
+    try {
+      const path = `pix-qr/${catalog.id}/${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
+      const { error } = await supabase.storage.from("catalog-images").upload(path, file, {
+        contentType: file.type,
+        upsert: false,
+      });
+      if (error) throw error;
+      setQrPath(path);
+      toast.success("QR Code enviado.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao enviar QR Code.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function save() {
+    if (!catalog) return;
+    setSaving(true);
+    const methods = Array.isArray(catalog.payment_methods) ? catalog.payment_methods : [];
+    const { error } = await supabase
+      .from("catalogs")
+      .update({
+        pix_mode: mode,
+        pix_key_type: keyType,
+        pix_key_value: keyValue.trim() || null,
+        pix_holder_name: holderName.trim() || null,
+        pix_holder_document: holderDocument.trim() || null,
+        pix_qr_name: qrName.trim() || null,
+        pix_qr_path: qrPath,
+        payment_methods: enabled ? methods : [...methods, "pix"],
+      })
+      .eq("id", catalog.id);
+    setSaving(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    await queryClient.invalidateQueries();
+    toast.success("Configuração Pix salva.");
+  }
+
+  return (
+    <section className="space-y-3 rounded-2xl border border-border bg-card p-5">
+      <h2 className="flex items-center gap-2 text-base font-bold text-foreground">
+        <QrCode className="size-5" /> Pix manual
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Configure a chave e/ou o QR Code. A confirmação do pagamento é feita por você no pedido.
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {(["key", "qr", "both"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setMode(value)}
+            className={`rounded-xl border px-2 py-2 text-xs font-semibold ${
+              mode === value
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border text-muted-foreground"
+            }`}
+          >
+            {value === "key" ? "Chave" : value === "qr" ? "QR Code" : "Ambos"}
+          </button>
+        ))}
+      </div>
+      {mode !== "qr" && (
+        <div className="space-y-2">
+          <select
+            value={keyType}
+            onChange={(e) => setKeyType(e.target.value)}
+            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+          >
+            <option value="cpf">CPF</option>
+            <option value="cnpj">CNPJ</option>
+            <option value="email">E-mail</option>
+            <option value="phone">Telefone</option>
+            <option value="random">Chave aleatória</option>
+          </select>
+          <input
+            value={keyValue}
+            onChange={(e) => setKeyValue(e.target.value)}
+            placeholder="Chave Pix"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+          />
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-2">
+        <input
+          value={holderName}
+          onChange={(e) => setHolderName(e.target.value)}
+          placeholder="Titular da chave"
+          className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+        />
+        <input
+          value={holderDocument}
+          onChange={(e) => setHolderDocument(e.target.value)}
+          placeholder="CPF/CNPJ (não exibido ao comprador)"
+          className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+        />
+        {mode !== "key" && (
+          <>
+            <input
+              value={qrName}
+              onChange={(e) => setQrName(e.target.value)}
+              placeholder="Identificação do QR (opcional)"
+              className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadQr(file);
+              }}
+              className="text-xs"
+            />
+            {qrPath && <p className="text-xs text-emerald-600">QR Code enviado ✓</p>}
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={saving || !catalog}
+        onClick={() => void save()}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+      >
+        <Save className="size-4" /> {saving ? "Salvando..." : "Salvar Pix manual"}
+      </button>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={async () => {
+            if (!catalog) return;
+            const methods = Array.isArray(catalog.payment_methods)
+              ? (catalog.payment_methods as string[])
+              : [];
+            const next = enabled ? methods.filter((m) => m !== "pix") : [...methods, "pix"];
+            const { error } = await supabase
+              .from("catalogs")
+              .update({ payment_methods: next })
+              .eq("id", catalog.id);
+            if (error) {
+              toast.error(error.message);
+            } else {
+              await queryClient.invalidateQueries();
+            }
+          }}
+        />
+        Habilitar Pix no checkout
+      </label>
+    </section>
   );
 }
 

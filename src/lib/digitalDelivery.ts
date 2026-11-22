@@ -118,7 +118,13 @@ async function callFunction<T>(
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
   });
   const payload = await response.json().catch(() => ({}));
-  return { ...(payload as T), success: Boolean((payload as { success?: boolean }).success), error: (payload as { error?: string }).error };
+  const result = {
+    ...(payload as T),
+    success: Boolean((payload as { success?: boolean }).success),
+  } as T & { success: boolean; error?: string };
+  const rawError = (payload as { error?: string }).error;
+  if (typeof rawError === "string") result.error = rawError;
+  return result;
 }
 
 export async function listDigitalDeliveries(catalogId: string): Promise<DigitalDelivery[]> {

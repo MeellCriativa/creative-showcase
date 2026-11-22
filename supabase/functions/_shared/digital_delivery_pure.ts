@@ -171,9 +171,11 @@ function escapeHtml(value: string): string {
 
 export type DeliveryEmailItem = {
   productName: string;
+  /** URL sempre tokenizada — nunca a URL externa bruta do produto. */
   downloadUrl: string;
   instructions?: string | null;
   expiresAt?: string | null;
+  kind?: "file" | "link";
 };
 
 function formatExpiry(value: string | null | undefined): string | null {
@@ -225,14 +227,16 @@ export function buildDeliveryEmail(input: {
       const product = escapeHtml(item.productName || "produto digital");
       const htmlUrl = escapeHtml(String(item.downloadUrl ?? ""));
       const expiry = formatExpiry(item.expiresAt);
+      const isLink = item.kind === "link";
+      const actionLabel = isLink ? "Acessar produto" : "Baixar arquivo";
       const label = items.length > 1 ? `${index + 1}. ${product}` : product;
       const instructions = item.instructions?.trim()
         ? `<div style="margin-top:10px;padding:12px 14px;border-radius:10px;background:#f7f4fd;color:#4b3f63;font-size:13px;line-height:1.6"><strong>Orientações da loja:</strong><br>${escapeHtml(item.instructions).replace(/\n/g, "<br>")}</div>`
         : "";
       return `<div style="margin:0 0 24px;padding-bottom:20px;border-bottom:1px solid #eee9f5">
-          <p style="margin:0 0 10px;font-size:15px;line-height:1.6">Baixe o arquivo de <strong>${label}</strong>:</p>
+          <p style="margin:0 0 10px;font-size:15px;line-height:1.6">${isLink ? "Acesse" : "Baixe o arquivo de"} <strong>${label}</strong>:</p>
           <div style="text-align:center;margin:14px 0">
-            <a href="${htmlUrl}" style="display:inline-block;background:#8b5cf6;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 24px;border-radius:12px">Baixar arquivo</a>
+            <a href="${htmlUrl}" style="display:inline-block;background:#8b5cf6;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 24px;border-radius:12px">${actionLabel}</a>
           </div>
           <p style="margin:0;font-size:12px;line-height:1.6;color:#6d657c">Se o botão não funcionar, copie e cole este link no navegador:<br><a href="${htmlUrl}" style="color:#8b5cf6;word-break:break-all">${htmlUrl}</a></p>
           ${expiry ? `<p style="margin:10px 0 0;font-size:12px;color:#6d657c">Válido até <strong>${escapeHtml(expiry)}</strong>.</p>` : ""}
@@ -279,7 +283,7 @@ export function buildDeliveryEmail(input: {
   items.forEach((item, index) => {
     const expiry = formatExpiry(item.expiresAt);
     textLines.push(`${items.length > 1 ? `${index + 1}. ` : ""}Produto: ${item.productName || "produto digital"}`);
-    textLines.push(`Baixe seu arquivo: ${item.downloadUrl}`);
+    textLines.push(`${item.kind === "link" ? "Acesse seu produto" : "Baixe seu arquivo"}: ${item.downloadUrl}`);
     if (expiry) textLines.push(`Válido até: ${expiry}`);
     if (item.instructions?.trim()) textLines.push(`Orientações: ${item.instructions.trim()}`);
     textLines.push("");

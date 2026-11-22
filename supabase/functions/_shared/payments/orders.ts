@@ -21,6 +21,8 @@ export type SecureOrderInput = {
   deliveryMethod?: string | null;
   shippingZip?: string | null;
   shippingService?: string | null;
+  /** Modalidade de pagamento usada por fluxos manuais (ex.: Pix manual). */
+  paymentMethod?: "pix_manual" | null;
   address?: {
     street?: string | null;
     number?: string | null;
@@ -271,6 +273,7 @@ export async function createSecureOrder(input: SecureOrderInput): Promise<Secure
     total: totals.total,
     status: "novo",
     payment_status: "pending",
+    ...(input.paymentMethod ? { payment_method: input.paymentMethod } : {}),
     currency,
     delivery_method: deliveryMethod,
     shipping_zip: shippingZip,

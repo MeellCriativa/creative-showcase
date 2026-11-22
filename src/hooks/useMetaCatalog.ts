@@ -65,7 +65,6 @@ export function useSyncProducts(catalogId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => syncProductsNow(catalogId!),
-    enabled: !!catalogId,
     onSuccess: () => {
       if (catalogId) {
         qc.invalidateQueries({ queryKey: ["meta-connection", catalogId] });
@@ -80,7 +79,6 @@ export function useDisconnectMeta(catalogId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => disconnectMeta(catalogId!),
-    enabled: !!catalogId,
     onSuccess: () => {
       if (catalogId) {
         qc.invalidateQueries({ queryKey: ["meta-connection", catalogId] });

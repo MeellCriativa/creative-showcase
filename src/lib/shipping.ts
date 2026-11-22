@@ -168,8 +168,9 @@ async function meCall<T>(
       error?: string;
     };
   }
-  if (data.error && typeof data.error === "string" && data.error !== "not_connected") {
-    return { success: false, error: data.error, ...data } as T & { success: boolean; error?: string };
+  const apiError = data["error"];
+  if (apiError && typeof apiError === "string" && apiError !== "not_connected") {
+    return { success: false, error: apiError, ...data } as T & { success: boolean; error?: string };
   }
   return data as T & { success: boolean; error?: string };
 }

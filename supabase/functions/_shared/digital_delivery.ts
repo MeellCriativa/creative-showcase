@@ -38,6 +38,8 @@ type ProductRow = {
   name: string;
   product_type: string | null;
   digital_file_path: string | null;
+  digital_delivery_mode: string | null;
+  digital_external_url: string | null;
   digital_instructions: string | null;
   digital_link_ttl_minutes: number | null;
   digital_max_downloads: number | null;
@@ -63,6 +65,7 @@ type EmailLink = {
   expiresAt: string;
   productName: string;
   instructions: string | null;
+  kind: "file" | "link";
 };
 
 type EmailBundle = {
@@ -293,6 +296,15 @@ async function isLinkValid(link: EmailLink): Promise<boolean> {
   return true;
 }
 
+function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function supportLink(catalog: { slug?: string } | null): string | null {
   if (!catalog?.slug) return null;
   const base = Deno.env.get("VITRINE_URL")?.replace(/\/+$/, "") ?? "";
@@ -322,6 +334,7 @@ async function rebuildBundleForLinks(
       downloadUrl: buildDownloadUrl(functionBase, link.rawToken),
       instructions: link.instructions,
       expiresAt: link.expiresAt,
+      kind: link.kind,
     })),
     supportUrl: supportLink(catalog),
   });
@@ -380,7 +393,7 @@ export async function deliverDigitalOrder(
   const { data: products, error: productsError } = await admin
     .from("products")
     .select(
-      "id,name,product_type,digital_file_path,digital_instructions,digital_link_ttl_minutes,digital_max_downloads",
+      "id,name,product_type,digital_file_path,digital_delivery_mode,digital_external_url,digital_instructions,digital_link_ttl_minutes,digital_max_downloads",
     )
     .in("id", productIds);
   if (productsError) return { ...outcome, ok: false, reason: "products_lookup_failed" };
@@ -419,7 +432,14 @@ export async function deliverDigitalOrder(
     for (const product of digitalProducts) {
       const emailLabel = safeError(product.name);
       try {
-        if (!product.digital_file_path) {
+        const isExternalLink = product.digital_delivery_mode === "link";
+        const externalUrl = isExternalLink ? String(product.digital_external_url ?? "").trim() : "";
+        if (isExternalLink && !isHttpsUrl(externalUrl)) {
+          outcome.failed++;
+          log("produto digital com link externo inválido", { orderId, productId: product.id });
+          continue;
+        }
+        if (!isExternalLink && !product.digital_file_path) {
           outcome.failed++;
           log("produto digital sem arquivo", { orderId, productId: product.id });
           continue;
@@ -475,12 +495,14 @@ export async function deliverDigitalOrder(
           expiresAt: token.expiresAt,
           productName: product.name,
           instructions: product.digital_instructions,
+          kind: isExternalLink ? "link" : "file",
         });
         emailItems.push({
           productName: product.name,
           downloadUrl,
           instructions: product.digital_instructions,
           expiresAt: token.expiresAt,
+          kind: isExternalLink ? "link" : "file",
         });
       } catch (error) {
         outcome.failed++;
@@ -678,12 +700,18 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
     const { data: product } = await admin
       .from("products")
       .select(
-        "id,name,digital_file_path,digital_instructions,digital_link_ttl_minutes,digital_max_downloads",
+        "id,name,digital_file_path,digital_delivery_mode,digital_external_url,digital_instructions,digital_link_ttl_minutes,digital_max_downloads",
       )
       .eq("id", delivery.product_id)
       .maybeSingle();
     const productRow = product as ProductRow | null;
-    if (!productRow?.digital_file_path) {
+    const regenIsLink = productRow?.digital_delivery_mode === "link";
+    const regenExternalUrl = regenIsLink ? String(productRow?.digital_external_url ?? "").trim() : "";
+    if (regenIsLink && !isHttpsUrl(regenExternalUrl)) {
+      await finishEmail(delivery.order_id, { ok: false, error: "no_link" }, null);
+      return failed("no_link", "O link deste produto não está mais disponível.");
+    }
+    if (!regenIsLink && !productRow?.digital_file_path) {
       await finishEmail(delivery.order_id, { ok: false, error: "no_file" }, null);
       return failed("no_file", "O arquivo deste produto não está mais disponível.");
     }
@@ -710,6 +738,7 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
       expiresAt: token.expiresAt,
       productName: productRow.name,
       instructions: productRow.digital_instructions,
+      kind: regenIsLink ? "link" : "file",
     };
     const links = [...kept, newLink];
     const catalog = await getCatalog(delivery.catalog_id);
@@ -721,6 +750,7 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
         downloadUrl: buildDownloadUrl(cfg.functionBase, link.rawToken),
         instructions: link.instructions,
         expiresAt: link.expiresAt,
+        kind: link.kind,
       })),
       supportUrl: supportLink(catalog),
     });
@@ -838,11 +868,12 @@ export async function processDownload(rawToken: string): Promise<Response> {
 
   const { data: product } = await admin
     .from("products")
-    .select("digital_file_path")
+    .select("digital_file_path, digital_delivery_mode, digital_external_url")
     .eq("id", token.product_id)
     .maybeSingle();
-  const path = String((product as Record<string, unknown> | null)?.digital_file_path ?? "");
-  if (!path) return errorPage(404, "Arquivo indisponível", "O arquivo deste produto não está disponível.");
+  const productRow = product as Record<string, unknown> | null;
+  const isExternalLink = String(productRow?.digital_delivery_mode ?? "") === "link";
+  const externalUrl = String(productRow?.digital_external_url ?? "").trim();
 
   // Incremento atômico com comparação de versão evita uso acima do limite.
   const { data: claimed } = await admin
@@ -855,6 +886,29 @@ export async function processDownload(rawToken: string): Promise<Response> {
     .select("id")
     .maybeSingle();
   if (!claimed) return errorPage(410, "Link indisponível", "Este link não está mais disponível.");
+
+  if (isExternalLink) {
+    if (!isHttpsUrl(externalUrl)) {
+      return errorPage(404, "Link indisponível", "O link deste produto não está disponível.");
+    }
+    await admin.from("digital_download_events").insert({
+      token_id: token.id,
+      order_id: token.order_id,
+      product_id: token.product_id,
+      event_type: "download",
+    });
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: externalUrl,
+        "Cache-Control": "no-store, private",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
+  }
+
+  const path = String(productRow?.digital_file_path ?? "");
+  if (!path) return errorPage(404, "Arquivo indisponível", "O arquivo deste produto não está disponível.");
 
   const { data: signed, error: signedError } = await admin.storage
     .from(DIGITAL_BUCKET)

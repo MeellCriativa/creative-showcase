@@ -34,3 +34,8 @@ verify_jwt = false
 # continuam exigindo JWT, validadas em código por `verifyUser`.
 [functions.digital-delivery]
 verify_jwt = false
+
+# Pix manual: ações públicas (config/criação/declaração) e confirmação do
+# vendedor autenticada em código por `verifyUser`.
+[functions.pix-manual]
+verify_jwt = false

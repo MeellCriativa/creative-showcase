@@ -429,7 +429,7 @@ function PainelHome() {
         <ShortcutLink
           to="/painel/produtos"
           icon={Package}
-          title={t("panel.nav.products")}
+          title={t("panel.nav.createProduct")}
           text={t("panel.dashboard.productsText")}
         />
         <ShortcutLink

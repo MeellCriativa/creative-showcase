@@ -74,7 +74,7 @@ export async function fetchMetaMappings(
     .from("meta_product_mapping" as any)
     .select("*")
     .eq("catalog_id", catalogId);
-  return (data ?? []) as MetaProductMapping[];
+  return (data ?? []) as unknown as MetaProductMapping[];
 }
 
 export async function fetchMetaSyncLogs(
@@ -86,7 +86,7 @@ export async function fetchMetaSyncLogs(
     .eq("catalog_id", catalogId)
     .order("started_at", { ascending: false })
     .limit(10);
-  return (data ?? []) as MetaSyncLog[];
+  return (data ?? []) as unknown as MetaSyncLog[];
 }
 
 export async function startOAuth(

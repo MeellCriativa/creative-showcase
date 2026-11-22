@@ -15,6 +15,7 @@ import {
 } from "@/lib/digitalDelivery";
 import type { DigitalDelivery } from "@/lib/catalog";
 import { meApi } from "@/lib/shipping";
+import { confirmPixPayment } from "@/lib/pixManual";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/pedidos")({
@@ -38,6 +39,9 @@ type OrderRow = {
   customer_phone: string | null;
   customer_email?: string | null;
   payment_status?: string | null;
+  payment_method?: string | null;
+  pix_declared_at?: string | null;
+  pix_confirmed_at?: string | null;
   items: OrderItem[];
   note: string | null;
   total: number;
@@ -124,7 +128,7 @@ function PedidosPage() {
         .eq("catalog_id", catalog!.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []) as OrderRow[];
+      return (data ?? []) as unknown as OrderRow[];
     },
   });
 
@@ -274,6 +278,7 @@ function OrderCard({
   const formattedTime = formatDateTime(dt, { hour: "2-digit", minute: "2-digit" });
   const [meBusy, setMeBusy] = useState<string | null>(null);
   const [deliveryBusy, setDeliveryBusy] = useState<string | null>(null);
+  const [pixBusy, setPixBusy] = useState(false);
 
   const isMeShipping = order.delivery_method === "melhor_envio";
 
@@ -301,6 +306,23 @@ function OrderCard({
     return "orders.digital.statusPending";
   }
   const statusLabelKey = STATUS_LABEL_KEYS[order.status];
+
+  async function confirmPix() {
+    if (pixBusy) return;
+    setPixBusy(true);
+    try {
+      const res = await confirmPixPayment(order.id);
+      if (!res.success) {
+        toast.error(String(res.error ?? "Não foi possível confirmar o Pix."));
+        return;
+      }
+      toast.success("Pagamento Pix confirmado.");
+      onStatusChange(order.id, "confirmado");
+      onDeliveryChanged();
+    } finally {
+      setPixBusy(false);
+    }
+  }
 
   async function runMe(action: string) {
     if (!order.catalog_id) return;
@@ -429,6 +451,32 @@ function OrderCard({
           {statusLabelKey ? t(statusLabelKey) : order.status}
         </span>
       </div>
+
+      {order.payment_method === "pix_manual" && (
+        <div className="mt-3 space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="font-semibold">Pix manual · {money(order.total)}</p>
+          {order.payment_status === "approved" ? (
+            <p className="font-medium text-emerald-700">Pagamento confirmado ✓</p>
+          ) : order.pix_declared_at ? (
+            <>
+              <p>
+                O comprador declarou o pagamento em{" "}
+                {new Date(order.pix_declared_at).toLocaleString("pt-BR")}.
+              </p>
+              <button
+                type="button"
+                disabled={pixBusy}
+                onClick={() => void confirmPix()}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+              >
+                {pixBusy ? "Confirmando..." : "Confirmar recebimento"}
+              </button>
+            </>
+          ) : (
+            <p>Aguardando o comprador declarar o pagamento.</p>
+          )}
+        </div>
+      )}
 
       <ul className="mt-3 space-y-1">
         {order.items.map((item, idx) => (

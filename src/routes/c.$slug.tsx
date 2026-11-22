@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { supabase, getSupabaseError } from "@/integrations/supabase/client";
 import { CartIcon } from "@/components/CartIcons";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { LanguageSelector, useI18n, type MessageKey } from "@/i18n";
+import { countdownParts, parseCheckoutConfig, type CheckoutBannerConfig, type TestimonialConfig } from "@/lib/checkoutConfig";
 import {
   buildWhatsappMessage,
   finalPrice,
@@ -25,6 +27,14 @@ import {
   type CustomerAddress,
 } from "@/lib/catalog";
 import { formatMoney, fromMinorUnits, resolveStoreCurrency, toMinorUnits } from "@/lib/currency";
+import {
+  createPixOrder,
+  declarePixPaid,
+  getPixConfig,
+  getPixOrderStatus,
+  type PixOrderResult,
+  type PixPublicConfig,
+} from "@/lib/pixManual";
 import { SITE_OG_IMAGE } from "@/lib/site";
 import { quoteShipping } from "@/lib/shipping";
 import {
@@ -236,15 +246,18 @@ function PublicCatalog() {
         console.warn("[catalog] no catalog found for slug:", slug);
         return null;
       }
+      const catalogId = String(catalog.id);
       const [{ data: categories }, { data: products }, { data: banners }] = await Promise.all([
-        supabase.from("categories").select("*").eq("catalog_id", catalog.id).order("position"),
+        supabase.from("categories").select("*").eq("catalog_id", catalogId).order("position"),
         supabase
           .from("products")
-          .select("*")
-          .eq("catalog_id", catalog.id)
+          .select(
+            "id,catalog_id,category_id,name,description,price,sale_price,images,variations,available,is_new,is_bestseller,position,created_at,updated_at,price_options,weight_grams,length_cm,width_cm,height_cm,product_type,digital_file_path,digital_file_name,digital_file_mime,digital_file_size,digital_file_checksum,digital_instructions,digital_link_ttl_minutes,digital_max_downloads,additional_info,digital_delivery_mode,checkout_enabled,checkout_desktop_config,checkout_mobile_config",
+          )
+          .eq("catalog_id", catalogId)
           .order("position")
           .order("created_at"),
-        supabase.from("banners").select("*").eq("catalog_id", catalog.id).order("position"),
+        supabase.from("banners").select("*").eq("catalog_id", catalogId).order("position"),
       ]);
       return {
         catalog: catalog as unknown as Catalog,
@@ -414,6 +427,17 @@ function PublicCatalog() {
     },
   });
 
+  const { data: pixConfig } = useQuery<PixPublicConfig | null>({
+    queryKey: ["public-pix-config", catalog?.id],
+    enabled: !!catalog?.id,
+    retry: 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await getPixConfig({ catalogId: catalog!.id });
+      return res.success ? res : null;
+    },
+  });
+
   const products = useMemo(() => {
     const all = data?.products ?? [];
     // `filter` guarda o id interno do filtro (ou o id da categoria), nunca o texto.
@@ -482,8 +506,8 @@ function PublicCatalog() {
         quote?: ShippingQuote | null;
         shippingCost: number;
       },
-      payment: { provider: PaymentProviderKey } | null,
-    ): Promise<boolean> => {
+      payment: { provider: PaymentProviderKey | "pix_manual" } | null,
+    ): Promise<boolean | PixOrderResult> => {
       if (!catalog) return false;
       // Com pagamento online o WhatsApp não é obrigatório; sem ele, continua
       // sendo o canal de finalização (fluxo original preservado).
@@ -635,6 +659,41 @@ function PublicCatalog() {
         if (error) console.error("[checkout] gravação direta do pedido falhou:", error);
         return !error;
       };
+
+      // ── Pix manual: pedido + dados de pagamento sem provedor automático ───
+      if (payment?.provider === "pix_manual") {
+        const pixOrder = await createPixOrder({
+          catalogId: catalog.id,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim() || null,
+          customerEmail: customerEmail.trim().toLowerCase() || null,
+          note: note.trim() || null,
+          items: cart.map((i) => ({
+            product_id: i.productId,
+            quantity: i.quantity,
+            variation: i.variation ?? null,
+          })),
+          deliveryMethod: shipping.deliveryMethod || null,
+          shippingZip: shipping.shippingZip ? shipping.shippingZip.replace(/\D/g, "") : null,
+          shippingService: shipping.quote?.serviceId || null,
+          address: shipping.address
+            ? {
+                street: shipping.address.street || null,
+                number: shipping.address.number || null,
+                complement: shipping.address.complement || null,
+                district: shipping.address.district || null,
+                city: shipping.address.city || null,
+                state: shipping.address.state || null,
+              }
+            : null,
+        });
+        if (!pixOrder.success || !pixOrder.order_id) {
+          toast.error(String(pixOrder.error || t("catalog.pix.invalid")), { duration: 9000 });
+          return false;
+        }
+        setCart([]);
+        return pixOrder;
+      }
 
       const created = await createSecureOrder({
         catalogId: catalog.id,
@@ -1128,6 +1187,7 @@ function PublicCatalog() {
             Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []
           }
           paymentMethods={paymentMethods ?? []}
+          pixConfig={pixConfig ?? null}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
           onRemove={removeItem}
@@ -1341,15 +1401,77 @@ function ProductSheet({
   onAdd: (item: CartItem) => void;
 }) {
   const { t } = useI18n();
+  const isMobile = useIsMobile();
   const money = (value: number) => formatMoney(value, currency);
   const [quantity, setQuantity] = useState(1);
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [selectedPriceOption, setSelectedPriceOption] = useState<string | null>(null);
   const [imgIdx, setImgIdx] = useState(0);
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const [checkoutBanner, setCheckoutBanner] = useState<CheckoutBannerConfig | null>(null);
+  const [checkoutTestimonials, setCheckoutTestimonials] = useState<TestimonialConfig[]>([]);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
   const images = product.images ?? [];
   const hasPriceOptions = (product.price_options?.length ?? 0) > 0;
+  const checkoutConfig = useMemo(
+    () =>
+      parseCheckoutConfig(
+        isMobile ? product.checkout_mobile_config : product.checkout_desktop_config,
+      ),
+    [product, isMobile],
+  );
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const [{ data: banners }, { data: testimonials }] = await Promise.all([
+        supabase
+          .from("banners")
+          .select("image_url, object_position, href")
+          .eq("product_id", product.id)
+          .eq("device", isMobile ? "mobile" : "desktop")
+          .limit(1),
+        supabase
+          .from("product_testimonials")
+          .select("id, customer_name, content, stars, truth_confirmed")
+          .eq("product_id", product.id)
+          .eq("truth_confirmed", true)
+          .order("position", { ascending: true }),
+      ]);
+      if (!active) return;
+      const first = banners?.[0];
+      setCheckoutBanner(
+        first
+          ? {
+              imageUrl: first.image_url,
+              objectPosition: first.object_position ?? "center",
+              href: first.href ?? "",
+            }
+          : null,
+      );
+      setCheckoutTestimonials(
+        (testimonials ?? []).map((row) => ({
+          id: row.id,
+          customerName: row.customer_name,
+          content: row.content,
+          stars: row.stars,
+          truthConfirmed: row.truth_confirmed,
+        })),
+      );
+    })();
+    return () => {
+      active = false;
+    };
+  }, [product.id, isMobile]);
+
+  useEffect(() => {
+    if (!checkoutConfig.countdown.enabled) return;
+    const id = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [checkoutConfig.countdown.enabled]);
+
+  const countdown = countdownParts(checkoutConfig.countdown.endsAt, countdownNow);
 
   const activePriceOption = hasPriceOptions
     ? (product.price_options.find((o) => o.id === selectedPriceOption) ?? null)
@@ -1399,7 +1521,27 @@ function ProductSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-center bg-foreground/40">
-      <div className="mt-8 flex w-full max-w-[30rem] flex-col overflow-hidden rounded-t-3xl bg-background">
+      <div
+        className="mt-8 flex w-full max-w-[30rem] flex-col overflow-hidden rounded-t-3xl bg-background"
+        style={
+          product.checkout_enabled
+            ? ({
+                "--shop-primary": checkoutConfig.primaryColor,
+                "--shop-accent": checkoutConfig.secondaryColor,
+                background: checkoutConfig.backgroundColor,
+                color: checkoutConfig.textColor,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {product.checkout_enabled && checkoutBanner?.imageUrl && (
+          <img
+            src={checkoutBanner.imageUrl}
+            alt=""
+            className="w-full object-cover"
+            style={{ aspectRatio: isMobile ? "390 / 156" : "480 / 192", objectPosition: checkoutBanner.objectPosition }}
+          />
+        )}
         {/* ── Image Carousel ── */}
         <div className="relative">
           <div
@@ -1459,6 +1601,68 @@ function ProductSheet({
               {product.description}
             </p>
           )}
+
+          {product.checkout_enabled && checkoutConfig.countdown.enabled && (
+            <div
+              className={`mt-4 rounded-xl px-3 py-2 text-center text-sm ${countdown.expired ? "opacity-70" : ""}`}
+              style={{
+                background: checkoutConfig.countdown.backgroundColor,
+                color: checkoutConfig.countdown.textColor,
+              }}
+            >
+              {checkoutConfig.countdown.message}:{" "}
+              <strong style={{ color: checkoutConfig.countdown.numberColor }}>
+                {String(countdown.hours).padStart(2, "0")}:
+                {String(countdown.minutes).padStart(2, "0")}:
+                {String(countdown.seconds).padStart(2, "0")}
+              </strong>
+            </div>
+          )}
+
+          {product.checkout_enabled && checkoutConfig.guarantee.enabled && (
+            <p
+              className="mt-3 rounded-xl border px-3 py-2 text-center text-sm font-semibold"
+              style={{ color: checkoutConfig.guarantee.color, borderColor: checkoutConfig.guarantee.color }}
+            >
+              🛡 {checkoutConfig.guarantee.text} · {checkoutConfig.guarantee.days}{" "}
+              {t("checkoutEditor.guarantee.days").toLowerCase()}
+            </p>
+          )}
+
+          {product.checkout_enabled && (checkoutConfig.benefits || checkoutConfig.included) && (
+            <div className="mt-4 rounded-xl bg-muted/60 p-3 text-sm">
+              {checkoutConfig.benefits && (
+                <p className="whitespace-pre-line">{checkoutConfig.benefits}</p>
+              )}
+              {checkoutConfig.included && (
+                <p className="mt-2 whitespace-pre-line">{checkoutConfig.included}</p>
+              )}
+            </div>
+          )}
+
+          {product.checkout_enabled && product.additional_info && (
+            <p className="mt-3 whitespace-pre-line text-xs text-muted-foreground">
+              {product.additional_info}
+            </p>
+          )}
+
+          {product.checkout_enabled &&
+            checkoutConfig.testimonialsEnabled &&
+            checkoutTestimonials.length > 0 && (
+              <div className="mt-5 space-y-2">
+                {checkoutTestimonials.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-border p-3 text-sm">
+                    <div className="flex gap-0.5 text-amber-500">
+                      {Array.from({ length: item.stars }, (_, i) => (
+                        <span key={i}>★</span>
+                      ))}
+                    </div>
+                    <p>{item.content}</p>
+                    <p className="text-xs text-muted-foreground">— {item.customerName}</p>
+                  </div>
+                ))}
+              </div>
+            )}
 
           {hasPriceOptions && (
             <div className="mt-5">
@@ -1536,12 +1740,40 @@ function ProductSheet({
           <button
             onClick={handleAdd}
             disabled={!product.available}
-            className="btn-shimmer btn-elevated w-full rounded-2xl py-4 font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
-            style={{ background: primary }}
+            className={`btn-shimmer btn-elevated w-full font-semibold disabled:opacity-50 transition-transform hover:scale-[1.02] ${
+              product.checkout_enabled && checkoutConfig.buttonStyle === "outline"
+                ? "border bg-transparent rounded-2xl py-4"
+                : product.checkout_enabled && checkoutConfig.buttonStyle === "rounded"
+                  ? "rounded-full py-4"
+                  : "rounded-2xl py-4"
+            } ${
+              product.checkout_enabled && checkoutConfig.buttonSize === "lg"
+                ? "py-5 text-lg"
+                : product.checkout_enabled && checkoutConfig.buttonSize === "sm"
+                  ? "py-2.5 text-sm"
+                  : ""
+            }`}
+            style={{
+              background:
+                product.checkout_enabled && checkoutConfig.buttonStyle !== "outline"
+                  ? checkoutConfig.buttonColor
+                  : product.checkout_enabled
+                    ? "transparent"
+                    : primary,
+              color:
+                product.checkout_enabled && checkoutConfig.buttonStyle !== "outline"
+                  ? checkoutConfig.buttonTextColor
+                  : product.checkout_enabled
+                    ? checkoutConfig.buttonColor
+                    : "#fff",
+              borderColor: product.checkout_enabled ? checkoutConfig.buttonColor : undefined,
+            }}
           >
-            {product.available
-              ? t("catalog.product.addWithPrice", { price: money(price * quantity) })
-              : t("catalog.product.soldOutTitle")}
+            {!product.available
+              ? t("catalog.product.soldOutTitle")
+              : product.checkout_enabled && checkoutConfig.buttonText
+                ? `${checkoutConfig.buttonText} · ${money(price * quantity)}`
+                : t("catalog.product.addWithPrice", { price: money(price * quantity) })}
           </button>
         </div>
       </div>
@@ -1578,6 +1810,7 @@ function CartSheet({
   currency,
   deliveryMethods,
   paymentMethods,
+  pixConfig,
   onClose,
   onChangeQty,
   onRemove,
@@ -1590,6 +1823,7 @@ function CartSheet({
   currency: string;
   deliveryMethods: string[];
   paymentMethods: PublicPaymentMethod[];
+  pixConfig: PixPublicConfig | null;
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
@@ -1605,8 +1839,8 @@ function CartSheet({
       quote?: ShippingQuote | null;
       shippingCost: number;
     },
-    payment: { provider: PaymentProviderKey } | null,
-  ) => Promise<boolean>;
+    payment: { provider: PaymentProviderKey | "pix_manual" } | null,
+  ) => Promise<boolean | PixOrderResult>;
 }) {
   const { t } = useI18n();
   const money = (value: number) => formatMoney(value, currency);
@@ -1624,7 +1858,12 @@ function CartSheet({
   const [quoteMsg, setQuoteMsg] = useState<string>("");
   const [coverageMsg, setCoverageMsg] = useState<string>("");
   /** `null` = finalizar pelo WhatsApp (fluxo original). */
-  const [paymentProvider, setPaymentProvider] = useState<PaymentProviderKey | null>(null);
+  const [paymentProvider, setPaymentProvider] = useState<PaymentProviderKey | "pix_manual" | null>(
+    null,
+  );
+  const [pixOrder, setPixOrder] = useState<PixOrderResult | null>(null);
+  const [pixDeclared, setPixDeclared] = useState(false);
+  const [pixApproved, setPixApproved] = useState(false);
   const [address, setAddress] = useState<CustomerAddress>({
     street: "",
     number: "",
@@ -1645,6 +1884,24 @@ function CartSheet({
   const hasMelhorEnvio = deliveryMethods.includes("melhor_envio");
   const hasPhysical = items.some((i) => i.product_type !== "digital");
   const hasDigital = items.some((i) => i.product_type === "digital");
+
+  useEffect(() => {
+    if (!pixOrder) return;
+    let active = true;
+    const check = async () => {
+      const status = await getPixOrderStatus(pixOrder.order_id, pixOrder.checkout_token);
+      if (!active || !status.success) return;
+      if (status.payment_status === "approved") setPixApproved(true);
+      else if (status.pix_declared_at) setPixDeclared(true);
+    };
+    void check();
+    const id = window.setInterval(() => void check(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [pixOrder]);
+
   useEffect(() => {
     if (!deliveryMethod && deliveryMethods.length === 1) {
       setDeliveryMethod(deliveryMethods[0]!);
@@ -1794,7 +2051,7 @@ function CartSheet({
     if (submitting) return;
     setSubmitting(true);
     try {
-      await onFinish(
+      const result = await onFinish(
         customerName,
         customerPhone,
         customerEmail,
@@ -1802,6 +2059,11 @@ function CartSheet({
         shipping,
         paymentProvider ? { provider: paymentProvider } : null,
       );
+      if (result && typeof result === "object" && result.pix) {
+        setPixOrder(result);
+      } else if (result) {
+        onClose();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1859,9 +2121,20 @@ function CartSheet({
     });
   }
 
+  async function handleDeclarePix() {
+    if (!pixOrder) return;
+    const result = await declarePixPaid(pixOrder.order_id, pixOrder.checkout_token);
+    if (result.success) {
+      setPixDeclared(true);
+      toast.success(t("catalog.pix.declared"));
+    } else {
+      toast.error(String(result.error ?? t("catalog.pix.invalid")));
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-center bg-foreground/40 md:items-center md:p-6">
-      <div className="flex h-full w-full max-w-[30rem] flex-col rounded-t-3xl bg-background shadow-xl md:h-auto md:max-h-[calc(100dvh-3rem)] md:max-w-[34rem] md:rounded-2xl">
+      <div className="relative flex h-full w-full max-w-[30rem] flex-col rounded-t-3xl bg-background shadow-xl md:h-auto md:max-h-[calc(100dvh-3rem)] md:max-w-[34rem] md:rounded-2xl">
         <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-5 py-4">
           <h2 className="truncate text-lg font-bold text-foreground">{t("catalog.cart.title")}</h2>
           <button
@@ -1872,6 +2145,86 @@ function CartSheet({
             <X className="size-4" />
           </button>
         </header>
+
+        {pixOrder && (
+          <div className="absolute inset-0 z-10 flex flex-col bg-background">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+              <h3 className="text-lg font-bold text-foreground">{t("catalog.pix.title")}</h3>
+              <p className="text-sm text-muted-foreground">
+                {money(pixOrder.total)} · {pixOrder.pix.holderName
+                  ? `${t("catalog.pix.holder")}: ${pixOrder.pix.holderName}`
+                  : ""}
+              </p>
+
+              {pixOrder.pix.qrUrl && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t("catalog.pix.qrTitle")}
+                  </p>
+                  <img
+                    src={pixOrder.pix.qrUrl}
+                    alt={t("catalog.pix.qrTitle")}
+                    className="mx-auto size-56 rounded-xl border border-border object-contain bg-white p-2"
+                  />
+                </div>
+              )}
+
+              {pixOrder.pix.keyValue && (
+                <div className="space-y-2 rounded-2xl border border-border p-4">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t("catalog.pix.keyTitle")} ({pixOrder.pix.keyType})
+                  </p>
+                  <p className="break-all font-mono text-sm text-foreground">
+                    {pixOrder.pix.keyValue}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(String(pixOrder.pix.keyValue));
+                      toast.success(t("catalog.pix.copied"));
+                    }}
+                    className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground"
+                  >
+                    {t("catalog.pix.copyKey")}
+                  </button>
+                </div>
+              )}
+
+              {pixApproved ? (
+                <p className="rounded-xl bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-700">
+                  {t("catalog.pix.approved")}
+                </p>
+              ) : pixDeclared ? (
+                <p className="rounded-xl bg-amber-500/10 p-3 text-sm text-amber-700">
+                  {t("catalog.pix.declared")}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t("catalog.pix.waiting")}</p>
+              )}
+            </div>
+
+            <div className="space-y-2 border-t border-border p-4">
+              <button
+                type="button"
+                disabled={pixDeclared || pixApproved}
+                onClick={() => void handleDeclarePix()}
+                className="w-full rounded-2xl bg-primary py-3.5 font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {t("catalog.pix.declarePaid")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPixOrder(null);
+                  onClose();
+                }}
+                className="w-full rounded-2xl border border-border py-3 text-sm font-semibold text-muted-foreground"
+              >
+                {t("common.close")}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3 px-5 pt-5 pb-0">
           {items.length === 0 && (
@@ -2171,7 +2524,7 @@ function CartSheet({
                 />
               </div>
 
-              {paymentMethods.length > 0 && (
+              {(paymentMethods.length > 0 || pixConfig?.available) && (
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-foreground">
                     {t("catalog.cart.paymentQuestion")}
@@ -2194,6 +2547,25 @@ function CartSheet({
                         </span>
                       </span>
                     </button>
+                    {pixConfig?.available && (
+                      <button
+                        type="button"
+                        onClick={() => setPaymentProvider("pix_manual")}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors ${
+                          paymentProvider === "pix_manual"
+                            ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                            : "border-border bg-card text-muted-foreground"
+                        }`}
+                      >
+                        <span className="text-lg">⚡</span>
+                        <span>
+                          {t("catalog.pix.payWith")}
+                          <span className="block text-xs font-normal text-muted-foreground">
+                            {t("catalog.paymentMethods.pix")}
+                          </span>
+                        </span>
+                      </button>
+                    )}
                     {paymentMethods.map((method) => (
                       <button
                         key={method.provider}
@@ -2252,11 +2624,13 @@ function CartSheet({
               ? paymentProvider
                 ? t("catalog.cart.openingPayment")
                 : t("catalog.cart.submittingOrder")
-              : paymentProvider
-                ? t("catalog.cart.payWith", {
-                    provider: paymentProvider === "paypal" ? "PayPal" : "Mercado Pago",
-                  })
-                : t("catalog.cart.finishWhatsapp")}
+              : paymentProvider === "pix_manual"
+                ? t("catalog.pix.payWith")
+                : paymentProvider
+                  ? t("catalog.cart.payWith", {
+                      provider: paymentProvider === "paypal" ? "PayPal" : "Mercado Pago",
+                    })
+                  : t("catalog.cart.finishWhatsapp")}
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Link2, Loader2, Palette, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -17,6 +17,7 @@ import {
   removeDigitalFile,
   uploadDigitalFile,
 } from "@/lib/digitalDelivery";
+import { CheckoutDesignEditor } from "@/components/CheckoutDesignEditor";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/produtos")({
@@ -45,6 +46,9 @@ type Draft = {
   digital_instructions: string;
   digital_link_ttl_minutes: string;
   digital_max_downloads: string;
+  digital_delivery_mode: "file" | "link";
+  digital_external_url: string;
+  additional_info: string;
   weight_grams: string;
   length_cm: string;
   width_cm: string;
@@ -72,6 +76,9 @@ const emptyDraft: Draft = {
   digital_instructions: "",
   digital_link_ttl_minutes: "1440",
   digital_max_downloads: "5",
+  digital_delivery_mode: "file",
+  digital_external_url: "",
+  additional_info: "",
   weight_grams: "",
   length_cm: "",
   width_cm: "",
@@ -88,6 +95,7 @@ function ProdutosPage() {
   const { data: metaConn } = useMetaConnection(catalog?.id);
   const { data: metaMappings } = useMetaMappings(catalog?.id);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [checkoutProduct, setCheckoutProduct] = useState<Product | null>(null);
 
   const currency = resolveStoreCurrency(catalog?.currency);
   const money = (value: number) => formatMoney(value, currency);
@@ -141,6 +149,9 @@ function ProdutosPage() {
       digital_instructions: product.digital_instructions ?? "",
       digital_link_ttl_minutes: String(product.digital_link_ttl_minutes ?? 1440),
       digital_max_downloads: String(product.digital_max_downloads ?? 5),
+      digital_delivery_mode: product.digital_delivery_mode === "link" ? "link" : "file",
+      digital_external_url: product.digital_external_url ?? "",
+      additional_info: product.additional_info ?? "",
       weight_grams: product.weight_grams != null ? String(product.weight_grams) : "",
       length_cm: product.length_cm != null ? String(product.length_cm) : "",
       width_cm: product.width_cm != null ? String(product.width_cm) : "",
@@ -161,7 +172,7 @@ function ProdutosPage() {
           onClick={() => setDraft({ ...emptyDraft })}
           className="flex shrink-0 items-center gap-1.5 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
         >
-          <Plus className="size-4" /> {t("products.newButton")}
+          <Plus className="size-4" /> {t("panel.nav.createProduct")}
         </button>
       </header>
 
@@ -169,7 +180,7 @@ function ProdutosPage() {
         {isLoading && <Loader2 className="mx-auto size-5 animate-spin text-primary" />}
         {products?.length === 0 && (
           <p className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            {t("products.empty", { action: t("products.newButton") })}
+            {t("products.empty", { action: t("panel.nav.createProduct") })}
           </p>
         )}
         {products?.map((product, index) => {
@@ -233,7 +244,18 @@ function ProdutosPage() {
                 {product.product_type === "digital" && (
                   <span className="mt-1 mr-1 inline-block rounded-full bg-[var(--shop-accent)] px-2 py-0.5 text-[11px] font-semibold text-primary">
                     {t("products.digitalBadge")}
-                    {product.digital_file_name ? ` · ${product.digital_file_name}` : ""}
+                    {product.digital_delivery_mode === "link" ? (
+                      ` · ${t("products.digital.modeLink")}`
+                    ) : product.digital_file_name ? (
+                      ` · ${product.digital_file_name}`
+                    ) : (
+                      ""
+                    )}
+                  </span>
+                )}
+                {product.checkout_enabled && (
+                  <span className="mt-1 inline-block rounded-full bg-[var(--shop-accent)] px-2 py-0.5 text-[11px] font-semibold text-primary">
+                    {t("products.editor.customizeCheckout")}
                   </span>
                 )}
                 {!product.available && (
@@ -256,6 +278,12 @@ function ProdutosPage() {
                   </SmallBtn>
                   <SmallBtn label={t("products.actions.edit")} onClick={() => edit(product)}>
                     <Pencil className="size-3.5" />
+                  </SmallBtn>
+                  <SmallBtn
+                    label={t("products.editor.customizeCheckout")}
+                    onClick={() => setCheckoutProduct(product)}
+                  >
+                    <Palette className="size-3.5" />
                   </SmallBtn>
                   <SmallBtn
                     label={t("products.actions.delete")}
@@ -282,6 +310,19 @@ function ProdutosPage() {
           nextPosition={products?.length ?? 0}
           onSaved={() => {
             setDraft(null);
+            void refresh();
+          }}
+        />
+      )}
+
+      {checkoutProduct && (
+        <CheckoutDesignEditor
+          product={checkoutProduct}
+          catalogId={catalog.id}
+          storeName={catalog.store_name}
+          currency={currency}
+          onClose={() => {
+            setCheckoutProduct(null);
             void refresh();
           }}
         />
@@ -404,6 +445,23 @@ function ProductEditor({
         return;
       }
     }
+    const isLinkMode = !isPhysical && draft.digital_delivery_mode === "link";
+    let externalUrl: string | null = null;
+    if (isLinkMode) {
+      const candidate = draft.digital_external_url.trim();
+      let valid = false;
+      try {
+        const parsed = new URL(candidate);
+        valid = parsed.protocol === "https:" && Boolean(parsed.hostname);
+      } catch {
+        valid = false;
+      }
+      if (!valid) {
+        toast.error(t("products.digital.externalInvalid"));
+        return;
+      }
+      externalUrl = candidate;
+    }
     setSaving(true);
     const payload = {
       catalog_id: catalogId,
@@ -419,11 +477,14 @@ function ProductEditor({
       is_new: draft.is_new,
       is_bestseller: draft.is_bestseller,
       product_type: isPhysical ? "fisico" : "digital",
-      digital_file_path: isPhysical ? null : draft.digital_file_path,
-      digital_file_name: isPhysical ? null : draft.digital_file_name,
-      digital_file_mime: isPhysical ? null : draft.digital_file_mime,
-      digital_file_size: isPhysical ? null : draft.digital_file_size,
-      digital_file_checksum: isPhysical ? null : draft.digital_file_checksum,
+      additional_info: draft.additional_info.trim() || null,
+      digital_delivery_mode: isPhysical ? "file" : isLinkMode ? "link" : "file",
+      digital_external_url: externalUrl,
+      digital_file_path: isPhysical || isLinkMode ? null : draft.digital_file_path,
+      digital_file_name: isPhysical || isLinkMode ? null : draft.digital_file_name,
+      digital_file_mime: isPhysical || isLinkMode ? null : draft.digital_file_mime,
+      digital_file_size: isPhysical || isLinkMode ? null : draft.digital_file_size,
+      digital_file_checksum: isPhysical || isLinkMode ? null : draft.digital_file_checksum,
       digital_instructions: isPhysical ? null : draft.digital_instructions.trim() || null,
       digital_link_ttl_minutes: isPhysical
         ? null
@@ -497,6 +558,14 @@ function ProductEditor({
             rows={3}
             value={draft.description}
             onChange={(e) => set("description", e.target.value)}
+            className="input-base resize-none"
+          />
+
+          <textarea
+            placeholder={t("products.editor.additionalInfoPlaceholder")}
+            rows={2}
+            value={draft.additional_info}
+            onChange={(e) => set("additional_info", e.target.value)}
             className="input-base resize-none"
           />
 
@@ -628,6 +697,38 @@ function ProductEditor({
             <div className="space-y-3 rounded-2xl border border-border p-4">
               <div>
                 <p className="text-sm font-semibold text-foreground">
+                  {t("products.digital.modeTitle")}
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => set("digital_delivery_mode", "file")}
+                    className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                      draft.digital_delivery_mode === "file"
+                        ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                        : "border-border bg-card text-muted-foreground"
+                    }`}
+                  >
+                    {t("products.digital.modeFile")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => set("digital_delivery_mode", "link")}
+                    className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                      draft.digital_delivery_mode === "link"
+                        ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
+                        : "border-border bg-card text-muted-foreground"
+                    }`}
+                  >
+                    {t("products.digital.modeLink")}
+                  </button>
+                </div>
+              </div>
+
+              {draft.digital_delivery_mode === "file" && (
+              <>
+              <div>
+                <p className="text-sm font-semibold text-foreground">
                   {t("products.digital.fileTitle")}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -674,6 +775,27 @@ function ProductEditor({
                   >
                     <Trash2 className="size-4" />
                   </button>
+                </div>
+              )}
+              </>
+              )}
+
+              {draft.digital_delivery_mode === "link" && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-foreground">
+                    {t("products.digital.externalTitle")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("products.digital.externalHint")}
+                  </p>
+                  <input
+                    type="url"
+                    inputMode="url"
+                    placeholder={t("products.digital.externalPlaceholder")}
+                    value={draft.digital_external_url}
+                    onChange={(e) => set("digital_external_url", e.target.value)}
+                    className="input-base"
+                  />
                 </div>
               )}
 

@@ -39,6 +39,14 @@ export type Catalog = {
   shipping_origin_zip: string | null;
   /** Moeda principal da loja (ISO 4217). Ausente em lojas antigas = BRL. */
   currency?: string | null;
+  /** Pix manual (sem provedor automático). */
+  pix_mode?: "key" | "qr" | "both" | null;
+  pix_key_type?: string | null;
+  pix_key_value?: string | null;
+  pix_holder_name?: string | null;
+  pix_holder_document?: string | null;
+  pix_qr_path?: string | null;
+  pix_qr_name?: string | null;
   plan?: string;
 };
 
@@ -107,6 +115,13 @@ export type Product = {
   digital_instructions?: string | null;
   digital_link_ttl_minutes?: number | null;
   digital_max_downloads?: number | null;
+  additional_info?: string | null;
+  digital_delivery_mode?: "file" | "link" | null;
+  /** URL externa secreta: nunca renderizada no catálogo público. */
+  digital_external_url?: string | null;
+  checkout_enabled?: boolean | null;
+  checkout_desktop_config?: Record<string, unknown> | null;
+  checkout_mobile_config?: Record<string, unknown> | null;
 };
 
 export type ProductType = "fisico" | "digital";
@@ -118,6 +133,7 @@ export type Banner = {
   href: string | null;
   position: number;
   object_position?: string;
+  device?: "desktop" | "mobile";
 };
 
 export type Order = {

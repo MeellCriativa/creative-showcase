@@ -9,6 +9,7 @@ import type { MessagePaths, PluralPaths } from "./types.ts";
 
 import { auth } from "./namespaces/auth.ts";
 import { catalog } from "./namespaces/catalog.ts";
+import { checkoutEditor } from "./namespaces/checkoutEditor.ts";
 import { categories } from "./namespaces/categories.ts";
 import { common } from "./namespaces/common.ts";
 import { converter } from "./namespaces/converter.ts";
@@ -37,6 +38,7 @@ export const messages = {
   stats: stats.ptBR,
   customize: customize.ptBR,
   catalog: catalog.ptBR,
+  checkoutEditor: checkoutEditor.ptBR,
   payments: payments.ptBR,
   shipping: shipping.ptBR,
   qrCode: qrCode.ptBR,
@@ -63,6 +65,7 @@ export const messagesByLocale: Record<Locale, Messages> = {
     stats: stats.en,
     customize: customize.en,
     catalog: catalog.en,
+    checkoutEditor: checkoutEditor.en,
     payments: payments.en,
     shipping: shipping.en,
     qrCode: qrCode.en,
@@ -82,6 +85,7 @@ export const messagesByLocale: Record<Locale, Messages> = {
     stats: stats.es,
     customize: customize.es,
     catalog: catalog.es,
+    checkoutEditor: checkoutEditor.es,
     payments: payments.es,
     shipping: shipping.es,
     qrCode: qrCode.es,
