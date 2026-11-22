@@ -1680,6 +1680,10 @@ export type Database = {
           email_status: string
           order_id: string
           payment_method: string | null
+          push_attempts: number
+          push_last_error: string | null
+          push_sent_at: string | null
+          push_status: string
           read_at: string | null
           total: number | null
         }
@@ -1694,6 +1698,10 @@ export type Database = {
           email_status?: string
           order_id: string
           payment_method?: string | null
+          push_attempts?: number
+          push_last_error?: string | null
+          push_sent_at?: string | null
+          push_status?: string
           read_at?: string | null
           total?: number | null
         }
@@ -1708,6 +1716,10 @@ export type Database = {
           email_status?: string
           order_id?: string
           payment_method?: string | null
+          push_attempts?: number
+          push_last_error?: string | null
+          push_sent_at?: string | null
+          push_status?: string
           read_at?: string | null
           total?: number | null
         }
@@ -1724,6 +1736,54 @@ export type Database = {
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seller_push_subscriptions: {
+        Row: {
+          auth: string
+          catalog_id: string
+          created_at: string
+          endpoint: string
+          id: string
+          p256dh: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          catalog_id: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          p256dh: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          catalog_id?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          p256dh?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seller_push_subscriptions_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_push_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]

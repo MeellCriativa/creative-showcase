@@ -3,6 +3,7 @@
  * Usa o mesmo Brevo já configurado para a entrega digital.
  */
 import { adminClient } from "./payments/db.ts";
+import { sendSellerOrderPush } from "./seller_push.ts";
 import { buildBrevoEmailPayload } from "./digital_delivery_pure.ts";
 import {
   buildSellerOrderEmail,
@@ -65,22 +66,8 @@ function parseItems(raw: unknown): SellerOrderEmailInput["items"] {
  */
 export async function notifySellerNewOrder(orderId: string): Promise<void> {
   try {
-    const cfg = config();
-    if (!cfg) {
-      log("Brevo não configurado; e-mail do vendedor ignorado");
-      return;
-    }
     const db = adminClient();
-
-    const { data: claimed, error: claimError } = await db.rpc(
-      "claim_seller_order_email",
-      { p_order_id: orderId },
-    );
-    if (claimError) {
-      log("falha ao reservar envio", claimError.message);
-      return;
-    }
-    if (!claimed) return; // já enviado, em envio ou houve erro recente
+    const cfg = config();
 
     const { data: order, error: orderError } = await db
       .from("orders")
@@ -118,6 +105,32 @@ export async function notifySellerNewOrder(orderId: string): Promise<void> {
         .eq("order_id", orderId);
       return;
     }
+    const storeName = String(catalog.store_name ?? "Sua vitrine");
+
+    // Push primeiro: é o aviso mais imediato e tem reserva própria, então o
+    // e-mail (Brevo) pode falhar ou não estar configurado sem afetá-lo.
+    await sendSellerOrderPush({
+      orderId: row.id,
+      catalogId: row.catalog_id,
+      customerName: row.customer_name,
+      total: Number(row.total) || 0,
+      currency: row.currency,
+      storeName,
+    });
+
+    if (!cfg) {
+      log("Brevo não configurado; e-mail do vendedor ignorado");
+      return;
+    }
+
+    const { data: claimed, error: claimError } = await db.rpc("claim_seller_order_email", {
+      p_order_id: orderId,
+    });
+    if (claimError) {
+      log("falha ao reservar envio", claimError.message);
+      return;
+    }
+    if (!claimed) return; // já enviado, em envio ou houve erro recente
 
     const { data: auth, error: authError } = await db.auth.admin.getUserById(
       catalog.user_id,
@@ -133,7 +146,7 @@ export async function notifySellerNewOrder(orderId: string): Promise<void> {
     }
 
     const email = buildSellerOrderEmail({
-      storeName: String(catalog.store_name ?? "Sua vitrine"),
+      storeName,
       customerName: String(row.customer_name ?? "Cliente"),
       orderId: row.id,
       total: Number(row.total) || 0,

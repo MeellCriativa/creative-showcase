@@ -9,6 +9,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
 import { useI18n } from "@/i18n";
 import { formatMoney, resolveOrderCurrency } from "@/lib/currency";
+import { playNotificationSound } from "@/lib/notificationSound";
+import { showOrderSystemNotification } from "@/lib/pushNotifications";
 
 /**
  * Dedupe entre as duas instâncias do hook (layout + tela de pedidos).
@@ -79,11 +81,16 @@ export function useOrderNotifications() {
       if (!orderId || !shouldAnnounce(orderId)) return;
       const name = String(row.customer_name ?? t("orders.notification.newBadge"));
       const total = formatMoney(Number(row.total) || 0, resolveOrderCurrency(row.currency ?? null));
-      toast(t("orders.notification.toastTitle"), {
-        description: t("orders.notification.toastBody", { name, total }),
+      const title = t("orders.notification.toastTitle");
+      const body = t("orders.notification.toastBody", { name, total });
+
+      toast(title, {
+        description: body,
         duration: 12000,
         closeButton: true,
       });
+      playNotificationSound();
+      void showOrderSystemNotification({ title, body, orderId });
     },
     [catalogId, t],
   );

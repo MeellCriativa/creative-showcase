@@ -106,3 +106,35 @@ export function isRecentOrder(createdAt: string | null | undefined, now = Date.n
   if (!Number.isFinite(time) || time > now + 60_000) return false;
   return now - time <= 24 * 60 * 60 * 1000;
 }
+
+export type SellerOrderPushInput = {
+  orderId: string;
+  customerName: string | null;
+  total: number;
+  currency: string | null;
+  storeName: string | null;
+  panelUrl: string;
+};
+
+/** Payload enviado ao service worker do painel via Web Push. */
+export function buildSellerOrderPush(input: SellerOrderPushInput): {
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+  orderId: string;
+} {
+  const customer = String(input.customerName || "Cliente").slice(0, 120);
+  const total = formatSellerMoney(Number(input.total) || 0, String(input.currency || "BRL"));
+  const store = String(input.storeName || "Sua vitrine").slice(0, 80);
+  const url = `${input.panelUrl.replace(/\/+$/, "")}/painel/pedidos?order=${encodeURIComponent(
+    input.orderId,
+  )}`;
+  return {
+    title: "Novo pedido recebido! 🎉",
+    body: `${customer} — ${total} · ${store}. Toque para abrir no painel.`,
+    url,
+    tag: `new-order-${input.orderId}`,
+    orderId: input.orderId,
+  };
+}

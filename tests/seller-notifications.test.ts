@@ -82,7 +82,7 @@ test("toast de novo pedido tem botão para fechar no lado direito", () => {
 
   assert.match(
     panel,
-    /toast\(t\("orders\.notification\.toastTitle"\)[\s\S]{0,300}closeButton: true/,
+    /const title = t\("orders\.notification\.toastTitle"\)[\s\S]{0,300}closeButton: true/,
   );
   assert.match(toaster, /closeButtonAriaLabel: t\("common\.close"\)/);
   assert.match(toaster, /closeButton: "text-muted-foreground hover:text-foreground"/);

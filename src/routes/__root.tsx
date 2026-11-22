@@ -29,6 +29,8 @@ const resolveInitialLocale = createIsomorphicFn()
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { SITE_NAME, SITE_OG_IMAGE, SITE_OG_IMAGE_ALT, SITE_URL } from "../lib/site";
+import { unlockNotificationAudio } from "@/lib/notificationSound";
+import { registerPushServiceWorker } from "@/lib/pushNotifications";
 
 function NotFoundContent() {
   const { t } = useI18n();
@@ -184,6 +186,11 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient, initialLocale } = Route.useRouteContext();
+
+  useEffect(() => {
+    unlockNotificationAudio();
+    void registerPushServiceWorker();
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

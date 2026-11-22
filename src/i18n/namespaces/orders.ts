@@ -27,6 +27,20 @@ export const orders = defineNamespace({
       bannerTitle: "Novos pedidos",
       bannerBody: "Você tem {{count}} aviso(s) de novos pedidos.",
       markRead: "Marcar como lidos",
+      pushDenied: "Permissão negada. Libere as notificações nas configurações do navegador.",
+      pushEnable: "Ativar notificações",
+      pushEnabled: "Notificações ativadas neste dispositivo.",
+      pushError: "Não foi possível ativar as notificações.",
+      pushHint:
+        "Receba um aviso com som na barra do celular quando chegar uma venda, mesmo com o painel fechado.",
+      pushIosHint:
+        "No iPhone: toque em Compartilhar → Adicionar à Tela de Início e abra o app antes de ativar.",
+      pushTest: "Enviar notificação de teste",
+      pushTestSent: "Notificação de teste enviada.",
+      pushTitle: "Notificações no celular",
+      pushUnsupported:
+        "Este navegador não suporta notificações. No iPhone, adicione o site à Tela de Início.",
+      pushDisable: "Desativar notificações",
     },
     status: {
       novo: "Novo",
@@ -82,7 +96,8 @@ export const orders = defineNamespace({
       marked: "Pedido marcado como teste.",
       unmarked: "Pedido desmarcado como teste.",
       deleted: "Pedido de teste excluído. O total foi atualizado.",
-      deleteError: "Não foi possível excluir este pedido. Verifique se ele está marcado como teste e não teve cobrança real.",
+      deleteError:
+        "Não foi possível excluir este pedido. Verifique se ele está marcado como teste e não teve cobrança real.",
     },
     toast: {
       connectFirst: "Conecte sua loja à Melhor Envio antes.",
@@ -123,6 +138,20 @@ export const orders = defineNamespace({
       bannerTitle: "New orders",
       bannerBody: "You have {{count}} new order alert(s).",
       markRead: "Mark as read",
+      pushDenied: "Permission denied. Allow notifications in your browser settings.",
+      pushEnable: "Turn on notifications",
+      pushEnabled: "Notifications are on for this device.",
+      pushError: "Couldn't turn on notifications.",
+      pushHint:
+        "Get a sound alert in your phone's notification bar when a sale arrives, even with the panel closed.",
+      pushIosHint:
+        "On iPhone: tap Share → Add to Home Screen, then open the app before turning this on.",
+      pushTest: "Send test notification",
+      pushTestSent: "Test notification sent.",
+      pushTitle: "Phone notifications",
+      pushUnsupported:
+        "This browser doesn't support notifications. On iPhone, add the site to your Home Screen.",
+      pushDisable: "Turn off notifications",
     },
     status: {
       novo: "New",
@@ -178,7 +207,8 @@ export const orders = defineNamespace({
       marked: "Order marked as test.",
       unmarked: "Order unmarked as test.",
       deleted: "Test order deleted. The total was updated.",
-      deleteError: "Could not delete this order. Make sure it is marked as test and had no real charge.",
+      deleteError:
+        "Could not delete this order. Make sure it is marked as test and had no real charge.",
     },
     toast: {
       connectFirst: "Connect your store to Melhor Envio first.",
@@ -219,6 +249,20 @@ export const orders = defineNamespace({
       bannerTitle: "Nuevos pedidos",
       bannerBody: "Tienes {{count}} aviso(s) de nuevos pedidos.",
       markRead: "Marcar como leídos",
+      pushDenied: "Permiso denegado. Habilita las notificaciones en los ajustes del navegador.",
+      pushEnable: "Activar notificaciones",
+      pushEnabled: "Notificaciones activadas en este dispositivo.",
+      pushError: "No se pudieron activar las notificaciones.",
+      pushHint:
+        "Recibe un aviso con sonido en la barra del celular cuando llegue una venta, aunque el panel esté cerrado.",
+      pushIosHint:
+        "En iPhone: toca Compartir → Agregar a la Pantalla de Inicio y abre la app antes de activar.",
+      pushTest: "Enviar notificación de prueba",
+      pushTestSent: "Notificación de prueba enviada.",
+      pushTitle: "Notificaciones en el celular",
+      pushUnsupported:
+        "Este navegador no admite notificaciones. En iPhone, agrega el sitio a la Pantalla de Inicio.",
+      pushDisable: "Desactivar notificaciones",
     },
     status: {
       novo: "Nuevo",
@@ -274,7 +318,8 @@ export const orders = defineNamespace({
       marked: "Pedido marcado como prueba.",
       unmarked: "Pedido desmarcado como prueba.",
       deleted: "Pedido de prueba eliminado. El total se actualizó.",
-      deleteError: "No se pudo eliminar este pedido. Verifica que esté marcado como prueba y sin cobro real.",
+      deleteError:
+        "No se pudo eliminar este pedido. Verifica que esté marcado como prueba y sin cobro real.",
     },
     toast: {
       connectFirst: "Conecta tu tienda a Melhor Envio primero.",

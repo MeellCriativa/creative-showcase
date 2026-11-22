@@ -17,6 +17,7 @@ import {
 import type { DigitalDelivery } from "@/lib/catalog";
 import { meApi } from "@/lib/shipping";
 import { confirmPixPayment } from "@/lib/pixManual";
+import { OrderPushOptIn } from "@/components/OrderPushOptIn";
 import { EmptyCatalog } from "./painel.categorias";
 
 export const Route = createFileRoute("/painel/pedidos")({
@@ -195,6 +196,8 @@ function PedidosPage() {
         )}
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">{t("orders.subtitle")}</p>
+
+      <OrderPushOptIn />
 
       {unreadCount > 0 && (
         <div className="mt-4 rounded-2xl border border-primary/30 bg-primary/10 p-4">
@@ -755,7 +758,9 @@ function OrderCard({
                     onClick={() => void runDelivery("retry", delivery.id)}
                     className="rounded-lg border border-border bg-card px-2.5 py-1.5 font-semibold text-foreground disabled:opacity-50"
                   >
-                    {busy === `retry:${delivery.id}` ? <Loader2 className="size-3 animate-spin" /> : null}
+                    {busy === `retry:${delivery.id}` ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : null}
                     {t("orders.digital.resend")}
                   </button>
                   <button
@@ -764,7 +769,9 @@ function OrderCard({
                     onClick={() => void runDelivery("regenerate", delivery.id)}
                     className="rounded-lg border border-border bg-card px-2.5 py-1.5 font-semibold text-foreground disabled:opacity-50"
                   >
-                    {busy === `regenerate:${delivery.id}` ? <Loader2 className="size-3 animate-spin" /> : null}
+                    {busy === `regenerate:${delivery.id}` ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : null}
                     {t("orders.digital.newLink")}
                   </button>
                   {!delivery.revoked_at && (
@@ -774,7 +781,9 @@ function OrderCard({
                       onClick={() => void runDelivery("revoke", delivery.id)}
                       className="rounded-lg border border-border bg-card px-2.5 py-1.5 font-semibold text-destructive disabled:opacity-50"
                     >
-                      {busy === `revoke:${delivery.id}` ? <Loader2 className="size-3 animate-spin" /> : null}
+                      {busy === `revoke:${delivery.id}` ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : null}
                       {t("orders.digital.revoke")}
                     </button>
                   )}
