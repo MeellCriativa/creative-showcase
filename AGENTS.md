@@ -35,6 +35,7 @@
 ## Work State
 
 ### Completed
+- **Checkout personalizado/Pix em produção (22/11)**: SQL `supabase/fixes/20261122_producao_checkout_produtos_pix.sql` aplicado pelo usuário no SQL Editor (blocos em `supabase/fixes/producao_blocos/`, commit `5d33f68`). Verificado via PostgREST: colunas `products.additional_info/digital_delivery_mode/checkout_*/pix_*`, `catalogs.pix_*`, `orders.payment_method/pix_*`, tabelas `product_testimonials`/`manual_payment_confirmations` e RPC `confirm_manual_payment` (retorna `false` para UUID inexistente). `pix_holder_document` bloqueado para anon; `catalogs_public` segue legível. `pix-manual?action=config` responde 200 com CORS `*` em produção. Carrinho real validado: link `?produto=&valor=` pré-seleciona valor, Mercado Pago sem PayPal e sem WhatsApp como pagamento, seletor "Moeda de exibição", console limpo. Worker produção `c58aca85`; homologação `bd4ee12b`.
 - Full DB schema on `wdcufpvlbisnqtvmbyso` — catalogs, categories, products, banners, orders, catalog_visits + RLS policies + `catalogs_public` view + storage bucket `catalog-images` + triggers
 - Meta tables created but empty (RLS working); Meta/WhatsApp integration UI **blocked** with "Em breve" (commit `8a593ca`)
 - **Melhor Envio shipping implemented** (Correios + transportadoras, multi-tenant — REPLACES the rejected Correios direct API):
