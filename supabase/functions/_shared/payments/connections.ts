@@ -166,7 +166,9 @@ export async function listPublicPaymentMethods(
   catalogCurrency: string,
 ): Promise<Array<{ provider: PaymentProviderKey; label: string; currency: string }>> {
   const available: Array<{ provider: PaymentProviderKey; label: string; currency: string }> = [];
-  for (const provider of ["paypal", "mercadopago"] as const) {
+  // PayPal não é mais oferecido no checkout. O código do provedor segue
+  // disponível apenas para leitura/reembolso de transações históricas.
+  for (const provider of ["mercadopago"] as const) {
     const providerImpl = getProvider(provider)!;
     if (!providerImpl.isConfigured()) continue;
     const connection = await getConnection(catalogId, provider);

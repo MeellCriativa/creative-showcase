@@ -23,6 +23,7 @@ import {
   connectProvider,
   disconnectProvider,
   getProviderStatus,
+  isVisiblePaymentProvider,
   listTransactions,
   newRefundOperationId,
   PROVIDER_LABELS,
@@ -64,7 +65,7 @@ export const Route = createFileRoute("/painel/pagamentos")({
       { title: "Formas de pagamento — Vitrine Criativa" },
       {
         name: "description",
-        content: "Conecte sua conta PayPal e Mercado Pago para receber os pagamentos da sua loja.",
+        content: "Conecte sua conta Mercado Pago para receber os pagamentos da sua loja.",
       },
       { name: "robots", content: "noindex" },
     ],
@@ -445,7 +446,9 @@ function PagamentosPage() {
     );
   }
 
-  const providers = status?.providers ?? [];
+  const providers = (status?.providers ?? []).filter((connection) =>
+    isVisiblePaymentProvider(connection.provider),
+  );
   const transactions = transactionsData?.transactions ?? [];
 
   return (

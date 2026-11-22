@@ -1,7 +1,19 @@
 import { useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Link2, Loader2, Palette, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Copy,
+  Link2,
+  Loader2,
+  Palette,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -11,7 +23,9 @@ import { useCategories, useMyCatalog, useProducts } from "@/hooks/useCatalog";
 import { useMetaConnection, useMetaMappings } from "@/hooks/useMetaCatalog";
 import { useI18n } from "@/i18n";
 import { type PriceOption, type Product, type VariationGroup } from "@/lib/catalog";
+import { writeToClipboard } from "@/lib/clipboard";
 import { formatMoney, getCurrencySymbol, resolveStoreCurrency } from "@/lib/currency";
+import { buildProductCheckoutUrl } from "@/lib/productLinks";
 import {
   formatFileSize,
   removeDigitalFile,
@@ -305,6 +319,7 @@ function ProdutosPage() {
           setDraft={setDraft}
           userId={user.id}
           catalogId={catalog.id}
+          catalogSlug={catalog.slug}
           currency={currency}
           categories={categories ?? []}
           nextPosition={products?.length ?? 0}
@@ -361,6 +376,7 @@ function ProductEditor({
   setDraft,
   userId,
   catalogId,
+  catalogSlug,
   currency,
   categories,
   nextPosition,
@@ -370,6 +386,7 @@ function ProductEditor({
   setDraft: (d: Draft | null) => void;
   userId: string;
   catalogId: string;
+  catalogSlug: string;
   currency: string;
   categories: { id: string; name: string }[];
   nextPosition: number;
@@ -381,6 +398,30 @@ function ProductEditor({
   const { t } = useI18n();
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft({ ...draft, [key]: value });
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+
+  /** Link direto do produto (ou de uma opção de valor), já salvo no catálogo. */
+  const checkoutLink = (priceOptionId?: string) =>
+    draft.id
+      ? buildProductCheckoutUrl(
+          typeof window === "undefined" ? "" : window.location.origin,
+          catalogSlug,
+          draft.id,
+          priceOptionId,
+        )
+      : "";
+
+  async function copyCheckoutLink(url: string, key: string) {
+    if (!url) return;
+    const ok = await writeToClipboard(url);
+    if (!ok) {
+      toast.error(t("panel.dashboard.copyError"));
+      return;
+    }
+    setCopiedLink(key);
+    toast.success(t("common.copied"));
+    window.setTimeout(() => setCopiedLink((current) => (current === key ? null : current)), 2000);
+  }
 
   async function handleDigitalFile(file: File | undefined) {
     if (!file) return;
@@ -622,6 +663,20 @@ function ProductEditor({
                   />
                   <button
                     type="button"
+                    aria-label={t("products.editor.copyValueLink")}
+                    title={t("products.editor.copyValueLink")}
+                    disabled={!draft.id}
+                    onClick={() => void copyCheckoutLink(checkoutLink(opt.id), opt.id)}
+                    className="grid size-9 shrink-0 place-items-center rounded-xl border border-border text-muted-foreground disabled:opacity-40"
+                  >
+                    {copiedLink === opt.id ? (
+                      <Check className="size-4 text-green-600" />
+                    ) : (
+                      <Link2 className="size-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
                     aria-label={t("products.editor.removeOption")}
                     onClick={() =>
                       set(
@@ -648,6 +703,75 @@ function ProductEditor({
             >
               {t("products.editor.addOption")}
             </button>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-muted/30 p-4">
+            <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Link2 className="size-4" /> {t("products.editor.checkoutLinksTitle")}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("products.editor.checkoutLinksHint")}
+            </p>
+            {!draft.id ? (
+              <p className="mt-3 text-xs font-medium text-muted-foreground">
+                {t("products.editor.saveToGenerateLink")}
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 truncate text-xs font-medium text-foreground">
+                    {t("products.editor.productLinkLabel")}
+                  </span>
+                  <input
+                    readOnly
+                    aria-label={t("products.editor.copyProductLink")}
+                    value={checkoutLink()}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="input-base min-w-0 flex-1 py-2 text-xs"
+                  />
+                  <button
+                    type="button"
+                    aria-label={t("products.editor.copyProductLink")}
+                    title={t("products.editor.copyProductLink")}
+                    onClick={() => void copyCheckoutLink(checkoutLink(), "product")}
+                    className="grid size-9 shrink-0 place-items-center rounded-xl border border-border text-muted-foreground"
+                  >
+                    {copiedLink === "product" ? (
+                      <Check className="size-4 text-green-600" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
+                  </button>
+                </div>
+                {draft.price_options.map((opt) => (
+                  <div key={opt.id} className="flex items-center gap-2">
+                    <span className="w-24 shrink-0 truncate text-xs font-medium text-foreground">
+                      {opt.label.trim() || "—"}
+                    </span>
+                    <input
+                      readOnly
+                      aria-label={t("products.editor.copyValueLink")}
+                      value={checkoutLink(opt.id)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="input-base min-w-0 flex-1 py-2 text-xs"
+                    />
+                    <button
+                      type="button"
+                      aria-label={t("products.editor.copyValueLink")}
+                      title={t("products.editor.copyValueLink")}
+                      onClick={() => void copyCheckoutLink(checkoutLink(opt.id), opt.id)}
+                      className="grid size-9 shrink-0 place-items-center rounded-xl border border-border text-muted-foreground"
+                    >
+                      {copiedLink === opt.id ? (
+                        <Check className="size-4 text-green-600" />
+                      ) : (
+                        <Copy className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <select

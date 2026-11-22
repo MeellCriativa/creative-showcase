@@ -116,6 +116,13 @@ export const catalog = defineNamespace({
       submittingOrder: "Registrando pedido...",
       payWith: "Pagar com {{provider}}",
       finishWhatsapp: "Finalizar pedido pelo WhatsApp",
+      currencyLabel: "Moeda de exibição",
+      currencyHint: "Escolha a moeda para ver os valores convertidos.",
+      currencyChargedIn:
+        "Valores exibidos em {{display}}. O pagamento é cobrado em {{charge}}, a moeda da loja.",
+      currencyNoRate:
+        "Não há cotação disponível para {{display}}. Os valores seguem em {{charge}}.",
+      currencyLoading: "Carregando cotações...",
     },
     shippingErrors: {
       invalidCep: "Informe um CEP válido.",
@@ -149,6 +156,9 @@ export const catalog = defineNamespace({
       paymentOpenFailed:
         "O pedido foi registrado, mas não foi possível abrir o pagamento. Fale com a loja.",
       storeWithoutWhatsapp: "Esta loja ainda não cadastrou o WhatsApp.",
+      onlinePaymentRequired:
+        "Esta loja finaliza pedidos apenas com pagamento online. Escolha Pix ou Mercado Pago.",
+      paymentUnavailable: "O pagamento online está indisponível no momento. Tente novamente em instantes.",
       nameRequired: "Informe seu nome para continuar.",
       emailRequired: "Informe um e-mail válido para receber o produto digital.",
       emailMismatch: "Os e-mails informados não são iguais.",
@@ -307,6 +317,13 @@ export const catalog = defineNamespace({
       submittingOrder: "Placing your order...",
       payWith: "Pay with {{provider}}",
       finishWhatsapp: "Finish order on WhatsApp",
+      currencyLabel: "Display currency",
+      currencyHint: "Choose a currency to see converted prices.",
+      currencyChargedIn:
+        "Prices shown in {{display}}. Payment is charged in {{charge}}, the store currency.",
+      currencyNoRate:
+        "No exchange rate available for {{display}}. Prices remain in {{charge}}.",
+      currencyLoading: "Loading exchange rates...",
     },
     shippingErrors: {
       invalidCep: "Enter a valid ZIP code.",
@@ -338,6 +355,9 @@ export const catalog = defineNamespace({
       paymentOpenFailed:
         "Your order was registered, but we couldn't open the payment. Please contact the store.",
       storeWithoutWhatsapp: "This store hasn't set up WhatsApp yet.",
+      onlinePaymentRequired:
+        "This store only completes orders with online payment. Choose Pix or Mercado Pago.",
+      paymentUnavailable: "Online payment is currently unavailable. Please try again shortly.",
       nameRequired: "Enter your name to continue.",
       emailRequired: "Enter a valid e-mail to receive the digital product.",
       emailMismatch: "The e-mail addresses don't match.",
@@ -495,6 +515,13 @@ export const catalog = defineNamespace({
       submittingOrder: "Registrando el pedido...",
       payWith: "Pagar con {{provider}}",
       finishWhatsapp: "Finalizar pedido por WhatsApp",
+      currencyLabel: "Moneda de visualización",
+      currencyHint: "Elige una moneda para ver los precios convertidos.",
+      currencyChargedIn:
+        "Precios mostrados en {{display}}. El pago se cobra en {{charge}}, la moneda de la tienda.",
+      currencyNoRate:
+        "No hay tipo de cambio disponible para {{display}}. Los precios siguen en {{charge}}.",
+      currencyLoading: "Cargando tipos de cambio...",
     },
     shippingErrors: {
       invalidCep: "Ingresa un código postal válido.",
@@ -528,6 +555,9 @@ export const catalog = defineNamespace({
       paymentOpenFailed:
         "El pedido se registró, pero no se pudo abrir el pago. Habla con la tienda.",
       storeWithoutWhatsapp: "Esta tienda aún no registró el WhatsApp.",
+      onlinePaymentRequired:
+        "Esta tienda finaliza pedidos solo con pago en línea. Elige Pix o Mercado Pago.",
+      paymentUnavailable: "El pago en línea no está disponible ahora. Inténtalo de nuevo en un momento.",
       nameRequired: "Ingresa tu nombre para continuar.",
       emailRequired: "Ingresa un correo válido para recibir el producto digital.",
       emailMismatch: "Los correos informados no coinciden.",

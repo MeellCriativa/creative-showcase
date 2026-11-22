@@ -5,13 +5,13 @@ export const payments = defineNamespace({
   ptBR: {
     metaTitle: "Formas de pagamento — Vitrine Criativa",
     metaDescription:
-      "Conecte sua conta PayPal e Mercado Pago para receber os pagamentos da sua loja.",
+      "Conecte sua conta Mercado Pago para receber os pagamentos da sua loja.",
     title: "Formas de pagamento",
     noCatalog: "Crie sua loja primeiro para configurar as formas de pagamento.",
     introConnect: "Conecte",
     introOwnAccount: "sua própria conta",
     introAfterAccount:
-      "no PayPal e/ou no Mercado Pago. O dinheiro das vendas cai direto na sua conta — a Vitrine Criativa não intermedeia valores. A loja está configurada em",
+      "no Mercado Pago. O dinheiro das vendas cai direto na sua conta — a Vitrine Criativa não intermedeia valores. A loja está configurada em",
     encryptionWarning:
       "A plataforma ainda não configurou a criptografia dos tokens. Conectar provedores fica indisponível até que o administrador defina a chave de segurança.",
     noneConnected:
@@ -108,13 +108,13 @@ export const payments = defineNamespace({
   en: {
     metaTitle: "Payment methods — Vitrine Criativa",
     metaDescription:
-      "Connect your PayPal and Mercado Pago accounts to receive payments for your store.",
+      "Connect your Mercado Pago account to receive payments for your store.",
     title: "Payment methods",
     noCatalog: "Create your store first to set up payment methods.",
     introConnect: "Connect",
     introOwnAccount: "your own account",
     introAfterAccount:
-      "on PayPal and/or Mercado Pago. Sales money goes straight to your account — Vitrine Criativa does not handle the funds. The store is set to",
+      "on Mercado Pago. Sales money goes straight to your account — Vitrine Criativa does not handle the funds. The store is set to",
     encryptionWarning:
       "The platform has not configured token encryption yet. Connecting providers stays unavailable until the administrator sets the security key.",
     noneConnected:
@@ -211,13 +211,13 @@ export const payments = defineNamespace({
   es: {
     metaTitle: "Formas de pago — Vitrine Criativa",
     metaDescription:
-      "Conecta tu cuenta de PayPal y Mercado Pago para recibir los pagos de tu tienda.",
+      "Conecta tu cuenta de Mercado Pago para recibir los pagos de tu tienda.",
     title: "Formas de pago",
     noCatalog: "Crea tu tienda primero para configurar las formas de pago.",
     introConnect: "Conecta",
     introOwnAccount: "tu propia cuenta",
     introAfterAccount:
-      "en PayPal y/o Mercado Pago. El dinero de las ventas llega directo a tu cuenta — Vitrine Criativa no intermedia los valores. La tienda está configurada en",
+      "en Mercado Pago. El dinero de las ventas llega directo a tu cuenta — Vitrine Criativa no intermedia los valores. La tienda está configurada en",
     encryptionWarning:
       "La plataforma todavía no configuró el cifrado de los tokens. Conectar proveedores no estará disponible hasta que el administrador defina la clave de seguridad.",
     noneConnected:

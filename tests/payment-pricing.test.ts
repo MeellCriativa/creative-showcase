@@ -131,6 +131,16 @@ test("produto com opções de valor usa o preço da opção escolhida", () => {
   assert.equal(resolved.ok === true && resolved.canonicalVariation, "Valor: G");
 });
 
+test("opção de valor é aceita nos três idiomas do checkout", () => {
+  const p = product({ price: 999, price_options: [{ label: "G", price: 50 }] });
+  for (const variation of ["Valor: G", "Price: G", "Precio: G"]) {
+    const resolved = resolveUnitPrice(p, variation);
+    assert.equal(resolved.ok, true, variation);
+    assert.equal(resolved.ok === true && resolved.unitPrice, 50, variation);
+    assert.equal(resolved.ok === true && resolved.canonicalVariation, "Valor: G", variation);
+  }
+});
+
 test("opção de valor inexistente é rejeitada", () => {
   const p = product({ price_options: [{ label: "P", price: 30 }] });
   const resolved = resolveUnitPrice(p, "Valor: GG");

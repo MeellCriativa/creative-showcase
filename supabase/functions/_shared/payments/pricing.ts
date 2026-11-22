@@ -135,7 +135,9 @@ export function parseVariationSelection(variation: string | null | undefined): {
       unknownTokens.push(token);
       continue;
     }
-    if (key.toLowerCase() === "valor") {
+    // O prefixo é traduzido no navegador (Valor/Price/Precio), mas o backend
+    // precisa reconhecer todos para não rejeitar opções de valor em outros idiomas.
+    if (["valor", "price", "precio"].includes(key.toLowerCase())) {
       priceLabel = value;
       continue;
     }

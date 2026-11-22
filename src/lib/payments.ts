@@ -415,6 +415,18 @@ export const PROVIDER_LABELS: Record<PaymentProviderKey, string> = {
   mercadopago: "Mercado Pago",
 };
 
+/**
+ * Provedores oferecidos ao comprador e ao lojista.
+ *
+ * PayPal permanece no tipo apenas para interpretar registros históricos;
+ * nenhuma opção nova de PayPal é exibida no checkout ou no painel.
+ */
+export const VISIBLE_PAYMENT_PROVIDERS: PaymentProviderKey[] = ["mercadopago"];
+
+export function isVisiblePaymentProvider(provider: PaymentProviderKey): boolean {
+  return VISIBLE_PAYMENT_PROVIDERS.includes(provider);
+}
+
 export function describePaymentStatus(status: string): string {
   switch (status) {
     case "pending":

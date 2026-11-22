@@ -6,8 +6,10 @@ import { toast } from "sonner";
 
 import { supabase, getSupabaseError } from "@/integrations/supabase/client";
 import { CartIcon } from "@/components/CartIcons";
+import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useCurrencyRates } from "@/hooks/useRates";
 import { LanguageSelector, useI18n, type MessageKey } from "@/i18n";
 import { countdownParts, parseCheckoutConfig, type CheckoutBannerConfig, type TestimonialConfig } from "@/lib/checkoutConfig";
 import {
@@ -26,7 +28,14 @@ import {
   type ShippingQuote,
   type CustomerAddress,
 } from "@/lib/catalog";
-import { formatMoney, fromMinorUnits, resolveStoreCurrency, toMinorUnits } from "@/lib/currency";
+import {
+  CURRENCIES,
+  convertAmount,
+  formatMoney,
+  fromMinorUnits,
+  resolveStoreCurrency,
+  toMinorUnits,
+} from "@/lib/currency";
 import {
   createPixOrder,
   declarePixPaid,
@@ -35,17 +44,31 @@ import {
   type PixOrderResult,
   type PixPublicConfig,
 } from "@/lib/pixManual";
+import { parseProductCheckoutParams } from "@/lib/productLinks";
 import { SITE_OG_IMAGE } from "@/lib/site";
 import { quoteShipping } from "@/lib/shipping";
 import {
   createPayment,
   createSecureOrder,
   getPaymentStatus,
+  isVisiblePaymentProvider,
   listPaymentMethods,
   PROVIDER_LABELS,
   type PaymentProviderKey,
   type PublicPaymentMethod,
 } from "@/lib/payments";
+
+const PRODUCT_QUERY_COLUMNS =
+  "id,catalog_id,category_id,name,description,price,sale_price,images,variations,available,is_new,is_bestseller,position,created_at,updated_at,price_options,weight_grams,length_cm,width_cm,height_cm,product_type,digital_file_path,digital_file_name,digital_file_mime,digital_file_size,digital_file_checksum,digital_instructions,digital_link_ttl_minutes,digital_max_downloads,additional_info,digital_delivery_mode,checkout_enabled,checkout_desktop_config,checkout_mobile_config";
+
+/**
+ * Lojas em produção podem estar em um schema anterior, sem as colunas de
+ * personalização de checkout. Nesse caso repetimos a consulta sem elas para
+ * que o catálogo continue abrindo; os campos ausentes viram `undefined` e
+ * já têm fallback no componente.
+ */
+const PRODUCT_QUERY_COLUMNS_LEGACY =
+  "id,catalog_id,category_id,name,description,price,sale_price,images,variations,available,is_new,is_bestseller,position,created_at,updated_at,price_options,weight_grams,length_cm,width_cm,height_cm,product_type,digital_file_path,digital_file_name,digital_file_mime,digital_file_size,digital_file_checksum,digital_instructions,digital_link_ttl_minutes,digital_max_downloads";
 
 export const Route = createFileRoute("/c/$slug")({
   loader: async ({ params }) => {
@@ -219,6 +242,16 @@ function PublicCatalog() {
     return new URLSearchParams(window.location.search).get("payment") === "return";
   });
   const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(null);
+  /** Link direto recebido pelo comprador (produto e, opcionalmente, valor). */
+  const [deepLink, setDeepLink] = useState<{
+    productId: string;
+    priceOptionId: string | null;
+  } | null>(null);
+  const handledDeepLink = useRef<string | null>(null);
+  /** Moeda escolhida pelo comprador; `null` = usar a moeda da loja. */
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
+  const currencyChosenByBuyer = useRef(false);
+  const ratesQuery = useCurrencyRates();
 
   const {
     data,
@@ -247,16 +280,26 @@ function PublicCatalog() {
         return null;
       }
       const catalogId = String(catalog.id);
-      const [{ data: categories }, { data: products }, { data: banners }] = await Promise.all([
-        supabase.from("categories").select("*").eq("catalog_id", catalogId).order("position"),
-        supabase
+      const fetchProducts = async () => {
+        const full = await supabase
           .from("products")
-          .select(
-            "id,catalog_id,category_id,name,description,price,sale_price,images,variations,available,is_new,is_bestseller,position,created_at,updated_at,price_options,weight_grams,length_cm,width_cm,height_cm,product_type,digital_file_path,digital_file_name,digital_file_mime,digital_file_size,digital_file_checksum,digital_instructions,digital_link_ttl_minutes,digital_max_downloads,additional_info,digital_delivery_mode,checkout_enabled,checkout_desktop_config,checkout_mobile_config",
-          )
+          .select(PRODUCT_QUERY_COLUMNS)
           .eq("catalog_id", catalogId)
           .order("position")
-          .order("created_at"),
+          .order("created_at");
+        if (!full.error || !/42703|does not exist/i.test(full.error.message)) return full;
+
+        console.warn("[catalog] schema antigo detectado, consultando colunas básicas:", full.error.message);
+        return supabase
+          .from("products")
+          .select(PRODUCT_QUERY_COLUMNS_LEGACY)
+          .eq("catalog_id", catalogId)
+          .order("position")
+          .order("created_at");
+      };
+      const [{ data: categories }, { data: products }, { data: banners }] = await Promise.all([
+        supabase.from("categories").select("*").eq("catalog_id", catalogId).order("position"),
+        fetchProducts(),
         supabase.from("banners").select("*").eq("catalog_id", catalogId).order("position"),
       ]);
       return {
@@ -272,9 +315,32 @@ function PublicCatalog() {
 
   const catalog = data?.catalog;
 
-  /** Moeda da loja (lojas antigas = BRL). Nunca converte valores, só formata. */
+  /** Moeda da loja (lojas antigas = BRL): usada em cálculos, pedidos e cobrança. */
   const currency = resolveStoreCurrency(catalog?.currency);
-  const money = (value: number) => formatMoney(value, currency);
+
+  useEffect(() => {
+    if (!catalog || currencyChosenByBuyer.current) return;
+    setDisplayCurrency(resolveStoreCurrency(catalog.currency));
+  }, [catalog]);
+
+  const rates = ratesQuery.data?.ok ? ratesQuery.data.rates : null;
+  const unavailableCurrencyCodes = useMemo(
+    () => (rates ? CURRENCIES.filter((c) => !(c.code in rates)).map((c) => c.code) : []),
+    [rates],
+  );
+  const selectedCurrency = displayCurrency ?? currency;
+  const conversionAvailable =
+    selectedCurrency === currency || !!(rates && rates[currency] && rates[selectedCurrency]);
+  /**
+   * Formatação para exibição: converte o valor da moeda da loja para a moeda
+   * escolhida pelo comprador. Nunca altera preços gravados nem valores de
+   * cobrança — o pagamento continua na moeda da loja.
+   */
+  const money = (value: number) => {
+    if (selectedCurrency === currency) return formatMoney(value, currency);
+    const converted = convertAmount(value, currency, selectedCurrency, rates);
+    return formatMoney(converted ? converted.value : value, converted ? selectedCurrency : currency);
+  };
 
   useEffect(() => {
     if (!catalog) return;
@@ -333,10 +399,25 @@ function PublicCatalog() {
     };
   }, [catalog]);
 
+  /** Link direto: entra na loja já com o produto e o valor escolhidos. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const { productId, priceOptionId } = parseProductCheckoutParams(window.location.search);
+    if (!productId || !data?.products?.length) return;
+    const key = `${productId}|${priceOptionId ?? ""}`;
+    if (handledDeepLink.current === key) return;
+    const product = data.products.find((item) => item.id === productId);
+    if (!product) return;
+    handledDeepLink.current = key;
+    setDeepLink({ productId, priceOptionId });
+    setEntered(true);
+    setSelected(product);
+  }, [data?.products]);
+
   /**
    * Confirmação no retorno do comprador (auditoria M6).
    *
-   * Ao voltar do PayPal/Mercado Pago a página consulta o status oficial —
+   * Ao voltar do Mercado Pago a página consulta o status oficial —
    * inclusive pedindo uma verificação ao provedor (`refresh=1`) — em vez de
    * esperar o webhook. Se o webhook já chegou, a primeira consulta resolve.
    */
@@ -423,7 +504,9 @@ function PublicCatalog() {
     staleTime: 60_000,
     queryFn: async (): Promise<PublicPaymentMethod[]> => {
       const res = await listPaymentMethods({ catalogId: catalog!.id });
-      return res.success && Array.isArray(res.methods) ? res.methods : [];
+      return res.success && Array.isArray(res.methods)
+        ? res.methods.filter((method) => isVisiblePaymentProvider(method.provider))
+        : [];
     },
   });
 
@@ -509,8 +592,12 @@ function PublicCatalog() {
       payment: { provider: PaymentProviderKey | "pix_manual" } | null,
     ): Promise<boolean | PixOrderResult> => {
       if (!catalog) return false;
-      // Com pagamento online o WhatsApp não é obrigatório; sem ele, continua
-      // sendo o canal de finalização (fluxo original preservado).
+      const onlinePaymentAvailable = (paymentMethods?.length ?? 0) > 0 || !!pixConfig?.available;
+      // Com pagamento online, o WhatsApp deixa de ser canal de finalização.
+      if (!payment && onlinePaymentAvailable) {
+        toast.error(t("catalog.errors.onlinePaymentRequired"));
+        return false;
+      }
       if (!payment && !catalog.whatsapp) {
         toast.error(t("catalog.errors.storeWithoutWhatsapp"));
         return false;
@@ -730,6 +817,11 @@ function PublicCatalog() {
          * o pedido continue aparecendo no painel do vendedor.
          */
         if (isPaymentsBackendUnavailable(created)) {
+          // Quem escolheu pagar online nunca é redirecionado para o WhatsApp.
+          if (payment) {
+            toast.error(t("catalog.errors.paymentUnavailable"), { duration: 9000 });
+            return false;
+          }
           const registered = await insertOrderDirectly();
           if (registered) {
             const localTotal = fromMinorUnits(
@@ -751,7 +843,7 @@ function PublicCatalog() {
          * deixamos explícito que o pedido NÃO entrou no painel — o vendedor
          * precisa cadastrá-lo manualmente.
          */
-        if (catalog.whatsapp) {
+        if (!payment && catalog.whatsapp) {
           toast.warning(t("catalog.errors.whatsappFallback", { reason }), {
             duration: 12_000,
           });
@@ -764,7 +856,9 @@ function PublicCatalog() {
           setCartOpen(false);
           return true;
         }
-        toast.error(reason, { duration: 9000 });
+        toast.error(payment ? t("catalog.errors.paymentUnavailable") : reason, {
+          duration: 9000,
+        });
         return false;
       }
 
@@ -818,14 +912,18 @@ function PublicCatalog() {
         return true;
       }
 
-      // ── Finalização pelo WhatsApp (fluxo preservado) ────────────────────
+      // ── Finalização pelo WhatsApp (apenas sem pagamento online) ────────
+      if (payment) {
+        toast.error(t("catalog.errors.paymentUnavailable"), { duration: 9000 });
+        return false;
+      }
       openWhatsapp(buildMessage(subtotal, grandTotal, serverShipping));
 
       setCart([]);
       setCartOpen(false);
       return true;
     },
-    [catalog, cart, currency, t, total],
+    [catalog, cart, currency, paymentMethods, pixConfig, t, total],
   );
 
   if (isLoading) {
@@ -1120,7 +1218,7 @@ function PublicCatalog() {
                   className="flex size-9 items-center justify-center rounded-full text-xs font-bold"
                   style={{ background: `${primary}15`, color: primary }}
                 >
-                  {m.provider === "paypal" ? "PP" : "MP"}
+                  MP
                 </div>
                 <span className="text-sm font-medium text-foreground">{m.label}</span>
               </div>
@@ -1168,9 +1266,13 @@ function PublicCatalog() {
 
       {selected && (
         <ProductSheet
+          key={`${selected.id}-${deepLink?.productId === selected.id ? (deepLink.priceOptionId ?? "") : ""}`}
           product={selected}
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
-          currency={currency}
+          money={money}
+          initialPriceOptionId={
+            deepLink?.productId === selected.id ? deepLink.priceOptionId : null
+          }
           onClose={() => setSelected(null)}
           onAdd={addToCart}
         />
@@ -1183,11 +1285,21 @@ function PublicCatalog() {
           total={total}
           primary={loadedCatalog.primary_color ?? "#8b5cf6"}
           currency={currency}
+          money={money}
+          displayCurrency={selectedCurrency}
+          conversionAvailable={conversionAvailable}
+          ratesLoading={ratesQuery.isLoading}
+          unavailableCurrencyCodes={unavailableCurrencyCodes}
+          onCurrencyChange={(code) => {
+            currencyChosenByBuyer.current = true;
+            setDisplayCurrency(code);
+          }}
           deliveryMethods={
             Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []
           }
           paymentMethods={paymentMethods ?? []}
           pixConfig={pixConfig ?? null}
+          onlinePaymentAvailable={(paymentMethods?.length ?? 0) > 0 || !!pixConfig?.available}
           onClose={() => setCartOpen(false)}
           onChangeQty={changeQty}
           onRemove={removeItem}
@@ -1390,22 +1502,27 @@ function BannerCarousel({
 function ProductSheet({
   product,
   primary,
-  currency,
+  money,
+  initialPriceOptionId,
   onClose,
   onAdd,
 }: {
   product: Product;
   primary: string;
-  currency: string;
+  money: (value: number) => string;
+  initialPriceOptionId?: string | null;
   onClose: () => void;
   onAdd: (item: CartItem) => void;
 }) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
-  const money = (value: number) => formatMoney(value, currency);
   const [quantity, setQuantity] = useState(1);
   const [choices, setChoices] = useState<Record<string, string>>({});
-  const [selectedPriceOption, setSelectedPriceOption] = useState<string | null>(null);
+  const [selectedPriceOption, setSelectedPriceOption] = useState<string | null>(() =>
+    product.price_options?.some((option) => option.id === initialPriceOptionId)
+      ? (initialPriceOptionId ?? null)
+      : null,
+  );
   const [imgIdx, setImgIdx] = useState(0);
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
   const [checkoutBanner, setCheckoutBanner] = useState<CheckoutBannerConfig | null>(null);
@@ -1808,9 +1925,16 @@ function CartSheet({
   total,
   primary,
   currency,
+  money,
+  displayCurrency,
+  conversionAvailable,
+  ratesLoading,
+  unavailableCurrencyCodes,
+  onCurrencyChange,
   deliveryMethods,
   paymentMethods,
   pixConfig,
+  onlinePaymentAvailable,
   onClose,
   onChangeQty,
   onRemove,
@@ -1821,9 +1945,16 @@ function CartSheet({
   total: number;
   primary: string;
   currency: string;
+  money: (value: number) => string;
+  displayCurrency: string;
+  conversionAvailable: boolean;
+  ratesLoading: boolean;
+  unavailableCurrencyCodes: string[];
+  onCurrencyChange: (code: string) => void;
   deliveryMethods: string[];
   paymentMethods: PublicPaymentMethod[];
   pixConfig: PixPublicConfig | null;
+  onlinePaymentAvailable: boolean;
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
@@ -1843,7 +1974,6 @@ function CartSheet({
   ) => Promise<boolean | PixOrderResult>;
 }) {
   const { t } = useI18n();
-  const money = (value: number) => formatMoney(value, currency);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -1857,10 +1987,16 @@ function CartSheet({
   const [submitting, setSubmitting] = useState(false);
   const [quoteMsg, setQuoteMsg] = useState<string>("");
   const [coverageMsg, setCoverageMsg] = useState<string>("");
-  /** `null` = finalizar pelo WhatsApp (fluxo original). */
+  /** `null` = finalizar pelo WhatsApp (apenas se a loja não tiver pagamento online). */
   const [paymentProvider, setPaymentProvider] = useState<PaymentProviderKey | "pix_manual" | null>(
     null,
   );
+  const defaultOnlineProvider: PaymentProviderKey | "pix_manual" =
+    paymentMethods[0]?.provider ?? "pix_manual";
+  /** Com pagamento online habilitado, o WhatsApp deixa de ser oferecido. */
+  const effectiveProvider: PaymentProviderKey | "pix_manual" | null = onlinePaymentAvailable
+    ? (paymentProvider ?? defaultOnlineProvider)
+    : null;
   const [pixOrder, setPixOrder] = useState<PixOrderResult | null>(null);
   const [pixDeclared, setPixDeclared] = useState(false);
   const [pixApproved, setPixApproved] = useState(false);
@@ -2057,7 +2193,7 @@ function CartSheet({
         customerEmail,
         observation,
         shipping,
-        paymentProvider ? { provider: paymentProvider } : null,
+        effectiveProvider ? { provider: effectiveProvider } : null,
       );
       if (result && typeof result === "object" && result.pix) {
         setPixOrder(result);
@@ -2524,35 +2660,18 @@ function CartSheet({
                 />
               </div>
 
-              {(paymentMethods.length > 0 || pixConfig?.available) && (
+              {onlinePaymentAvailable && (
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-foreground">
                     {t("catalog.cart.paymentQuestion")}
                   </label>
                   <div className="grid grid-cols-1 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentProvider(null)}
-                      className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors ${
-                        paymentProvider === null
-                          ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
-                          : "border-border bg-card text-muted-foreground"
-                      }`}
-                    >
-                      <span className="text-lg">💬</span>
-                      <span>
-                        {t("catalog.cart.payWithStore")}
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          {t("catalog.cart.payWithStoreHint")}
-                        </span>
-                      </span>
-                    </button>
                     {pixConfig?.available && (
                       <button
                         type="button"
                         onClick={() => setPaymentProvider("pix_manual")}
                         className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors ${
-                          paymentProvider === "pix_manual"
+                          effectiveProvider === "pix_manual"
                             ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
                             : "border-border bg-card text-muted-foreground"
                         }`}
@@ -2572,12 +2691,12 @@ function CartSheet({
                         type="button"
                         onClick={() => setPaymentProvider(method.provider)}
                         className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm font-medium transition-colors ${
-                          paymentProvider === method.provider
+                          effectiveProvider === method.provider
                             ? "border-[var(--shop-primary)] bg-[var(--shop-accent)] text-foreground"
                             : "border-border bg-card text-muted-foreground"
                         }`}
                       >
-                        <span className="text-lg">{method.provider === "paypal" ? "🅿" : "💳"}</span>
+                        <span className="text-lg">💳</span>
                         <span>
                           {method.label}
                           <span className="block text-xs font-normal text-muted-foreground">
@@ -2597,6 +2716,35 @@ function CartSheet({
         </div>
 
         <div className="shrink-0 space-y-3 border-t border-border px-5 py-4">
+          <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-foreground">
+                {t("catalog.cart.currencyLabel")}
+              </span>
+              {ratesLoading && (
+                <span className="text-[11px] text-muted-foreground">
+                  {t("catalog.cart.currencyLoading")}
+                </span>
+              )}
+            </div>
+            <CurrencyPicker
+              value={displayCurrency}
+              onChange={onCurrencyChange}
+              unavailableCodes={unavailableCurrencyCodes}
+              hint={t("catalog.cart.currencyHint")}
+            />
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              {conversionAvailable
+                ? t("catalog.cart.currencyChargedIn", {
+                    display: displayCurrency,
+                    charge: currency,
+                  })
+                : t("catalog.cart.currencyNoRate", {
+                    display: displayCurrency,
+                    charge: currency,
+                  })}
+            </p>
+          </div>
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>{t("common.subtotal")}</span>
             <span>{money(subtotal)}</span>
@@ -2621,14 +2769,14 @@ function CartSheet({
           >
             {submitting && <Loader2 className="size-4 animate-spin" />}
             {submitting
-              ? paymentProvider
+              ? effectiveProvider
                 ? t("catalog.cart.openingPayment")
                 : t("catalog.cart.submittingOrder")
-              : paymentProvider === "pix_manual"
+              : effectiveProvider === "pix_manual"
                 ? t("catalog.pix.payWith")
-                : paymentProvider
+                : effectiveProvider
                   ? t("catalog.cart.payWith", {
-                      provider: paymentProvider === "paypal" ? "PayPal" : "Mercado Pago",
+                      provider: PROVIDER_LABELS[effectiveProvider] ?? "Mercado Pago",
                     })
                   : t("catalog.cart.finishWhatsapp")}
           </button>
