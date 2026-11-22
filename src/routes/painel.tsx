@@ -19,7 +19,13 @@ export const Route = createFileRoute("/painel")({
 
 const tabs = [
   { to: "/painel", labelKey: "panel.nav.home", icon: LayoutGrid, exact: true },
-  { to: "/painel/produtos", labelKey: "panel.nav.createProduct", icon: Package, exact: false },
+  {
+    to: "/painel/produtos",
+    labelKey: "panel.nav.createProduct",
+    bottomLabelKey: "panel.nav.createProductShort",
+    icon: Package,
+    exact: false,
+  },
   { to: "/painel/categorias", labelKey: "panel.nav.categories", icon: Store, exact: false },
   { to: "/painel/pedidos", labelKey: "panel.nav.orders", icon: ClipboardList, exact: false },
   { to: "/painel/personalizar", labelKey: "panel.nav.customize", icon: Palette, exact: false },
@@ -75,7 +81,9 @@ function PainelLayout() {
                   aria-current={active ? "page" : undefined}
                 >
                   <tab.icon className="size-4" aria-hidden />
-                  <span className="whitespace-nowrap">{t(tab.labelKey)}</span>
+                  <span className="whitespace-nowrap">
+                    {"bottomLabelKey" in tab ? t(tab.bottomLabelKey) : t(tab.labelKey)}
+                  </span>
                 </Link>
               </li>
             );

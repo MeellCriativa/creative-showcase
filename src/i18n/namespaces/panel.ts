@@ -8,7 +8,8 @@ export const panel = defineNamespace({
     nav: {
       home: "Início",
       products: "Produtos",
-      createProduct: "CADASTRAR PRODUTO",
+      createProduct: "Cadastrar Produto",
+      createProductShort: "Cadastrar",
       categories: "Categorias",
       orders: "Pedidos",
       customize: "Vitrine",
@@ -96,7 +97,8 @@ export const panel = defineNamespace({
     nav: {
       home: "Home",
       products: "Products",
-      createProduct: "CREATE PRODUCT",
+      createProduct: "Create Product",
+      createProductShort: "Create",
       categories: "Categories",
       orders: "Orders",
       customize: "Storefront",
@@ -184,7 +186,8 @@ export const panel = defineNamespace({
     nav: {
       home: "Inicio",
       products: "Productos",
-      createProduct: "CREAR PRODUCTO",
+      createProduct: "Crear Producto",
+      createProductShort: "Crear",
       categories: "Categorías",
       orders: "Pedidos",
       customize: "Vitrina",
