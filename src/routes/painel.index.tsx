@@ -433,16 +433,16 @@ function PainelHome() {
           text={t("panel.dashboard.productsText")}
         />
         <ShortcutLink
-          to="/painel/categorias"
-          icon={Store}
-          title={t("panel.nav.categories")}
-          text={t("panel.dashboard.categoriesText")}
-        />
-        <ShortcutLink
           to="/painel/pedidos"
           icon={ClipboardList}
           title={t("panel.nav.orders")}
           text={t("panel.dashboard.ordersText")}
+        />
+        <ShortcutLink
+          to="/painel/categorias"
+          icon={Store}
+          title={t("panel.nav.categories")}
+          text={t("panel.dashboard.categoriesText")}
         />
         <ShortcutLink
           to="/painel/personalizar"
