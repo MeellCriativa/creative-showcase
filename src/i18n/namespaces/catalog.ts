@@ -150,6 +150,7 @@ export const catalog = defineNamespace({
         "Não foi possível conectar ao servidor. Verifique a configuração do Supabase.",
       loadCatalog: "Não foi possível carregar o catálogo. Tente novamente mais tarde.",
       catalogNotFound: "Catálogo não encontrado.",
+      invalidShortLink: "Este link curto não existe ou não está mais disponível.",
       orderNotRegistered: "Não foi possível registrar o pedido. Tente novamente.",
       whatsappFallback:
         "{{reason}} Vamos continuar pelo WhatsApp — avise a loja de que o pedido não apareceu no painel.",
@@ -349,6 +350,7 @@ export const catalog = defineNamespace({
       supabaseConfig: "Couldn't connect to the server. Please check the Supabase configuration.",
       loadCatalog: "Couldn't load the catalog. Please try again later.",
       catalogNotFound: "Catalog not found.",
+      invalidShortLink: "This short link doesn't exist or is no longer available.",
       orderNotRegistered: "We couldn't register your order. Please try again.",
       whatsappFallback:
         "{{reason}} Let's continue on WhatsApp — tell the store that the order didn't show up in the dashboard.",
@@ -549,6 +551,7 @@ export const catalog = defineNamespace({
       supabaseConfig: "No se pudo conectar con el servidor. Verifica la configuración de Supabase.",
       loadCatalog: "No se pudo cargar el catálogo. Inténtalo de nuevo más tarde.",
       catalogNotFound: "Catálogo no encontrado.",
+      invalidShortLink: "Este enlace corto no existe o ya no está disponible.",
       orderNotRegistered: "No se pudo registrar el pedido. Inténtalo de nuevo.",
       whatsappFallback:
         "{{reason}} Sigamos por WhatsApp — avísale a la tienda que el pedido no apareció en el panel.",

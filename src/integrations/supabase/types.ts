@@ -140,6 +140,7 @@ export type Database = {
           pix_qr_size: number | null
           plan: string
           primary_color: string
+          short_code: string | null
           shipping_origin_zip: string | null
           slug: string
           store_description: string | null
@@ -149,6 +150,7 @@ export type Database = {
           user_id: string
           whatsapp: string | null
           whatsapp_button_color: string | null
+          whatsapp_welcome_message: string | null
         }
         Insert: {
           accent_color?: string
@@ -184,6 +186,7 @@ export type Database = {
           pix_qr_size?: number | null
           plan?: string
           primary_color?: string
+          short_code?: string | null
           shipping_origin_zip?: string | null
           slug: string
           store_description?: string | null
@@ -193,6 +196,7 @@ export type Database = {
           user_id: string
           whatsapp?: string | null
           whatsapp_button_color?: string | null
+          whatsapp_welcome_message?: string | null
         }
         Update: {
           accent_color?: string
@@ -228,6 +232,7 @@ export type Database = {
           pix_qr_size?: number | null
           plan?: string
           primary_color?: string
+          short_code?: string | null
           shipping_origin_zip?: string | null
           slug?: string
           store_description?: string | null
@@ -237,6 +242,7 @@ export type Database = {
           user_id?: string
           whatsapp?: string | null
           whatsapp_button_color?: string | null
+          whatsapp_welcome_message?: string | null
         }
         Relationships: []
       }
@@ -1820,6 +1826,21 @@ export type Database = {
           user_id?: string | null
           whatsapp?: string | null
           whatsapp_button_color?: string | null
+        }
+        Relationships: []
+      }
+      store_short_links_public: {
+        Row: {
+          short_code: string | null
+          slug: string | null
+        }
+        Insert: {
+          short_code?: string | null
+          slug?: string | null
+        }
+        Update: {
+          short_code?: string | null
+          slug?: string | null
         }
         Relationships: []
       }

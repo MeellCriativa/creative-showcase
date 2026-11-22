@@ -1,5 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { DEFAULT_CURRENCY, formatMoney, resolveStoreCurrency } from "@/lib/currency";
+import { onlyDigits } from "./whatsapp";
+
+export { onlyDigits, normalizeWhatsappNumber, whatsappLink } from "./whatsapp";
 
 export type VariationGroup = { name: string; options: string[] };
 
@@ -15,6 +18,10 @@ export type Catalog = {
   logo_url: string | null;
   cover_url: string | null;
   whatsapp: string | null;
+  /** Código do atalho público /s/CODIGO (gerado automaticamente e editável). */
+  short_code?: string | null;
+  /** Texto opcional já preenchido no link direto do WhatsApp. */
+  whatsapp_welcome_message?: string | null;
   primary_color: string;
   accent_color: string;
   background_color: string | null;
@@ -292,10 +299,6 @@ export function slugify(value: string) {
     .slice(0, 40);
 }
 
-export function onlyDigits(value: string) {
-  return value.replace(/\D/g, "");
-}
-
 /** Formata um CEP para o padrão 00000-000 (aceita entrada sem formatação). */
 export function formatCep(value: string) {
   const d = onlyDigits(value).slice(0, 8);
@@ -475,8 +478,4 @@ export function buildWhatsappMessage(
   return lines.join("\n");
 }
 
-export function whatsappLink(phone: string, message: string) {
-  const digits = onlyDigits(phone);
-  const withCountry = digits.startsWith("55") ? digits : `55${digits}`;
-  return `https://wa.me/${withCountry}?text=${encodeURIComponent(message)}`;
-}
+

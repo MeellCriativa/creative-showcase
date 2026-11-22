@@ -26,6 +26,7 @@ import { Route as PainelProdutosRouteImport } from './routes/painel.produtos'
 import { Route as PainelQrCodeRouteImport } from './routes/painel.qr-code'
 import { Route as PainelSenhaRouteImport } from './routes/painel.senha'
 import { Route as PainelWhatsappRouteImport } from './routes/painel.whatsapp'
+import { Route as SCodeRouteImport } from './routes/s.$code'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -112,6 +113,11 @@ const PainelWhatsappRoute = PainelWhatsappRouteImport.update({
   path: '/whatsapp',
   getParentRoute: () => PainelRoute,
 } as any)
+const SCodeRoute = SCodeRouteImport.update({
+  id: '/s/$code',
+  path: '/s/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/painel/qr-code': typeof PainelQrCodeRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
+  '/s/$code': typeof SCodeRoute
   '/painel/': typeof PainelIndexRoute
 }
 export interface FileRoutesByTo {
@@ -148,6 +155,7 @@ export interface FileRoutesByTo {
   '/painel/qr-code': typeof PainelQrCodeRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
+  '/s/$code': typeof SCodeRoute
   '/painel': typeof PainelIndexRoute
 }
 export interface FileRoutesById {
@@ -168,6 +176,7 @@ export interface FileRoutesById {
   '/painel/qr-code': typeof PainelQrCodeRoute
   '/painel/senha': typeof PainelSenhaRoute
   '/painel/whatsapp': typeof PainelWhatsappRoute
+  '/s/$code': typeof SCodeRoute
   '/painel/': typeof PainelIndexRoute
 }
 export interface FileRouteTypes {
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/painel/qr-code'
     | '/painel/senha'
     | '/painel/whatsapp'
+    | '/s/$code'
     | '/painel/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -207,6 +217,7 @@ export interface FileRouteTypes {
     | '/painel/qr-code'
     | '/painel/senha'
     | '/painel/whatsapp'
+    | '/s/$code'
     | '/painel'
   id:
     | '__root__'
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/painel/qr-code'
     | '/painel/senha'
     | '/painel/whatsapp'
+    | '/s/$code'
     | '/painel/'
   fileRoutesById: FileRoutesById
 }
@@ -235,6 +247,7 @@ export interface RootRouteChildren {
   PainelRoute: typeof PainelRouteWithChildren
   RedefinirSenhaRoute: typeof RedefinirSenhaRoute
   CSlugRoute: typeof CSlugRoute
+  SCodeRoute: typeof SCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -358,6 +371,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PainelWhatsappRouteImport
       parentRoute: typeof PainelRoute
     }
+    '/s/$code': {
+      id: '/s/$code'
+      path: '/s/$code'
+      fullPath: '/s/$code'
+      preLoaderRoute: typeof SCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -400,6 +420,7 @@ const rootRouteChildren: RootRouteChildren = {
   PainelRoute: PainelRouteWithChildren,
   RedefinirSenhaRoute: RedefinirSenhaRoute,
   CSlugRoute: CSlugRoute,
+  SCodeRoute: SCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

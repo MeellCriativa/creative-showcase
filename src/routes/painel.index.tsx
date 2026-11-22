@@ -11,8 +11,10 @@ import {
   ExternalLink,
   Eye,
   KeyboardIcon,
+  Link2,
   Loader2,
   LogOut,
+  MessageCircle,
   Package,
   Palette,
   QrCode,
@@ -26,8 +28,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog, useProducts } from "@/hooks/useCatalog";
-import { slugify } from "@/lib/catalog";
+import {
+  normalizeWhatsappNumber,
+  slugify,
+  whatsappLink,
+} from "@/lib/catalog";
 import { resolveStoreCurrency } from "@/lib/currency";
+import {
+  isValidShortCode,
+  normalizeShortCode,
+  shortLinkUrl,
+} from "@/lib/shortLink";
 import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/painel/")({
@@ -49,12 +60,20 @@ function PainelHome() {
   const [slug, setSlug] = useState("");
   const [currency, setCurrency] = useState("BRL");
   const [savingStore, setSavingStore] = useState(false);
+  const [shortCode, setShortCode] = useState("");
+  const [savingShort, setSavingShort] = useState(false);
+  const [whatsappDraft, setWhatsappDraft] = useState("");
+  const [welcomeDraft, setWelcomeDraft] = useState("");
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
 
   useEffect(() => {
     if (!catalog) return;
     setNameDraft(catalog.store_name);
     setSlug(catalog.slug);
     setCurrency(resolveStoreCurrency(catalog.currency));
+    setShortCode(catalog.short_code ?? "");
+    setWhatsappDraft(catalog.whatsapp ?? "");
+    setWelcomeDraft(catalog.whatsapp_welcome_message ?? "");
   }, [catalog]);
 
   async function saveStoreName(e: React.FormEvent) {
@@ -236,6 +255,96 @@ function PainelHome() {
     void copyLink();
   }
 
+  // ── Link curto personalizável (/s/CODIGO) ────────────────────────────────
+  const normalizedShort = normalizeShortCode(shortCode);
+  const shortLink = normalizedShort ? shortLinkUrl(normalizedShort) : "";
+
+  async function saveShortCode() {
+    if (!catalog) return;
+    const code = normalizeShortCode(shortCode);
+    if (!isValidShortCode(code)) {
+      toast.error(t("panel.dashboard.shortLinkInvalid"));
+      return;
+    }
+    setSavingShort(true);
+    try {
+      const { error } = await supabase
+        .from("catalogs")
+        .update({ short_code: code })
+        .eq("id", catalog.id);
+      if (error) {
+        if (error.code === "23505") {
+          toast.error(t("panel.dashboard.shortLinkInUse"));
+        } else if (/código curto|reservado/i.test(error.message)) {
+          toast.error(error.message);
+        } else {
+          toast.error(t("panel.dashboard.storeSaveError", { message: error.message }));
+        }
+        return;
+      }
+      setShortCode(code);
+      await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
+      toast.success(t("panel.dashboard.shortLinkSaved"));
+    } finally {
+      setSavingShort(false);
+    }
+  }
+
+  async function copyShortLink() {
+    if (!shortLink) return;
+    try {
+      await navigator.clipboard.writeText(shortLink);
+      toast.success(t("panel.dashboard.shortLinkCopied"));
+    } catch {
+      toast.error(t("panel.dashboard.copyError"));
+    }
+  }
+
+  // ── Link direto do WhatsApp com a mensagem de boas-vindas ────────────────
+  const normalizedPhone = normalizeWhatsappNumber(whatsappDraft);
+  const phoneDigits = normalizedPhone.replace(/\D/g, "");
+  const hasValidPhone = phoneDigits.length >= 12 && phoneDigits.length <= 13;
+  const whatsappUrl = hasValidPhone
+    ? whatsappLink(normalizedPhone, welcomeDraft.trim())
+    : "";
+
+  async function saveWhatsapp() {
+    if (!catalog) return;
+    if (!hasValidPhone) {
+      toast.error(t("panel.dashboard.whatsappInvalid"));
+      return;
+    }
+    setSavingWhatsapp(true);
+    try {
+      const { error } = await supabase
+        .from("catalogs")
+        .update({
+          whatsapp: normalizedPhone,
+          whatsapp_welcome_message: welcomeDraft.trim() || null,
+        })
+        .eq("id", catalog.id);
+      if (error) {
+        toast.error(t("panel.dashboard.storeSaveError", { message: error.message }));
+        return;
+      }
+      setWhatsappDraft(normalizedPhone);
+      await queryClient.invalidateQueries({ queryKey: ["my-catalog"] });
+      toast.success(t("panel.dashboard.whatsappSaved"));
+    } finally {
+      setSavingWhatsapp(false);
+    }
+  }
+
+  async function copyWhatsappLink() {
+    if (!whatsappUrl) return;
+    try {
+      await navigator.clipboard.writeText(whatsappUrl);
+      toast.success(t("panel.dashboard.whatsappCopied"));
+    } catch {
+      toast.error(t("panel.dashboard.copyError"));
+    }
+  }
+
   return (
     <div className="px-5 pb-10 pt-10">
       <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
@@ -405,6 +514,117 @@ function PainelHome() {
           </a>
           <button onClick={copyLink} className="rounded-xl border border-border py-2 text-center">
             Instagram
+          </button>
+        </div>
+      </section>
+
+      {/* ── Link curto personalizável ── */}
+      <section className="mt-6 rounded-3xl border border-border bg-card p-5">
+        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Link2 className="size-4" /> {t("panel.dashboard.shortLinkTitle")}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("panel.dashboard.shortLinkHint")}</p>
+        <label className="mt-3 block">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("panel.dashboard.shortLinkCode")}
+          </span>
+          <span className="mt-1 flex items-center rounded-xl border border-input bg-card px-3">
+            <span className="shrink-0 text-xs text-muted-foreground">/s/</span>
+            <input
+              value={shortCode}
+              onChange={(e) => setShortCode(e.target.value)}
+              placeholder={t("panel.dashboard.shortLinkPlaceholder")}
+              maxLength={24}
+              className="w-full bg-transparent py-2.5 text-sm text-foreground outline-none"
+            />
+          </span>
+        </label>
+        <div className="mt-3 truncate rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+          {shortLink || `…/s/${t("panel.dashboard.shortLinkPlaceholder")}`}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={copyShortLink}
+            disabled={!shortLink}
+            className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground disabled:opacity-50"
+          >
+            <Copy className="size-4" /> {t("panel.dashboard.copy")}
+          </button>
+          <button
+            type="button"
+            onClick={saveShortCode}
+            disabled={savingShort || !isValidShortCode(normalizedShort)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {savingShort ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            {t("common.save")}
+          </button>
+        </div>
+      </section>
+
+      {/* ── Link direto do WhatsApp ── */}
+      <section className="mt-6 rounded-3xl border border-border bg-card p-5">
+        <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <MessageCircle className="size-4" /> {t("panel.dashboard.whatsappLinkTitle")}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("panel.dashboard.whatsappLinkHint")}</p>
+        <label className="mt-3 block">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("panel.dashboard.whatsappNumber")}
+          </span>
+          <input
+            value={whatsappDraft}
+            onChange={(e) => setWhatsappDraft(e.target.value)}
+            placeholder={t("panel.dashboard.whatsappNumberPlaceholder")}
+            inputMode="tel"
+            className="mt-1 w-full rounded-xl border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none"
+          />
+        </label>
+        <label className="mt-3 block">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t("panel.dashboard.whatsappWelcome")}
+          </span>
+          <textarea
+            value={welcomeDraft}
+            onChange={(e) => setWelcomeDraft(e.target.value)}
+            placeholder={t("panel.dashboard.whatsappWelcomePlaceholder")}
+            rows={2}
+            maxLength={500}
+            className="mt-1 w-full resize-none rounded-xl border border-input bg-card px-3 py-2.5 text-sm text-foreground outline-none"
+          />
+        </label>
+        <div className="mt-3 truncate rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">
+          {whatsappUrl || `https://wa.me/…`}
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={copyWhatsappLink}
+            disabled={!whatsappUrl}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-border py-3 text-xs font-semibold text-foreground disabled:opacity-50"
+          >
+            <Copy className="size-4" /> {t("panel.dashboard.copy")}
+          </button>
+          <a
+            href={whatsappUrl || undefined}
+            target="_blank"
+            rel="noreferrer"
+            aria-disabled={!whatsappUrl}
+            className={`flex items-center justify-center gap-1.5 rounded-xl border border-border py-3 text-xs font-semibold ${
+              whatsappUrl ? "text-foreground" : "pointer-events-none opacity-50 text-muted-foreground"
+            }`}
+          >
+            <ExternalLink className="size-4" /> {t("panel.dashboard.whatsappOpen")}
+          </a>
+          <button
+            type="button"
+            onClick={saveWhatsapp}
+            disabled={savingWhatsapp || !hasValidPhone}
+            className="flex items-center justify-center gap-1.5 rounded-xl bg-primary py-3 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+          >
+            {savingWhatsapp ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            {t("common.save")}
           </button>
         </div>
       </section>
