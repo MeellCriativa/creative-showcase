@@ -66,7 +66,21 @@ type EmailLink = {
   productName: string;
   instructions: string | null;
   kind: "file" | "link";
+  productId?: string;
+  price?: string | number | null;
 };
+
+/** Valor da linha do pedido por produto, usado no resumo do e-mail. */
+function itemPrices(orderItems: unknown): Map<string, string | number> {
+  const map = new Map<string, string | number>();
+  const list = Array.isArray(orderItems) ? (orderItems as Array<Record<string, unknown>>) : [];
+  for (const item of list) {
+    const id = String(item?.product_id ?? "");
+    const raw = item?.line_total ?? item?.unitPrice;
+    if (id && raw !== null && raw !== undefined && raw !== "") map.set(id, raw as string | number);
+  }
+  return map;
+}
 
 type EmailBundle = {
   subject: string;
@@ -321,11 +335,12 @@ async function rebuildBundleForLinks(
   const admin = adminClient();
   const { data: order } = await admin
     .from("orders")
-    .select("customer_name, catalog_id, total, currency, created_at")
+    .select("customer_name, catalog_id, total, currency, created_at, items")
     .eq("id", orderId)
     .maybeSingle();
   const row = order as Record<string, unknown> | null;
   const catalog = await getCatalog(String(row?.catalog_id ?? ""));
+  const prices = itemPrices(row?.items);
   const message = buildDeliveryEmail({
     storeName: catalog?.store_name ?? "Vitrine Criativa",
     customerName: String(row?.customer_name ?? "cliente"),
@@ -338,6 +353,7 @@ async function rebuildBundleForLinks(
       instructions: link.instructions,
       expiresAt: link.expiresAt,
       kind: link.kind,
+      price: link.price ?? prices.get(link.productId ?? ""),
     })),
     supportUrl: supportLink(catalog),
   });
@@ -384,6 +400,7 @@ export async function deliverDigitalOrder(
 
   const rawItems = record.items;
   const items = Array.isArray(rawItems) ? (rawItems as Array<Record<string, unknown>>) : [];
+  const prices = itemPrices(rawItems);
   const productIds = [
     ...new Set(
       items
@@ -491,6 +508,7 @@ export async function deliverDigitalOrder(
         });
         const downloadUrl = buildDownloadUrl(cfg.functionBase, token.raw);
         createdDeliveries.push(delivery);
+        const linePrice = prices.get(product.id);
         links.push({
           deliveryId: delivery.id,
           tokenId: token.id,
@@ -499,6 +517,8 @@ export async function deliverDigitalOrder(
           productName: product.name,
           instructions: product.digital_instructions,
           kind: isExternalLink ? "link" : "file",
+          productId: product.id,
+          price: linePrice,
         });
         emailItems.push({
           productName: product.name,
@@ -506,6 +526,7 @@ export async function deliverDigitalOrder(
           instructions: product.digital_instructions,
           expiresAt: token.expiresAt,
           kind: isExternalLink ? "link" : "file",
+          price: linePrice,
         });
       } catch (error) {
         outcome.failed++;
@@ -686,9 +707,11 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
 
   const { data: regenOrder } = await admin
     .from("orders")
-    .select("customer_name, total, currency, created_at")
+    .select("customer_name, total, currency, created_at, items")
     .eq("id", delivery.order_id)
     .maybeSingle();
+  const regenRow = regenOrder as Record<string, unknown> | null;
+  const regenPrices = itemPrices(regenRow?.items);
 
   const cfg = config();
   if (!cfg) return failed("brevo_not_configured", "Envio de e-mail não configurado.");
@@ -745,10 +768,11 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
       productName: productRow.name,
       instructions: productRow.digital_instructions,
       kind: regenIsLink ? "link" : "file",
+      productId: delivery.product_id,
+      price: regenPrices.get(delivery.product_id),
     };
     const links = [...kept, newLink];
     const catalog = await getCatalog(delivery.catalog_id);
-    const regenRow = regenOrder as Record<string, unknown> | null;
     const message = buildDeliveryEmail({
       storeName: catalog?.store_name ?? "Vitrine Criativa",
       customerName: String(regenRow?.customer_name ?? "cliente"),
@@ -761,6 +785,7 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
         instructions: link.instructions,
         expiresAt: link.expiresAt,
         kind: link.kind,
+        price: link.price ?? regenPrices.get(link.productId ?? ""),
       })),
       supportUrl: supportLink(catalog),
     });

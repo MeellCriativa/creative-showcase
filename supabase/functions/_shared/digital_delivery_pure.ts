@@ -176,6 +176,8 @@ export type DeliveryEmailItem = {
   instructions?: string | null;
   expiresAt?: string | null;
   kind?: "file" | "link";
+  /** Valor do produto (linha do pedido), quando disponível. */
+  price?: string | number | null;
 };
 
 function formatDate(value: string | null | undefined): string | null {
@@ -217,6 +219,8 @@ export function buildDeliveryEmail(input: {
   downloadUrl?: string;
   instructions?: string | null;
   expiresAt?: string | null;
+  /** Valor do produto quando o e-mail é de um único item (assinatura legada). */
+  price?: string | number | null;
   items?: DeliveryEmailItem[];
   supportUrl?: string | null;
   orderTotal?: string | number | null;
@@ -234,6 +238,7 @@ export function buildDeliveryEmail(input: {
           downloadUrl: input.downloadUrl,
           instructions: input.instructions,
           expiresAt: input.expiresAt,
+          price: input.price,
         }]
       : [];
 
@@ -242,6 +247,7 @@ export function buildDeliveryEmail(input: {
       const product = escapeHtml(item.productName || "produto digital");
       const htmlUrl = escapeHtml(String(item.downloadUrl ?? ""));
       const expiry = formatDate(item.expiresAt);
+      const price = formatMoney(item.price, input.currency);
       const isLink = item.kind === "link";
       const actionLabel = isLink ? "Acessar produto" : "Baixar arquivo";
       const label = items.length > 1 ? `${index + 1}. ${product}` : product;
@@ -250,6 +256,7 @@ export function buildDeliveryEmail(input: {
         : "";
       return `<div style="margin:0 0 24px;padding-bottom:20px;border-bottom:1px solid #eee9f5">
           <p style="margin:0 0 10px;font-size:15px;line-height:1.6">${isLink ? "Acesse" : "Baixe o arquivo de"} <strong>${label}</strong>:</p>
+          ${price ? `<p style="margin:0 0 10px;font-size:13px;color:#6d657c"><strong>Valor:</strong> ${escapeHtml(price)}</p>` : ""}
           <div style="text-align:center;margin:14px 0">
             <a href="${htmlUrl}" style="display:inline-block;background:#8b5cf6;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:13px 24px;border-radius:12px">${actionLabel}</a>
           </div>
@@ -317,7 +324,9 @@ export function buildDeliveryEmail(input: {
   textLines.push("");
   items.forEach((item, index) => {
     const expiry = formatDate(item.expiresAt);
+    const price = formatMoney(item.price, input.currency);
     textLines.push(`${items.length > 1 ? `${index + 1}. ` : ""}Produto: ${item.productName || "produto digital"}`);
+    if (price) textLines.push(`Valor: ${price}`);
     textLines.push(`${item.kind === "link" ? "Acesse seu produto" : "Baixe seu arquivo"}: ${item.downloadUrl}`);
     if (expiry) textLines.push(`Válido até: ${expiry}`);
     if (item.instructions?.trim()) textLines.push(`Orientações: ${item.instructions.trim()}`);

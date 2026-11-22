@@ -243,7 +243,9 @@ test("resumo da compra traz cliente, data, valor e loja", () => {
     purchasedAt: "2026-11-22T03:00:00Z",
     productName: "Apostila",
     downloadUrl: "https://exemplo/delivery?token=AAA",
+    price: 123.4,
   });
+  assert.match(message.html, /<strong>Valor:<\/strong> R\$\s?123,40/);
   assert.match(message.html, /<strong>Cliente:<\/strong> Maria &amp; João/);
   assert.match(message.html, /<strong>Data da compra:<\/strong>/);
   assert.match(message.html, /<strong>Valor da compra:<\/strong> R\$\s?123,40/);
@@ -251,6 +253,20 @@ test("resumo da compra traz cliente, data, valor e loja", () => {
   assert.match(message.text, /Cliente: Maria & João/);
   assert.match(message.text, /Loja: Loja da Ana/);
   assert.match(message.text, /Valor da compra: R\$\s?123,40/);
+});
+
+test("valor por produto é resolvido antes de montar o e-mail em todos os fluxos", () => {
+  const source = read("supabase/functions/_shared/digital_delivery.ts");
+  for (const name of ["prices", "regenPrices"]) {
+    const declaration = source.indexOf(`const ${name} = itemPrices(`);
+    const firstUse = source.indexOf(`${name}.get(`);
+    assert.ok(declaration >= 0, `declaração de ${name} ausente`);
+    assert.ok(firstUse >= 0, `uso de ${name} ausente`);
+    assert.ok(
+      declaration < firstUse,
+      `${name} é usado antes da declaração (ReferenceError em tempo de execução)`,
+    );
+  }
 });
 
 test("um único e-mail de compra confirmada reúne todos os produtos e prazos", () => {
