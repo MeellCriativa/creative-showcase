@@ -68,7 +68,11 @@ export function optimizedImageUrl(
   if (!found) return null;
   const w = clamp(width, MIN_WIDTH, MAX_WIDTH, IMAGE_WIDTHS.detail);
   const q = clamp(quality, 1, 100, IMAGE_QUALITY);
-  return `${found.origin}/storage/v1/render/image/public/catalog-images/${found.path}?width=${w}&format=webp&quality=${q}`;
+  // `resize=contain` é obrigatório: sem ele o Storage usa `cover` e, com só
+  // `width`, devolve uma faixa (ex.: 400x1254 de um original 1254x1254),
+  // fazendo a miniatura parecer ampliada. Com `contain` a proporção é mantida
+  // e o CSS `object-cover` continua recortando como antes da otimização.
+  return `${found.origin}/storage/v1/render/image/public/catalog-images/${found.path}?width=${w}&resize=contain&format=webp&quality=${q}`;
 }
 
 /** `srcSet` com várias larguras para o navegador escolher conforme o dispositivo. */

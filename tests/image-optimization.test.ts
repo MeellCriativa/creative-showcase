@@ -22,15 +22,21 @@ test("converte URL assinada em URL de render WebP sem quebrar o caminho", () => 
   const result = optimizedImageUrl(SIGNED, 400, 82);
   assert.equal(
     result,
-    `${BASE}/storage/v1/render/image/public/catalog-images/${PATH}?width=400&format=webp&quality=82`,
+    `${BASE}/storage/v1/render/image/public/catalog-images/${PATH}?width=400&resize=contain&format=webp&quality=82`,
   );
   assert.ok(!result?.includes("token="), "a assinatura antiga não deve seguir na URL otimizada");
+});
+
+test("mantém a proporção para não ampliar as miniaturas", () => {
+  const url = optimizedImageUrl(PUBLIC, IMAGE_WIDTHS.thumb)!;
+  assert.match(url, /[?&]resize=contain([&#]|$)/);
+  assert.doesNotMatch(url, /resize=fill/);
 });
 
 test("aceita URL pública e usa 1200px/qualidade 82 por padrão", () => {
   assert.equal(
     optimizedImageUrl(PUBLIC),
-    `${BASE}/storage/v1/render/image/public/catalog-images/${PATH}?width=1200&format=webp&quality=82`,
+    `${BASE}/storage/v1/render/image/public/catalog-images/${PATH}?width=1200&resize=contain&format=webp&quality=82`,
   );
 });
 
@@ -38,16 +44,16 @@ test("preserva nomes de arquivo com caracteres especiais", () => {
   const url = `${BASE}/storage/v1/object/sign/catalog-images/user/foto%20legal%20(1).jpg?token=x`;
   assert.equal(
     optimizedImageUrl(url, 400),
-    `${BASE}/storage/v1/render/image/public/catalog-images/user/foto%20legal%20(1).jpg?width=400&format=webp&quality=82`,
+    `${BASE}/storage/v1/render/image/public/catalog-images/user/foto%20legal%20(1).jpg?width=400&resize=contain&format=webp&quality=82`,
   );
 });
 
 test("limita largura e qualidade a faixas seguras", () => {
-  assert.match(optimizedImageUrl(PUBLIC, 99999, 999)!, /width=2400&format=webp&quality=100$/);
-  assert.match(optimizedImageUrl(PUBLIC, -10, -10)!, /width=16&format=webp&quality=1$/);
+  assert.match(optimizedImageUrl(PUBLIC, 99999, 999)!, /width=2400&resize=contain&format=webp&quality=100$/);
+  assert.match(optimizedImageUrl(PUBLIC, -10, -10)!, /width=16&resize=contain&format=webp&quality=1$/);
   assert.match(
     optimizedImageUrl(PUBLIC, Number.NaN, Number.NaN)!,
-    /width=1200&format=webp&quality=82$/,
+    /width=1200&resize=contain&format=webp&quality=82$/,
   );
 });
 
@@ -74,9 +80,9 @@ test("mantém URL original fora do bucket de imagens de catálogo", () => {
 test("gera srcSet com miniatura, cartão e detalhe", () => {
   const srcSet = optimizedImageSrcSet(SIGNED)!;
   assert.equal(srcSet.split(", ").length, 3);
-  assert.ok(srcSet.includes(`width=${IMAGE_WIDTHS.thumb}&format=webp`));
-  assert.ok(srcSet.includes(`width=${IMAGE_WIDTHS.card}&format=webp`));
-  assert.ok(srcSet.includes(`width=${IMAGE_WIDTHS.detail}&format=webp`));
+  assert.ok(srcSet.includes(`width=${IMAGE_WIDTHS.thumb}&resize=contain&format=webp`));
+  assert.ok(srcSet.includes(`width=${IMAGE_WIDTHS.card}&resize=contain&format=webp`));
+  assert.ok(srcSet.includes(`width=${IMAGE_WIDTHS.detail}&resize=contain&format=webp`));
   assert.ok(srcSet.includes("400w"));
   assert.ok(srcSet.includes("800w"));
   assert.ok(srcSet.includes("1200w"));
