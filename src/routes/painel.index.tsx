@@ -202,6 +202,12 @@ function PainelHome() {
   const currentSlug = slugify(slug) || catalog.slug;
   const link =
     typeof window !== "undefined" ? `${window.location.origin}/c/${currentSlug}` : `/c/${currentSlug}`;
+  // O botão "Abrir link" deve abrir sempre o endereço já salvo, não o rascunho
+  // que ainda não foi gravado no campo "Editar link da loja".
+  const savedLink =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/c/${catalog.slug}`
+      : `/c/${catalog.slug}`;
   const message = t("panel.dashboard.shareMessage", { link });
 
   const plan = catalog.plan ?? "free";
@@ -421,7 +427,15 @@ function PainelHome() {
           </span>
         </label>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <a
+            href={savedLink}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground"
+          >
+            <ExternalLink className="size-4" /> {t("panel.dashboard.openLink")}
+          </a>
           <button
             onClick={copyLink}
             className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground"

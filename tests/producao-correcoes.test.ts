@@ -85,3 +85,14 @@ test("avatar da loja fica inteiro abaixo da capa, sem sobreposição", () => {
   // Catálogo e página de entrada usam o mesmo espaçamento positivo.
   assert.equal(catalog.split("mt-2 flex items-end gap-3").length - 1, 2);
 });
+
+test("blur da capa volta a ficar atrás do avatar sem cobrir o círculo", () => {
+  const catalog = read("src/routes/c.$slug.tsx");
+  assert.equal(
+    catalog.split("absolute -inset-5 -z-10 rounded-full bg-white/25 backdrop-blur-md").length - 1,
+    2,
+  );
+  assert.equal(catalog.split("relative isolate shrink-0").length - 1, 2);
+  // O avatar continua inteiro abaixo da capa.
+  assert.equal(catalog.split("mt-2 flex items-end gap-3").length - 1, 2);
+});

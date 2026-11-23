@@ -1071,23 +1071,30 @@ function PublicCatalog() {
         </div>
         <div className="px-5">
           <div className="mt-2 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
-            <div
-              className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
-              style={{ backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}
-            >
-              {loadedCatalog.logo_url && (
-                <img
-                  src={
-                    optimizedImageUrl(loadedCatalog.logo_url, IMAGE_WIDTHS.card) ??
-                    loadedCatalog.logo_url
-                  }
-                  alt={loadedCatalog.store_name}
-                  loading="eager"
-                  decoding="async"
-                  onError={imageFallback(loadedCatalog.logo_url)}
-                  className="h-full w-full object-cover"
-                />
-              )}
+            <div className="relative isolate shrink-0">
+              {/* halo com o mesmo blur da capa, atrás do círculo, sem cobrir a foto */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -inset-5 -z-10 rounded-full bg-white/25 backdrop-blur-md"
+              />
+              <div
+                className={`${logoSizeClass} overflow-hidden rounded-full border-4 border-background bg-muted`}
+                style={{ backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}
+              >
+                {loadedCatalog.logo_url && (
+                  <img
+                    src={
+                      optimizedImageUrl(loadedCatalog.logo_url, IMAGE_WIDTHS.card) ??
+                      loadedCatalog.logo_url
+                    }
+                    alt={loadedCatalog.store_name}
+                    loading="eager"
+                    decoding="async"
+                    onError={imageFallback(loadedCatalog.logo_url)}
+                    className="h-full w-full object-cover"
+                  />
+                )}
+              </div>
             </div>
           </div>
           <h1
@@ -2953,20 +2960,27 @@ function WelcomePage({
         </div>
         <div className="px-5">
           <div className="mt-2 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
-            <div
-              className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
-              style={{ backgroundColor: accent }}
-            >
-              {catalog.logo_url && (
-                <img
-                  src={optimizedImageUrl(catalog.logo_url, IMAGE_WIDTHS.card) ?? catalog.logo_url}
-                  alt={catalog.store_name}
-                  loading="eager"
-                  decoding="async"
-                  onError={imageFallback(catalog.logo_url)}
-                  className="h-full w-full object-cover"
-                />
-              )}
+            <div className="relative isolate shrink-0">
+              {/* halo com o mesmo blur da capa, atrás do círculo, sem cobrir a foto */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -inset-5 -z-10 rounded-full bg-white/25 backdrop-blur-md"
+              />
+              <div
+                className={`${logoSizeClass} overflow-hidden rounded-full border-4 border-background bg-muted`}
+                style={{ backgroundColor: accent }}
+              >
+                {catalog.logo_url && (
+                  <img
+                    src={optimizedImageUrl(catalog.logo_url, IMAGE_WIDTHS.card) ?? catalog.logo_url}
+                    alt={catalog.store_name}
+                    loading="eager"
+                    decoding="async"
+                    onError={imageFallback(catalog.logo_url)}
+                    className="h-full w-full object-cover"
+                  />
+                )}
+              </div>
             </div>
           </div>
           <h1

@@ -51,3 +51,17 @@ test("rota pública, SQL e cards do painel estão ligados", () => {
   assert.match(panel, /panel\.dashboard\.editStoreLink/);
   assert.match(panel, /customize\.fields\.currency/);
 });
+
+test("card Link da minha loja tem botão de abrir o link salvo", () => {
+  const panel = read("src/routes/painel.index.tsx");
+  assert.match(panel, /panel\.dashboard\.openLink/);
+  assert.match(panel, /href=\{savedLink\}/);
+  assert.match(panel, /target="_blank"/);
+  // O link aberto é o salvo no catálogo, não o rascunho do campo de edição.
+  assert.match(panel, /const savedLink[\s\S]{0,220}catalog\.slug/);
+
+  const i18n = read("src/i18n/namespaces/panel.ts");
+  assert.match(i18n, /openLink: "Abrir link"/);
+  assert.match(i18n, /openLink: "Open link"/);
+  assert.match(i18n, /openLink: "Abrir enlace"/);
+});
