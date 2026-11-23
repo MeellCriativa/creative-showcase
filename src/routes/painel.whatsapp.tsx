@@ -1,15 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
-import {
-  CheckCircle2,
-  Loader2,
-  Lock,
-  MessageCircle,
-  RefreshCw,
-  Unplug,
-  XCircle,
-} from "lucide-react";
+import { CheckCircle2, Loader2, MessageCircle, RefreshCw, Unplug, XCircle } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -310,16 +302,10 @@ function WhatsAppPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-5 p-5 pb-32">
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-bold text-foreground">{t("whatsapp.title")}</h1>
-        <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary">
-          {t("common.comingSoon")}
-        </span>
-      </div>
-
+      <h1 className="text-xl font-bold text-foreground">{t("whatsapp.title")}</h1>
       <p className="text-sm text-muted-foreground">{t("whatsapp.subtitle")}</p>
 
-      <div className="rounded-2xl border border-primary/25 bg-accent/40 p-5 space-y-4">
+      <div className="rounded-2xl border border-primary/25 bg-accent/40 p-5">
         <div className="flex items-start gap-3">
           <span className="text-2xl">🚀</span>
           <div>
@@ -329,29 +315,54 @@ function WhatsAppPage() {
             </p>
           </div>
         </div>
+      </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <MessageCircle className="size-4 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">{t("whatsapp.title")}</p>
-            <span className="ml-auto inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-              {t("common.comingSoon")}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Lock className="size-3.5" />
-            <span>{t("whatsapp.integrationInProgress")}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">{t("whatsapp.comingSoonText")}</p>
-          <button
-            type="button"
-            disabled
-            className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-muted px-5 py-3.5 text-sm font-semibold text-muted-foreground opacity-70"
-          >
-            <Lock className="size-4" />
-            {t("whatsapp.authorize")}
-          </button>
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="size-4 text-primary" />
+          <p className="text-sm font-semibold text-foreground">{t("whatsapp.connectTitle")}</p>
         </div>
+
+        {(hasError || isExpired) && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            <p className="font-semibold">{t("whatsapp.connectionIssue")}</p>
+            {connection?.last_sync_error && (
+              <p className="mt-1 break-words opacity-80">{connection.last_sync_error}</p>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <label htmlFor="whatsapp-phone" className="block text-sm font-medium text-foreground">
+            {t("whatsapp.phoneLabel")}
+          </label>
+          <input
+            id="whatsapp-phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phoneInput}
+            onChange={(event) => setPhoneInput(event.target.value)}
+            placeholder="(51) 99999-9999"
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
+          />
+          <p className="text-xs text-muted-foreground">{t("whatsapp.phoneHint")}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleConnect}
+          disabled={startOAuth.isPending}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+        >
+          {startOAuth.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <MessageCircle className="size-4" />
+          )}
+          {hasError || isExpired ? t("whatsapp.reconnect") : t("whatsapp.authorize")}
+        </button>
+        <p className="text-xs text-muted-foreground">{t("whatsapp.connectHint")}</p>
       </div>
 
       {showDisconnectConfirm && (

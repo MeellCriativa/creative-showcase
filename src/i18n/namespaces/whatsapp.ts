@@ -25,13 +25,21 @@ export const whatsapp = defineNamespace({
     syncDoneToast: "Sincronização concluída: {{created}} criados, {{updated}} atualizados",
     subtitle:
       "Conecte seu WhatsApp Business para que os produtos do seu catálogo apareçam automaticamente na vitrine do WhatsApp.",
-    newsTitle: "Novidade chegando!",
+    newsTitle: "Como funciona",
     newsText:
-      "A integração com o WhatsApp Business estará disponível em uma das próximas atualizações do Vitrine Criativa. Em breve você poderá conectar seu WhatsApp e integrar seu catálogo de forma ainda mais prática. 💜",
+      "Ao autorizar, sincronizamos os produtos da sua loja para o catálogo do WhatsApp Business. Você precisa ter um catálogo criado no Meta Commerce Manager e ser administrador dele. 💜",
     integrationInProgress: "Integração em desenvolvimento",
     comingSoonText:
       "A conexão direta com o WhatsApp Business estará disponível em uma das próximas atualizações.",
     authorize: "Autorizar e conectar",
+    connectTitle: "Conecte seu catálogo",
+    phoneLabel: "Número do WhatsApp Business",
+    phoneHint: "Informe o número vinculado ao catálogo no Meta Commerce Manager (ex: 51999999999).",
+    connectHint:
+      "Você será direcionado ao Meta para autorizar a conexão. Crie um catálogo no Commerce Manager antes de continuar.",
+    connectionIssue:
+      "A conexão anterior expirou ou falhou. Autorize novamente para continuar sincronizando.",
+    reconnect: "Reconectar",
     disconnectTitle: "Desconectar WhatsApp Business?",
     disconnectText:
       "A autorização será removida, mas os produtos já sincronizados no catálogo do WhatsApp serão mantidos. Você pode reconectar a qualquer momento.",
@@ -70,13 +78,21 @@ export const whatsapp = defineNamespace({
     syncDoneToast: "Sync complete: {{created}} created, {{updated}} updated",
     subtitle:
       "Connect your WhatsApp Business so your catalog products show up automatically in the WhatsApp storefront.",
-    newsTitle: "Something new is coming!",
+    newsTitle: "How it works",
     newsText:
-      "The WhatsApp Business integration will be available in one of the next updates of Vitrine Criativa. Soon you will be able to connect your WhatsApp and integrate your catalog even more easily. 💜",
+      "Once authorized, we sync your store products to your WhatsApp Business catalog. You need a catalog created in Meta Commerce Manager and to be its admin. 💜",
     integrationInProgress: "Integration in progress",
     comingSoonText:
       "The direct connection to WhatsApp Business will be available in one of the next updates.",
     authorize: "Authorize and connect",
+    connectTitle: "Connect your catalog",
+    phoneLabel: "WhatsApp Business number",
+    phoneHint:
+      "Enter the number linked to the catalog in Meta Commerce Manager (e.g. 51999999999).",
+    connectHint:
+      "You will be redirected to Meta to authorize the connection. Create a catalog in Commerce Manager first.",
+    connectionIssue: "The previous connection expired or failed. Authorize again to keep syncing.",
+    reconnect: "Reconnect",
     disconnectTitle: "Disconnect WhatsApp Business?",
     disconnectText:
       "The authorization will be removed, but products already synced to the WhatsApp catalog will be kept. You can reconnect at any time.",
@@ -114,13 +130,22 @@ export const whatsapp = defineNamespace({
     syncDoneToast: "Sincronización completada: {{created}} creados, {{updated}} actualizados",
     subtitle:
       "Conecta tu WhatsApp Business para que los productos de tu catálogo aparezcan automáticamente en la vitrina de WhatsApp.",
-    newsTitle: "¡Novedad en camino!",
+    newsTitle: "Cómo funciona",
     newsText:
-      "La integración con WhatsApp Business estará disponible en una de las próximas actualizaciones de Vitrine Criativa. Pronto podrás conectar tu WhatsApp e integrar tu catálogo de forma aún más práctica. 💜",
+      "Al autorizar, sincronizamos los productos de tu tienda con el catálogo de WhatsApp Business. Necesitas un catálogo creado en Meta Commerce Manager y ser su administrador. 💜",
     integrationInProgress: "Integración en desarrollo",
     comingSoonText:
       "La conexión directa con WhatsApp Business estará disponible en una de las próximas actualizaciones.",
     authorize: "Autorizar y conectar",
+    connectTitle: "Conecta tu catálogo",
+    phoneLabel: "Número de WhatsApp Business",
+    phoneHint:
+      "Informa el número vinculado al catálogo en Meta Commerce Manager (ej.: 51999999999).",
+    connectHint:
+      "Serás redirigido a Meta para autorizar la conexión. Crea un catálogo en Commerce Manager antes de continuar.",
+    connectionIssue:
+      "La conexión anterior expiró o falló. Autoriza de nuevo para seguir sincronizando.",
+    reconnect: "Volver a conectar",
     disconnectTitle: "¿Desconectar WhatsApp Business?",
     disconnectText:
       "Se eliminará la autorización, pero los productos ya sincronizados en el catálogo de WhatsApp se mantendrán. Puedes volver a conectar en cualquier momento.",
