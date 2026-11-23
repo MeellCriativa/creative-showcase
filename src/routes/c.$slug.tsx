@@ -1070,7 +1070,7 @@ function PublicCatalog() {
           <div className="cover-glass h-full w-full" />
         </div>
         <div className="px-5">
-          <div className="-mt-10 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
+          <div className="mt-2 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
             <div
               className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
               style={{ backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}
@@ -2952,7 +2952,7 @@ function WelcomePage({
           <div className="cover-glass h-full w-full" />
         </div>
         <div className="px-5">
-          <div className="-mt-12 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
+          <div className="mt-2 flex items-end gap-3" style={{ justifyContent: logoJustify }}>
             <div
               className={`${logoSizeClass} shrink-0 overflow-hidden rounded-full border-4 border-background bg-muted`}
               style={{ backgroundColor: accent }}

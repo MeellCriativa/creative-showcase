@@ -76,3 +76,12 @@ test("canal Realtime de notificações é único por instância da hook", () => 
   // Duas instâncias recebem o evento, mas o toast continua deduplicado.
   assert.match(hook, /if \(!orderId \|\| !shouldAnnounce\(orderId\)\) return;/);
 });
+
+test("avatar da loja fica inteiro abaixo da capa, sem sobreposição", () => {
+  const catalog = read("src/routes/c.$slug.tsx");
+  // Antes o avatar subia 40/48px sobre a capa (-mt-10/-mt-12).
+  assert.doesNotMatch(catalog, /-mt-10 flex items-end gap-3/);
+  assert.doesNotMatch(catalog, /-mt-12 flex items-end gap-3/);
+  // Catálogo e página de entrada usam o mesmo espaçamento positivo.
+  assert.equal(catalog.split("mt-2 flex items-end gap-3").length - 1, 2);
+});
