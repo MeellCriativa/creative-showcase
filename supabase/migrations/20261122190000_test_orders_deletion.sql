@@ -15,6 +15,11 @@ create index if not exists orders_catalog_test_idx
 -- explicitamente como teste pelo lojista e sem cobrança real (gateway/transação).
 -- Pedidos de teste confirmados via Pix manual têm payment_status='approved' mas
 -- nenhuma transação: por isso payment_status NÃO é usado como bloqueio aqui.
+-- Um pedido de teste que abortou no checkout do Mercado Pago pode ter
+-- payment_provider preenchido e uma transação 'preference_created' (só a
+-- preferência, sem pagamento). Isso NÃO é cobrança e não pode bloquear a exclusão.
+-- O bloqueio real é payment_transaction_id preenchido ou qualquer transação com
+-- status/payment id/captura diferente de "preferência criada".
 drop policy if exists orders_owner_delete on public.orders;
 create policy orders_owner_delete on public.orders
   for delete to authenticated
@@ -24,9 +29,16 @@ create policy orders_owner_delete on public.orders
       where c.id = catalog_id and c.user_id = auth.uid()
     )
     and is_test_order
-    and payment_provider is null
+    and payment_transaction_id is null
     and not exists (
-      select 1 from public.payment_transactions pt where pt.order_id = public.orders.id
+      select 1 from public.payment_transactions pt
+      where pt.order_id = public.orders.id
+        and (
+          pt.provider_status is distinct from 'preference_created'
+          or pt.provider_payment_id is not null
+          or coalesce(pt.captured_amount, 0) > 0
+          or coalesce(pt.refunded_amount, 0) > 0
+        )
     )
   );
 

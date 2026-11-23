@@ -355,13 +355,20 @@ function OrderCard({
     if (!window.confirm(t("orders.actions.confirmDeleteTest"))) return;
     setTestBusy(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("orders")
         .delete()
         .eq("id", order.id)
-        .eq("catalog_id", order.catalog_id);
+        .eq("catalog_id", order.catalog_id)
+        .select("id");
       if (error) {
         console.error("[pedidos] falha ao excluir pedido de teste:", error);
+        toast.error(t("orders.actions.deleteError"));
+        return;
+      }
+      // RLS pode barrar a exclusão sem devolver erro (0 linhas afetadas).
+      // Sem esta checagem o painel mostrava "excluído" e o pedido continuava lá.
+      if (!data?.length) {
         toast.error(t("orders.actions.deleteError"));
         return;
       }

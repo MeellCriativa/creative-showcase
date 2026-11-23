@@ -34,17 +34,40 @@ test("pedidos de teste podem ser marcados e excluídos com segurança", () => {
   const sql = read("supabase/migrations/20261122190000_test_orders_deletion.sql");
   assert.match(sql, /add column if not exists is_test_order boolean not null default false/);
   assert.match(sql, /and is_test_order/);
-  assert.match(sql, /payment_provider is null/);
+  assert.match(sql, /payment_transaction_id is null/);
   assert.match(sql, /not exists[\s\S]*payment_transactions/);
+  assert.match(sql, /provider_status is distinct from 'preference_created'/);
   // Pedido de teste confirmado via Pix manual (approved, sem gateway) pode ser removido.
   assert.doesNotMatch(sql, /payment_status.*=.*'pending'/);
 
   const panel = read("src/routes/painel.pedidos.tsx");
   assert.match(panel, /is_test_order/);
-  assert.match(panel, /\.delete\(\)[\s\S]{0,160}\.eq\("catalog_id", order\.catalog_id\)/);
+  assert.match(panel, /\.delete\(\)[\s\S]{0,200}\.eq\("catalog_id", order\.catalog_id\)[\s\S]{0,80}\.select\("id"\)/);
+  assert.match(panel, /if \(!data\?\.length\)/);
   assert.match(panel, /queryKey: \["seller-order-notifications", order\.catalog_id\]/);
   // O total é derivado da query: invalidar orders recalcula faturamento e contagens.
   assert.match(panel, /queryKey: \["orders", order\.catalog_id\]/);
+});
+
+test("correção da política permite excluir pedido de teste com preferência criada", () => {
+  const fix = read("supabase/fixes/20261123_corrige_exclusao_pedido_teste.sql");
+  assert.match(fix, /drop policy if exists orders_owner_delete on public\.orders/);
+  assert.match(fix, /create policy orders_owner_delete on public\.orders/);
+  assert.match(fix, /and is_test_order/);
+  assert.match(fix, /payment_transaction_id is null/);
+  assert.match(fix, /provider_status is distinct from 'preference_created'/);
+  assert.match(fix, /provider_payment_id is not null/);
+  assert.match(fix, /captured_amount, 0\) > 0/);
+  // Não pode reabrir a exclusão de pedidos reais pagos.
+  assert.doesNotMatch(fix, /payment_status.*=.*'approved'/);
+  assert.match(fix, /notify pgrst, 'reload schema'/);
+
+  const bloco = read("supabase/fixes/blocos_pedidos_teste/02_policy_delete.sql");
+  assert.equal(
+    bloco.match(/create policy orders_owner_delete[\s\S]*?notify pgrst/)?.[0],
+    fix.match(/create policy orders_owner_delete[\s\S]*?notify pgrst/)?.[0],
+    "o bloco canônico e a correção precisam ter a mesma política",
+  );
 });
 
 test("notificações aparecem na tela de pedidos sem sumir automaticamente", () => {
