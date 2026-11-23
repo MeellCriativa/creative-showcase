@@ -2369,57 +2369,60 @@ function CartSheet({
           </div>
         )}
 
-        <div className="space-y-3 px-5 pt-5 pb-0">
-          {items.length === 0 && (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              {t("catalog.cart.empty")}
-            </p>
-          )}
-          {items.map((item) => (
-            <div key={item.key} className="flex gap-3 rounded-2xl border border-border bg-card p-3">
-              <div className="size-16 shrink-0 overflow-hidden rounded-xl bg-muted">
-                {item.image && (
-                  <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-foreground">{item.name}</p>
-                {item.variation && (
-                  <p className="truncate text-xs text-muted-foreground">{item.variation}</p>
-                )}
-                <p className="text-sm font-semibold" style={{ color: primary }}>
-                  {money(item.unitPrice * item.quantity)}
-                </p>
-                <div className="mt-2 flex items-center gap-3">
-                  <div className="flex items-center gap-3 rounded-full border border-border px-3 py-1">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 pt-4 pb-4">
+          <div className="space-y-2">
+            {items.length === 0 && (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                {t("catalog.cart.empty")}
+              </p>
+            )}
+            {items.map((item) => (
+              <div
+                key={item.key}
+                className="flex gap-3 rounded-2xl border border-border bg-card p-3"
+              >
+                <div className="size-16 shrink-0 overflow-hidden rounded-xl bg-muted">
+                  {item.image && (
+                    <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-foreground">{item.name}</p>
+                  {item.variation && (
+                    <p className="truncate text-xs text-muted-foreground">{item.variation}</p>
+                  )}
+                  <p className="text-sm font-semibold" style={{ color: primary }}>
+                    {money(item.unitPrice * item.quantity)}
+                  </p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="flex items-center gap-3 rounded-full border border-border px-3 py-1">
+                      <button
+                        onClick={() => onChangeQty(item.key, -1)}
+                        aria-label={t("catalog.product.decrease")}
+                      >
+                        <Minus className="size-3.5" />
+                      </button>
+                      <span className="w-5 text-center text-sm font-semibold">{item.quantity}</span>
+                      <button
+                        onClick={() => onChangeQty(item.key, 1)}
+                        aria-label={t("catalog.product.increase")}
+                      >
+                        <Plus className="size-3.5" />
+                      </button>
+                    </div>
                     <button
-                      onClick={() => onChangeQty(item.key, -1)}
-                      aria-label={t("catalog.product.decrease")}
+                      onClick={() => onRemove(item.key)}
+                      aria-label={t("catalog.cart.removeItem")}
+                      className="text-destructive"
                     >
-                      <Minus className="size-3.5" />
-                    </button>
-                    <span className="w-5 text-center text-sm font-semibold">{item.quantity}</span>
-                    <button
-                      onClick={() => onChangeQty(item.key, 1)}
-                      aria-label={t("catalog.product.increase")}
-                    >
-                      <Plus className="size-3.5" />
+                      <Trash2 className="size-4" />
                     </button>
                   </div>
-                  <button
-                    onClick={() => onRemove(item.key)}
-                    aria-label={t("catalog.cart.removeItem")}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 pb-5">
           {items.length > 0 && (
             <div className="space-y-3 rounded-2xl border border-border p-4">
               {deliveryMethods.length > 1 && (
@@ -2722,56 +2725,55 @@ function CartSheet({
           )}
         </div>
 
-        <div className="shrink-0 space-y-3 border-t border-border px-5 py-4">
-          <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-foreground">
-                {t("catalog.cart.currencyLabel")}
-              </span>
-              {ratesLoading && (
-                <span className="text-[11px] text-muted-foreground">
-                  {t("catalog.cart.currencyLoading")}
-                </span>
-              )}
-            </div>
+        <div className="shrink-0 space-y-2 border-t border-border px-4 py-2.5">
+          <div className="flex items-center gap-2" title={t("catalog.cart.currencyHint")}>
+            <span className="shrink-0 text-[11px] font-semibold text-foreground">
+              {t("catalog.cart.currencyLabel")}
+            </span>
             <CurrencyPicker
               value={displayCurrency}
               onChange={onCurrencyChange}
               unavailableCodes={unavailableCurrencyCodes}
-              hint={t("catalog.cart.currencyHint")}
+              compact
+              className="min-w-0 flex-1"
             />
-            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-              {conversionAvailable
-                ? t("catalog.cart.currencyChargedIn", {
-                    display: displayCurrency,
-                    charge: currency,
-                  })
-                : t("catalog.cart.currencyNoRate", {
-                    display: displayCurrency,
-                    charge: currency,
-                  })}
-            </p>
+            {ratesLoading && (
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {t("catalog.cart.currencyLoading")}
+              </span>
+            )}
           </div>
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <p className="text-[10px] leading-tight text-muted-foreground">
+            {conversionAvailable
+              ? t("catalog.cart.currencyChargedIn", {
+                  display: displayCurrency,
+                  charge: currency,
+                })
+              : t("catalog.cart.currencyNoRate", {
+                  display: displayCurrency,
+                  charge: currency,
+                })}
+          </p>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{t("common.subtotal")}</span>
             <span>{money(subtotal)}</span>
           </div>
           {deliveryMethod === "melhor_envio" && (
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
                 {t("catalog.cart.shipping")} {selected ? `(${selected.name})` : ""}
               </span>
               <span>{shippingCost > 0 ? money(shippingCost) : "—"}</span>
             </div>
           )}
-          <div className="flex items-center justify-between text-base font-bold text-foreground">
+          <div className="flex items-center justify-between text-sm font-bold text-foreground">
             <span>{t("common.total")}</span>
             <span>{money(grandTotal)}</span>
           </div>
           <button
             onClick={handleFinish}
             disabled={items.length === 0 || submitting}
-            className="btn-shimmer btn-elevated flex w-full items-center justify-center gap-2 rounded-2xl py-4 font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
+            className="btn-shimmer btn-elevated flex w-full items-center justify-center gap-2 rounded-2xl py-3 font-semibold text-white disabled:opacity-50 transition-transform hover:scale-[1.02]"
             style={{ background: primary }}
           >
             {submitting && <Loader2 className="size-4 animate-spin" />}

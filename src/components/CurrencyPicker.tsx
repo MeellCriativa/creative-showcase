@@ -16,6 +16,8 @@ type CurrencyPickerProps = {
   hint?: string;
   id?: string;
   className?: string;
+  /** Linha única compacta (usada no rodapé do carrinho). */
+  compact?: boolean;
 };
 
 function CurrencyRow({
@@ -69,6 +71,7 @@ export function CurrencyPicker({
   hint,
   id,
   className,
+  compact = false,
 }: CurrencyPickerProps) {
   const { t, tp } = useI18n();
   const [open, setOpen] = useState(false);
@@ -102,15 +105,25 @@ export function CurrencyPicker({
         type="button"
         id={id}
         onClick={() => setOpen(true)}
-        className="input-base mt-1.5 flex w-full items-center justify-between gap-2 text-left"
+        className={
+          compact
+            ? "flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-card px-2 py-1.5 text-left text-xs outline-none focus:border-primary"
+            : "input-base mt-1.5 flex w-full items-center justify-between gap-2 text-left"
+        }
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-bold text-primary">
             {current.code}
           </span>
-          <span className="truncate text-sm">{current.name}</span>
+          <span className={compact ? "truncate text-xs" : "truncate text-sm"}>{current.name}</span>
         </span>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        <ChevronDown
+          className={
+            compact
+              ? "size-3.5 shrink-0 text-muted-foreground"
+              : "size-4 shrink-0 text-muted-foreground"
+          }
+        />
       </button>
       {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
 
