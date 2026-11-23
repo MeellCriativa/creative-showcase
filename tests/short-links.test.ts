@@ -65,3 +65,16 @@ test("card Link da minha loja tem botão de abrir o link salvo", () => {
   assert.match(i18n, /openLink: "Open link"/);
   assert.match(i18n, /openLink: "Abrir enlace"/);
 });
+
+test("botão Compartilhar cabe inteiro no celular", () => {
+  const panel = read("src/routes/painel.index.tsx");
+  const shareButton = panel.match(/onClick=\{shareLink\}[\s\S]{0,500}?<\/button>/)?.[0] ?? "";
+  assert.ok(shareButton, "botão de compartilhar deve existir");
+  // Texto menor no celular, ícone sem encolher e quebra de palavra como rede
+  // de segurança para "Compartilhar" não vazar para o botão ao lado.
+  assert.match(shareButton, /min-w-0/);
+  assert.match(shareButton, /text-xs[^"]*sm:text-sm/);
+  assert.match(shareButton, /text-center/);
+  assert.match(shareButton, /break-words/);
+  assert.match(shareButton, /shrink-0/);
+});

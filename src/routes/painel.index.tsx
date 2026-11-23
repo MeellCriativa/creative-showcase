@@ -432,29 +432,36 @@ function PainelHome() {
             href={savedLink}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground"
+            className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-border py-3 text-center text-xs font-semibold leading-tight text-foreground sm:gap-2 sm:text-sm"
           >
-            <ExternalLink className="size-4" /> {t("panel.dashboard.openLink")}
+            <ExternalLink className="size-4 shrink-0" />
+            <span className="min-w-0 break-words">{t("panel.dashboard.openLink")}</span>
           </a>
           <button
             onClick={copyLink}
-            className="flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold text-foreground"
+            className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-border py-3 text-center text-xs font-semibold leading-tight text-foreground sm:gap-2 sm:text-sm"
           >
-            <Copy className="size-4" /> {t("panel.dashboard.copy")}
+            <Copy className="size-4 shrink-0" />
+            <span className="min-w-0 break-words">{t("panel.dashboard.copy")}</span>
           </button>
           <button
             onClick={shareLink}
-            className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+            className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl bg-primary py-3 text-center text-xs font-semibold leading-tight text-primary-foreground sm:gap-2 sm:text-sm"
           >
-            <Share2 className="size-4" /> {t("panel.dashboard.share")}
+            <Share2 className="size-4 shrink-0" />
+            <span className="min-w-0 break-words">{t("panel.dashboard.share")}</span>
           </button>
           <button
             onClick={saveStore}
             disabled={savingStore}
-            className="flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl bg-primary py-3 text-center text-xs font-semibold leading-tight text-primary-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
           >
-            {savingStore ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            {t("common.save")}
+            {savingStore ? (
+              <Loader2 className="size-4 shrink-0 animate-spin" />
+            ) : (
+              <Save className="size-4 shrink-0" />
+            )}
+            <span className="min-w-0 break-words">{t("common.save")}</span>
           </button>
         </div>
         <div className="mt-3 grid grid-cols-4 gap-2 text-[11px] font-medium text-muted-foreground">
