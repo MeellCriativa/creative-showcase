@@ -19,7 +19,7 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "Vitrine Criativa";
   const options = {
     body: payload.body || "Você tem um novo pedido.",
-    icon: "/favicon.png",
+    icon: "/icon-192.png",
     badge: "/favicon-32.png",
     tag: payload.tag || "new-order",
     renotify: true,

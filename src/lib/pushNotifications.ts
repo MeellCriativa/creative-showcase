@@ -131,7 +131,7 @@ export async function showOrderSystemNotification(input: {
   const url = `/painel/pedidos?order=${encodeURIComponent(input.orderId)}`;
   const options = {
     body: input.body,
-    icon: "/favicon.png",
+    icon: "/icon-192.png",
     badge: "/favicon-32.png",
     tag: `new-order-${input.orderId}`,
     renotify: true,

@@ -70,6 +70,20 @@ test("service worker exibe o push e abre os pedidos ao tocar", () => {
   assert.match(sw, /showNotification\(title, options\)/);
   assert.match(sw, /addEventListener\("notificationclick"/);
   assert.match(sw, /openWindow\(url\)/);
+  assert.match(sw, /icon: "\/icon-192\.png"/);
+});
+
+test("ícone da vitrine é usado no site, no atalho e na notificação", () => {
+  const manifest = read("public/site.webmanifest");
+  const root = read("src/routes/__root.tsx");
+  const push = read("src/lib/pushNotifications.ts");
+
+  for (const icon of ["favicon-32.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png"]) {
+    assert.ok(manifest.includes(`/${icon}`), `${icon} deve estar no manifesto`);
+  }
+  assert.match(root, /rel: "apple-touch-icon", href: "\/apple-touch-icon\.png"/);
+  assert.match(push, /icon: "\/icon-192\.png"/);
+  assert.match(push, /badge: "\/favicon-32\.png"/);
 });
 
 test("SQL cria inscrições por loja e reserva o envio", () => {
