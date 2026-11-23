@@ -132,7 +132,7 @@ export async function showOrderSystemNotification(input: {
   const options = {
     body: input.body,
     icon: "/icon-192.png",
-    badge: "/favicon-32.png",
+    badge: "/notification-badge.png",
     tag: `new-order-${input.orderId}`,
     renotify: true,
     data: { url },

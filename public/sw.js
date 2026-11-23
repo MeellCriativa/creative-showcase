@@ -20,7 +20,7 @@ self.addEventListener("push", (event) => {
   const options = {
     body: payload.body || "Você tem um novo pedido.",
     icon: "/icon-192.png",
-    badge: "/favicon-32.png",
+    badge: "/notification-badge.png",
     tag: payload.tag || "new-order",
     renotify: true,
     data: { url: payload.url || "/painel/pedidos" },

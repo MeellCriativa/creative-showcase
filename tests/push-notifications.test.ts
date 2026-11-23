@@ -3,6 +3,8 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { PNG } from "pngjs";
+
 import { buildSellerOrderPush } from "../supabase/functions/_shared/seller_notifications_pure.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -71,6 +73,7 @@ test("service worker exibe o push e abre os pedidos ao tocar", () => {
   assert.match(sw, /addEventListener\("notificationclick"/);
   assert.match(sw, /openWindow\(url\)/);
   assert.match(sw, /icon: "\/icon-192\.png"/);
+  assert.match(sw, /badge: "\/notification-badge\.png"/);
 });
 
 test("ícone da vitrine é usado no site, no atalho e na notificação", () => {
@@ -83,7 +86,38 @@ test("ícone da vitrine é usado no site, no atalho e na notificação", () => {
   }
   assert.match(root, /rel: "apple-touch-icon", href: "\/apple-touch-icon\.png"/);
   assert.match(push, /icon: "\/icon-192\.png"/);
-  assert.match(push, /badge: "\/favicon-32\.png"/);
+  assert.match(push, /badge: "\/notification-badge\.png"/);
+});
+
+test("badge da sacolinha é branco, monocromático e com fundo transparente", () => {
+  const png = PNG.sync.read(readFileSync(`${root}public/notification-badge.png`));
+  assert.equal(png.width, 96);
+  assert.equal(png.height, 96);
+
+  let painted = 0;
+  for (let index = 0; index < png.data.length; index += 4) {
+    const red = png.data[index];
+    const green = png.data[index + 1];
+    const blue = png.data[index + 2];
+    const alpha = png.data[index + 3];
+    if (alpha > 0) {
+      assert.equal(red, green, "o badge não pode ter cor");
+      assert.equal(green, blue, "o badge não pode ter cor");
+      assert.ok(red >= 250, "o badge deve ser branco (tolera anti-aliasing)");
+      painted += 1;
+    }
+  }
+  assert.ok(painted > 500, "a sacolinha precisa ter pixels desenhados");
+
+  for (const [x, y] of [
+    [0, 0],
+    [95, 0],
+    [0, 95],
+    [95, 95],
+  ]) {
+    const alpha = png.data[(y * png.width + x) * 4 + 3];
+    assert.equal(alpha, 0, "os cantos devem ser transparentes");
+  }
 });
 
 test("SQL cria inscrições por loja e reserva o envio", () => {
