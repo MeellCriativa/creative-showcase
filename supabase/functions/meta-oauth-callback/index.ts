@@ -125,15 +125,18 @@ serve(async (req) => {
 
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-    const { data: existingConn } = await admin
+    const { data: existingConn, error: lookupError } = await admin
       .from("meta_catalog_connections")
       .select("phone_number")
       .eq("catalog_id", catalogId)
       .maybeSingle();
+    if (lookupError) {
+      console.error("[meta-oauth-callback] lookup error:", lookupError);
+    }
 
     const phoneNumber = existingConn?.phone_number || null;
 
-    await admin.from("meta_catalog_connections").upsert(
+    const { error: upsertError } = await admin.from("meta_catalog_connections").upsert(
       {
         catalog_id: catalogId,
         user_id: user.id,
@@ -150,11 +153,24 @@ serve(async (req) => {
       },
       { onConflict: "catalog_id" },
     );
+    if (upsertError) {
+      console.error("[meta-oauth-callback] upsert error:", upsertError);
+      return new Response(
+        JSON.stringify({ error: "Não foi possível salvar a conexão com a Meta." }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
 
-    await admin
+    const { error: catalogUpdateError } = await admin
       .from("catalogs")
       .update({ meta_catalog_connected: true })
       .eq("id", catalogId);
+    if (catalogUpdateError) {
+      console.error("[meta-oauth-callback] catalog update error:", catalogUpdateError);
+    }
 
     return new Response(
       JSON.stringify({

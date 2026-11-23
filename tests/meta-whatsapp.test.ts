@@ -46,6 +46,17 @@ test("OAuth Meta usa o redirect e as permissões esperadas", () => {
   assert.match(callback, /grant_type=fb_exchange_token/);
 });
 
+test("falha ao salvar conexão Meta nunca é reportada como sucesso", () => {
+  const start = read("supabase/functions/meta-oauth-start/index.ts");
+  const callback = read("supabase/functions/meta-oauth-callback/index.ts");
+
+  assert.match(start, /const \{ error: phoneSaveError \} = await admin/);
+  assert.match(start, /if \(phoneSaveError\)/);
+  assert.match(callback, /const \{ error: upsertError \} = await admin/);
+  assert.match(callback, /if \(upsertError\)/);
+  assert.match(callback, /status: 500/);
+});
+
 test("funções Meta aceitam os nomes de secrets configurados", () => {
   const start = read("supabase/functions/meta-oauth-start/index.ts");
   const callback = read("supabase/functions/meta-oauth-callback/index.ts");

@@ -68,7 +68,7 @@ serve(async (req) => {
       `&response_type=code`;
 
     if (phoneNumber) {
-      await admin
+      const { error: phoneSaveError } = await admin
         .from("meta_catalog_connections")
         .upsert(
           {
@@ -81,6 +81,18 @@ serve(async (req) => {
           },
           { onConflict: "catalog_id" },
         );
+      if (phoneSaveError) {
+        console.error("[meta-oauth-start] phone save error:", phoneSaveError);
+        return new Response(
+          JSON.stringify({
+            error: "Não foi possível salvar o número do WhatsApp. Tente novamente.",
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
     }
 
     return new Response(JSON.stringify({ url: oauthUrl }), {
