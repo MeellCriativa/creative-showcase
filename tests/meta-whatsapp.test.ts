@@ -57,6 +57,15 @@ test("falha ao salvar conexão Meta nunca é reportada como sucesso", () => {
   assert.match(callback, /status: 500/);
 });
 
+test("registro pendente da Meta preenche colunas obrigatórias", () => {
+  const start = read("supabase/functions/meta-oauth-start/index.ts");
+
+  assert.match(start, /facebook_user_id: "pending"/);
+  assert.match(start, /token_expires_at: new Date\(0\)\.toISOString\(\)/);
+  assert.match(start, /business_id: ""/);
+  assert.match(start, /catalog_id_meta: ""/);
+});
+
 test("funções Meta aceitam os nomes de secrets configurados", () => {
   const start = read("supabase/functions/meta-oauth-start/index.ts");
   const callback = read("supabase/functions/meta-oauth-callback/index.ts");

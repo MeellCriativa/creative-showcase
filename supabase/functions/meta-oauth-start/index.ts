@@ -77,6 +77,10 @@ serve(async (req) => {
             phone_number: phoneNumber,
             facebook_user_id: "pending",
             facebook_access_token: "",
+            // Colunas obrigatórias na tabela; o callback substitui pelos valores reais.
+            token_expires_at: new Date(0).toISOString(),
+            business_id: "",
+            catalog_id_meta: "",
             sync_status: "pending",
           },
           { onConflict: "catalog_id" },
