@@ -446,22 +446,22 @@ function PainelHome() {
           </button>
           <button
             onClick={shareLink}
-            className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl bg-primary py-3 text-center text-xs font-semibold leading-tight text-primary-foreground sm:gap-2 sm:text-sm"
+            className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-primary py-2.5 text-center text-xs font-semibold leading-tight text-primary-foreground sm:text-sm"
           >
-            <Share2 className="size-4 shrink-0" />
             <span className="min-w-0 break-words">{t("panel.dashboard.share")}</span>
+            <Share2 className="size-4 shrink-0" />
           </button>
           <button
             onClick={saveStore}
             disabled={savingStore}
-            className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl bg-primary py-3 text-center text-xs font-semibold leading-tight text-primary-foreground disabled:opacity-60 sm:gap-2 sm:text-sm"
+            className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-primary py-2.5 text-center text-xs font-semibold leading-tight text-primary-foreground disabled:opacity-60 sm:text-sm"
           >
+            <span className="min-w-0 break-words">{t("common.save")}</span>
             {savingStore ? (
               <Loader2 className="size-4 shrink-0 animate-spin" />
             ) : (
               <Save className="size-4 shrink-0" />
             )}
-            <span className="min-w-0 break-words">{t("common.save")}</span>
           </button>
         </div>
         <div className="mt-3 grid grid-cols-4 gap-2 text-[11px] font-medium text-muted-foreground">

@@ -66,15 +66,22 @@ test("card Link da minha loja tem botão de abrir o link salvo", () => {
   assert.match(i18n, /openLink: "Abrir enlace"/);
 });
 
-test("botão Compartilhar cabe inteiro no celular", () => {
+test("botões Compartilhar e Salvar mostram o texto acima do ícone", () => {
   const panel = read("src/routes/painel.index.tsx");
   const shareButton = panel.match(/onClick=\{shareLink\}[\s\S]{0,500}?<\/button>/)?.[0] ?? "";
+  const saveButton = panel.match(/onClick=\{saveStore\}[\s\S]{0,600}?<\/button>/)?.[0] ?? "";
   assert.ok(shareButton, "botão de compartilhar deve existir");
-  // Texto menor no celular, ícone sem encolher e quebra de palavra como rede
-  // de segurança para "Compartilhar" não vazar para o botão ao lado.
-  assert.match(shareButton, /min-w-0/);
-  assert.match(shareButton, /text-xs[^"]*sm:text-sm/);
-  assert.match(shareButton, /text-center/);
-  assert.match(shareButton, /break-words/);
-  assert.match(shareButton, /shrink-0/);
+  assert.ok(saveButton, "botão de salvar deve existir");
+
+  for (const button of [shareButton, saveButton]) {
+    assert.match(button, /min-w-0/);
+    assert.match(button, /flex-col/);
+    assert.match(button, /text-xs[^"]*sm:text-sm/);
+    assert.match(button, /text-center/);
+    assert.match(button, /break-words/);
+    assert.match(button, /shrink-0/);
+  }
+  // A palavra vem primeiro no markup; o ícone fica embaixo.
+  assert.ok(shareButton.indexOf("break-words") < shareButton.indexOf("<Share2"));
+  assert.ok(saveButton.indexOf("break-words") < saveButton.indexOf("<Loader2"));
 });
