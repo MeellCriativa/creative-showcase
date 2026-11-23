@@ -44,6 +44,12 @@ import {
   type PixOrderResult,
   type PixPublicConfig,
 } from "@/lib/pixManual";
+import {
+  IMAGE_WIDTHS,
+  imageFallback,
+  optimizedImageSrcSet,
+  optimizedImageUrl,
+} from "@/lib/imageUrls";
 import { parseProductCheckoutParams } from "@/lib/productLinks";
 import { notifySellerAboutOrder } from "@/lib/sellerNotifications";
 import { SITE_OG_IMAGE } from "@/lib/site";
@@ -1044,14 +1050,23 @@ function PublicCatalog() {
       )}
       <header className="relative">
         <div
-          className="h-36 w-full bg-cover bg-center"
-          style={{
-            backgroundColor: loadedCatalog.accent_color ?? "#f3eefc",
-            backgroundImage: loadedCatalog.cover_url
-              ? `url(${loadedCatalog.cover_url})`
-              : undefined,
-          }}
+          className="relative h-36 w-full bg-cover bg-center"
+          style={{ backgroundColor: loadedCatalog.accent_color ?? "#f3eefc" }}
         >
+          {loadedCatalog.cover_url && (
+            <img
+              src={
+                optimizedImageUrl(loadedCatalog.cover_url, IMAGE_WIDTHS.card) ??
+                loadedCatalog.cover_url
+              }
+              alt=""
+              aria-hidden="true"
+              loading="eager"
+              decoding="async"
+              onError={imageFallback(loadedCatalog.cover_url)}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
           <div className="cover-glass h-full w-full" />
         </div>
         <div className="px-5">
@@ -1062,8 +1077,14 @@ function PublicCatalog() {
             >
               {loadedCatalog.logo_url && (
                 <img
-                  src={loadedCatalog.logo_url}
+                  src={
+                    optimizedImageUrl(loadedCatalog.logo_url, IMAGE_WIDTHS.card) ??
+                    loadedCatalog.logo_url
+                  }
                   alt={loadedCatalog.store_name}
+                  loading="eager"
+                  decoding="async"
+                  onError={imageFallback(loadedCatalog.logo_url)}
                   className="h-full w-full object-cover"
                 />
               )}
@@ -1137,7 +1158,7 @@ function PublicCatalog() {
             {t("catalog.filters.empty")}
           </p>
         )}
-        {products.map((product) => (
+        {products.map((product, index) => (
           <article
             key={product.id}
             className="overflow-hidden rounded-2xl border border-border bg-card"
@@ -1146,9 +1167,18 @@ function PublicCatalog() {
               <div className="aspect-square w-full bg-muted">
                 {product.images?.[0] && (
                   <img
-                    src={product.images[0]}
+                    src={
+                      optimizedImageUrl(product.images[0], IMAGE_WIDTHS.card) ?? product.images[0]
+                    }
+                    srcSet={optimizedImageSrcSet(product.images[0]) ?? undefined}
+                    sizes="(max-width: 640px) 33vw, 240px"
                     alt={product.name}
-                    loading="lazy"
+                    width={IMAGE_WIDTHS.card}
+                    height={IMAGE_WIDTHS.card}
+                    loading={index === 0 ? "eager" : "lazy"}
+                    fetchPriority={index === 0 ? "high" : "auto"}
+                    decoding="async"
+                    onError={imageFallback(product.images[0])}
                     className="h-full w-full object-cover"
                   />
                 )}
@@ -1449,16 +1479,22 @@ function BannerCarousel({
               {b.href ? (
                 <a href={b.href} target="_blank" rel="noopener noreferrer">
                   <img
-                    src={b.image_url}
+                    src={optimizedImageUrl(b.image_url, IMAGE_WIDTHS.card) ?? b.image_url}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
+                    onError={imageFallback(b.image_url)}
                     className="h-48 w-full rounded-2xl object-cover"
                     style={{ objectPosition: b.object_position ?? "center" }}
                   />
                 </a>
               ) : (
                 <img
-                  src={b.image_url}
+                  src={optimizedImageUrl(b.image_url, IMAGE_WIDTHS.card) ?? b.image_url}
                   alt=""
+                  loading="lazy"
+                  decoding="async"
+                  onError={imageFallback(b.image_url)}
                   className="h-48 w-full rounded-2xl object-cover"
                   style={{ objectPosition: b.object_position ?? "center" }}
                 />
@@ -1660,8 +1696,16 @@ function ProductSheet({
       >
         {product.checkout_enabled && checkoutBanner?.imageUrl && (
           <img
-            src={checkoutBanner.imageUrl}
+            src={
+              optimizedImageUrl(checkoutBanner.imageUrl, IMAGE_WIDTHS.card) ??
+              checkoutBanner.imageUrl
+            }
+            srcSet={optimizedImageSrcSet(checkoutBanner.imageUrl) ?? undefined}
+            sizes="100vw"
             alt=""
+            loading="lazy"
+            decoding="async"
+            onError={imageFallback(checkoutBanner.imageUrl)}
             className="w-full object-cover"
             style={{ aspectRatio: isMobile ? "390 / 156" : "480 / 192", objectPosition: checkoutBanner.objectPosition }}
           />
@@ -1682,9 +1726,16 @@ function ProductSheet({
               >
                 <div className="aspect-square max-h-[45vh] w-full bg-muted">
                   <img
-                    src={url}
+                    src={optimizedImageUrl(url, IMAGE_WIDTHS.detail) ?? url}
+                    srcSet={optimizedImageSrcSet(url) ?? undefined}
+                    sizes="(max-width: 640px) 100vw, 480px"
                     alt={`${product.name} ${i + 1}`}
-                    loading={Math.abs(i - imgIdx) <= 1 ? "eager" : "lazy"}
+                    width={IMAGE_WIDTHS.detail}
+                    height={IMAGE_WIDTHS.detail}
+                    loading={i === 0 || Math.abs(i - imgIdx) <= 1 ? "eager" : "lazy"}
+                    fetchPriority={i === 0 ? "high" : "auto"}
+                    decoding="async"
+                    onError={imageFallback(url)}
                     className="h-full w-full object-cover"
                   />
                 </div>
@@ -1916,8 +1967,10 @@ function ProductSheet({
             <X className="size-5" />
           </button>
           <img
-            src={zoomUrl}
+            src={optimizedImageUrl(zoomUrl, IMAGE_WIDTHS.detail, 90) ?? zoomUrl}
             alt={product.name}
+            loading="eager"
+            onError={imageFallback(zoomUrl)}
             className="max-h-[90vh] max-w-[95vw] object-contain"
           />
         </div>
@@ -2383,7 +2436,16 @@ function CartSheet({
               >
                 <div className="size-16 shrink-0 overflow-hidden rounded-xl bg-muted">
                   {item.image && (
-                    <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                    <img
+                      src={optimizedImageUrl(item.image, IMAGE_WIDTHS.thumb) ?? item.image}
+                      alt={item.name}
+                      width={IMAGE_WIDTHS.thumb}
+                      height={IMAGE_WIDTHS.thumb}
+                      loading="lazy"
+                      decoding="async"
+                      onError={imageFallback(item.image)}
+                      className="h-full w-full object-cover"
+                    />
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -2832,12 +2894,20 @@ function WelcomePage({
       {/* ── Cover + Logo + Name ── */}
       <header className="relative">
         <div
-          className="h-40 w-full bg-cover bg-center"
-          style={{
-            backgroundColor: accent,
-            backgroundImage: catalog.cover_url ? `url(${catalog.cover_url})` : undefined,
-          }}
+          className="relative h-40 w-full bg-cover bg-center"
+          style={{ backgroundColor: accent }}
         >
+          {catalog.cover_url && (
+            <img
+              src={optimizedImageUrl(catalog.cover_url, IMAGE_WIDTHS.card) ?? catalog.cover_url}
+              alt=""
+              aria-hidden="true"
+              loading="eager"
+              decoding="async"
+              onError={imageFallback(catalog.cover_url)}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
           <div className="cover-glass h-full w-full" />
         </div>
         <div className="px-5">
@@ -2848,8 +2918,11 @@ function WelcomePage({
             >
               {catalog.logo_url && (
                 <img
-                  src={catalog.logo_url}
+                  src={optimizedImageUrl(catalog.logo_url, IMAGE_WIDTHS.card) ?? catalog.logo_url}
                   alt={catalog.store_name}
+                  loading="eager"
+                  decoding="async"
+                  onError={imageFallback(catalog.logo_url)}
                   className="h-full w-full object-cover"
                 />
               )}
@@ -3033,8 +3106,14 @@ function WelcomePage({
           >
             {catalog.owner_photo_url && (
               <img
-                src={catalog.owner_photo_url}
+                src={
+                  optimizedImageUrl(catalog.owner_photo_url, IMAGE_WIDTHS.thumb) ??
+                  catalog.owner_photo_url
+                }
                 alt={catalog.owner_name ?? t("catalog.welcome.ownerPhotoAlt")}
+                loading="lazy"
+                decoding="async"
+                onError={imageFallback(catalog.owner_photo_url)}
                 className="size-20 rounded-full border-3 object-cover"
                 style={{ borderColor: primary }}
               />

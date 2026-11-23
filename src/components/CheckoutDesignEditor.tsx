@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
 import { uploadImage } from "@/lib/catalog";
+import { IMAGE_WIDTHS, imageFallback, optimizedImageUrl } from "@/lib/imageUrls";
 import {
   BANNER_SIZE,
   bannerAspectWarning,
@@ -305,8 +306,13 @@ export function CheckoutDesignEditor({ product, catalogId, storeName, currency, 
               >
                 {config.banner.imageUrl && (
                   <img
-                    src={config.banner.imageUrl}
+                    src={
+                      optimizedImageUrl(config.banner.imageUrl, IMAGE_WIDTHS.card) ??
+                      config.banner.imageUrl
+                    }
                     alt=""
+                    loading="lazy"
+                    onError={imageFallback(config.banner.imageUrl)}
                     className="w-full object-cover"
                     style={{
                       aspectRatio: `${BANNER_SIZE[device].width} / ${BANNER_SIZE[device].height}`,
@@ -316,7 +322,13 @@ export function CheckoutDesignEditor({ product, catalogId, storeName, currency, 
                 )}
                 <div className="space-y-2 p-3">
                   {config.logoUrl && (
-                    <img src={config.logoUrl} alt="" className="size-10 rounded-full object-cover" />
+                    <img
+                      src={optimizedImageUrl(config.logoUrl, IMAGE_WIDTHS.thumb) ?? config.logoUrl}
+                      alt=""
+                      loading="lazy"
+                      onError={imageFallback(config.logoUrl)}
+                      className="size-10 rounded-full object-cover"
+                    />
                   )}
                   <p className="text-sm font-bold">{config.productInfo.name || product.name}</p>
                   <p className="text-xs opacity-80">
@@ -439,7 +451,16 @@ export function CheckoutDesignEditor({ product, catalogId, storeName, currency, 
             )}
             {config.banner.imageUrl && (
               <div className="mt-2 flex items-center gap-2">
-                <img src={config.banner.imageUrl} alt="" className="size-12 rounded-lg object-cover" />
+                <img
+                  src={
+                    optimizedImageUrl(config.banner.imageUrl, IMAGE_WIDTHS.thumb) ??
+                    config.banner.imageUrl
+                  }
+                  alt=""
+                  loading="lazy"
+                  onError={imageFallback(config.banner.imageUrl)}
+                  className="size-12 rounded-lg object-cover"
+                />
                 <button
                   type="button"
                   onClick={() => update({ banner: { ...config.banner, imageUrl: null } })}

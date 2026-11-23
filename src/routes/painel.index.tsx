@@ -34,6 +34,7 @@ import {
   whatsappLink,
 } from "@/lib/catalog";
 import { resolveStoreCurrency } from "@/lib/currency";
+import { IMAGE_WIDTHS, imageFallback, optimizedImageUrl } from "@/lib/imageUrls";
 import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/painel/")({
@@ -298,8 +299,10 @@ function PainelHome() {
       <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
         {catalog.logo_url && (
           <img
-            src={catalog.logo_url}
+            src={optimizedImageUrl(catalog.logo_url, IMAGE_WIDTHS.thumb) ?? catalog.logo_url}
             alt={catalog.store_name}
+            loading="eager"
+            onError={imageFallback(catalog.logo_url)}
             className="size-12 shrink-0 rounded-full border-2 object-cover"
             style={{ borderColor: catalog.primary_color ?? "#8b5cf6" }}
           />
@@ -386,8 +389,13 @@ function PainelHome() {
         <div className="flex items-center gap-3">
           {(catalog.cover_url || catalog.logo_url) && (
             <img
-              src={catalog.cover_url || catalog.logo_url!}
+              src={
+                optimizedImageUrl(catalog.cover_url || catalog.logo_url!, IMAGE_WIDTHS.thumb) ??
+                (catalog.cover_url || catalog.logo_url!)
+              }
               alt={catalog.store_name}
+              loading="lazy"
+              onError={imageFallback(catalog.cover_url || catalog.logo_url!)}
               className="size-14 shrink-0 rounded-xl object-cover"
             />
           )}

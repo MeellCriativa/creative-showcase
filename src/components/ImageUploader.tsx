@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { useI18n } from "@/i18n";
 import { uploadImage } from "@/lib/catalog";
+import { IMAGE_WIDTHS, imageFallback, optimizedImageUrl } from "@/lib/imageUrls";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -57,8 +58,10 @@ export function ImageUploader({
       {value.map((url) => (
         <div key={url} className={cn("relative overflow-hidden border border-border", box)}>
           <img
-            src={url}
+            src={optimizedImageUrl(url, IMAGE_WIDTHS.thumb) ?? url}
             alt={t("forms.uploader.uploadedAlt")}
+            loading="lazy"
+            onError={imageFallback(url)}
             className="h-full w-full object-cover"
           />
           <button

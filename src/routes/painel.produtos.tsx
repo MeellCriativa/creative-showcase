@@ -27,6 +27,7 @@ import { writeToClipboard } from "@/lib/clipboard";
 import { formatMoney, getCurrencySymbol, resolveStoreCurrency } from "@/lib/currency";
 import { normalizeDecimalInput, parseDecimalInput } from "@/lib/decimalInput";
 import { isValidExternalUrl } from "@/lib/checkoutConfig";
+import { IMAGE_WIDTHS, imageFallback, optimizedImageUrl } from "@/lib/imageUrls";
 import { buildProductCheckoutUrl } from "@/lib/productLinks";
 import {
   formatFileSize,
@@ -217,8 +218,14 @@ function ProdutosPage() {
               <div className="size-16 shrink-0 overflow-hidden rounded-xl bg-muted">
                 {product.images?.[0] && (
                   <img
-                    src={product.images[0]}
+                    src={
+                      optimizedImageUrl(product.images[0], IMAGE_WIDTHS.thumb) ??
+                      product.images[0]
+                    }
                     alt={product.name}
+                    loading="lazy"
+                    decoding="async"
+                    onError={imageFallback(product.images[0])}
                     className="h-full w-full object-cover"
                   />
                 )}

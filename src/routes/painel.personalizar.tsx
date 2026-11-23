@@ -28,6 +28,7 @@ import {
   formatCep,
 } from "@/lib/catalog";
 import { formatMoney, getCurrency, resolveStoreCurrency } from "@/lib/currency";
+import { IMAGE_WIDTHS, imageFallback, optimizedImageUrl } from "@/lib/imageUrls";
 import type { Banner } from "@/lib/catalog";
 import { EmptyCatalog } from "./painel.categorias";
 
@@ -349,8 +350,10 @@ function PersonalizarPage() {
         >
           {cover[0] ? (
             <img
-              src={cover[0]}
+              src={optimizedImageUrl(cover[0], IMAGE_WIDTHS.card) ?? cover[0]}
               alt={t("customize.coverAlt")}
+              loading="lazy"
+              onError={imageFallback(cover[0])}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -378,8 +381,10 @@ function PersonalizarPage() {
         >
           {logo[0] ? (
             <img
-              src={logo[0]}
+              src={optimizedImageUrl(logo[0], IMAGE_WIDTHS.thumb) ?? logo[0]}
               alt={t("customize.logoAlt")}
+              loading="eager"
+              onError={imageFallback(logo[0])}
               className={`${logoSizePx} shrink-0 rounded-full border-2 object-cover shadow-md`}
               style={{ borderColor: primary ?? "#8b5cf6" }}
             />
@@ -587,8 +592,10 @@ function PersonalizarPage() {
             >
               {logo[0] ? (
                 <img
-                  src={logo[0]}
+                  src={optimizedImageUrl(logo[0], IMAGE_WIDTHS.thumb) ?? logo[0]}
                   alt={t("customize.logoAlt")}
+                  loading="lazy"
+                  onError={imageFallback(logo[0])}
                   className={`${opt.cls} rounded-full object-cover`}
                 />
               ) : (
@@ -725,8 +732,10 @@ function PersonalizarPage() {
                 className="flex items-start gap-3 rounded-xl border border-border p-3"
               >
                 <img
-                  src={b.image_url}
+                  src={optimizedImageUrl(b.image_url, IMAGE_WIDTHS.thumb) ?? b.image_url}
                   alt={t("customize.banner.indexLabel", { index: idx + 1 })}
+                  loading="lazy"
+                  onError={imageFallback(b.image_url)}
                   className="size-16 shrink-0 rounded-lg object-cover"
                 />
                 <div className="flex flex-1 flex-col gap-2">
@@ -1099,8 +1108,9 @@ function BannerPositionEditor({
         style={{ touchAction: "none" }}
       >
         <img
-          src={imageUrl}
+          src={optimizedImageUrl(imageUrl, IMAGE_WIDTHS.card) ?? imageUrl}
           alt={t("customize.banner.imageAlt")}
+          onError={imageFallback(imageUrl)}
           className="absolute left-0 w-full object-cover"
           style={{
             height: "400%",
@@ -1195,8 +1205,10 @@ function BannerPreviewCarousel({
           {banners.map((b) => (
             <div key={b.id} className="w-full shrink-0 snap-center px-1 first:pl-0 last:pr-0">
               <img
-                src={b.image_url}
+                src={optimizedImageUrl(b.image_url, IMAGE_WIDTHS.card) ?? b.image_url}
                 alt={t("customize.banner.imageAlt")}
+                loading="lazy"
+                onError={imageFallback(b.image_url)}
                 className="h-24 w-full rounded-xl object-cover"
                 style={{ objectPosition: b.object_position ?? "center" }}
               />
