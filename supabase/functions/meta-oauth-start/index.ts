@@ -41,7 +41,8 @@ serve(async (req) => {
       });
     }
 
-    const appId = Deno.env.get("META_APP_ID");
+    const appId =
+      Deno.env.get("META_APP_ID") || Deno.env.get("APP_ID_META");
     if (!appId) {
       return new Response(
         JSON.stringify({ error: "A integração com a Meta ainda não está configurada." }),

@@ -46,8 +46,9 @@ serve(async (req) => {
       });
     }
 
-    const appId = Deno.env.get("META_APP_ID")!;
-    const appSecret = Deno.env.get("META_APP_SECRET")!;
+    const appId = Deno.env.get("META_APP_ID") || Deno.env.get("APP_ID_META") || "";
+    const appSecret =
+      Deno.env.get("META_APP_SECRET") || Deno.env.get("APP_SECRET_META") || "";
     const vitrineUrl = Deno.env.get("VITRINE_URL") || "https://vitrine.meellcriativa.workers.dev";
     const redirectUri = `${vitrineUrl}/painel/whatsapp`;
 
