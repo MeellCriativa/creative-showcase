@@ -16,6 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { PixQrUploader } from "@/components/PixQrUploader";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
 import { supabase } from "@/integrations/supabase/client";
@@ -614,7 +615,6 @@ function ManualPixCard() {
   const { user } = useAuth();
   const { data: catalog } = useMyCatalog(user?.id);
   const queryClient = useQueryClient();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"key" | "qr" | "both">("key");
   const [keyType, setKeyType] = useState("cpf");
   const [keyValue, setKeyValue] = useState("");
@@ -638,25 +638,6 @@ function ManualPixCard() {
   const enabled = Array.isArray(catalog?.payment_methods)
     ? (catalog!.payment_methods as string[]).includes("pix")
     : false;
-
-  async function uploadQr(file: File) {
-    if (!catalog || !file.type.startsWith("image/")) return;
-    setSaving(true);
-    try {
-      const path = `pix-qr/${catalog.id}/${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
-      const { error } = await supabase.storage.from("catalog-images").upload(path, file, {
-        contentType: file.type,
-        upsert: false,
-      });
-      if (error) throw error;
-      setQrPath(path);
-      toast.success("QR Code enviado.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao enviar QR Code.");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function save() {
     if (!catalog) return;
@@ -750,17 +731,14 @@ function ManualPixCard() {
               placeholder="Identificação do QR (opcional)"
               className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
             />
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void uploadQr(file);
-              }}
-              className="text-xs"
-            />
-            {qrPath && <p className="text-xs text-emerald-600">QR Code enviado ✓</p>}
+            {catalog && (
+              <PixQrUploader
+                catalogId={catalog.id}
+                value={qrPath}
+                onChange={setQrPath}
+                disabled={saving}
+              />
+            )}
           </>
         )}
       </div>

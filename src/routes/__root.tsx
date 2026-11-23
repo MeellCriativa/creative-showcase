@@ -140,7 +140,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:image", content: SITE_OG_IMAGE },
       { name: "twitter:image:alt", content: SITE_OG_IMAGE_ALT },
-      { name: "theme-color", content: "#8b5cf6" },
+      { name: "theme-color", content: "#c40364" },
+      { name: "application-name", content: "Vitrine Criativa" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "Vitrine" },
     ],
     links: [
       {

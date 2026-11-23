@@ -2058,6 +2058,7 @@ function CartSheet({
     ? (paymentProvider ?? defaultOnlineProvider)
     : null;
   const [pixOrder, setPixOrder] = useState<PixOrderResult | null>(null);
+  const [qrZoom, setQrZoom] = useState(false);
   const [pixDeclared, setPixDeclared] = useState(false);
   const [pixApproved, setPixApproved] = useState(false);
   const [address, setAddress] = useState<CustomerAddress>({
@@ -2256,6 +2257,7 @@ function CartSheet({
         effectiveProvider ? { provider: effectiveProvider } : null,
       );
       if (result && typeof result === "object" && result.pix) {
+        setQrZoom(false);
         setPixOrder(result);
       } else if (result) {
         onClose();
@@ -2357,11 +2359,26 @@ function CartSheet({
                   <p className="text-sm font-semibold text-foreground">
                     {t("catalog.pix.qrTitle")}
                   </p>
-                  <img
-                    src={pixOrder.pix.qrUrl}
-                    alt={t("catalog.pix.qrTitle")}
-                    className="mx-auto size-56 rounded-xl border border-border object-contain bg-white p-2"
-                  />
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {t("catalog.pix.scanQr")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setQrZoom(true)}
+                    aria-label={t("catalog.pix.qrTitle")}
+                    className="mx-auto block w-full max-w-[19rem] rounded-2xl border border-border bg-white p-3 shadow-sm transition hover:border-primary"
+                  >
+                    <img
+                      src={pixOrder.pix.qrUrl}
+                      alt={t("catalog.pix.qrTitle")}
+                      loading="eager"
+                      decoding="async"
+                      className="mx-auto aspect-square w-full object-contain"
+                    />
+                    <span className="mt-2 block text-center text-xs font-medium text-primary">
+                      {t("catalog.pix.qrZoomHint")}
+                    </span>
+                  </button>
                 </div>
               )}
 
@@ -2411,6 +2428,7 @@ function CartSheet({
               <button
                 type="button"
                 onClick={() => {
+                  setQrZoom(false);
                   setPixOrder(null);
                   onClose();
                 }}
@@ -2419,6 +2437,29 @@ function CartSheet({
                 {t("common.close")}
               </button>
             </div>
+
+            {qrZoom && pixOrder.pix.qrUrl && (
+              <div
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-black/95 p-5"
+                onClick={() => setQrZoom(false)}
+              >
+                <button
+                  type="button"
+                  onClick={() => setQrZoom(false)}
+                  aria-label={t("common.close")}
+                  className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-white/20 text-white backdrop-blur-sm"
+                >
+                  <X className="size-5" />
+                </button>
+                <img
+                  src={pixOrder.pix.qrUrl}
+                  alt={t("catalog.pix.qrTitle")}
+                  loading="eager"
+                  className="max-h-[75vh] max-w-full rounded-xl bg-white object-contain p-3"
+                />
+                <p className="text-center text-sm text-white/80">{t("catalog.pix.scanQr")}</p>
+              </div>
+            )}
           </div>
         )}
 
