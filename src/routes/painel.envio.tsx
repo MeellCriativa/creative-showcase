@@ -2,7 +2,18 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, MapPin, Package, Plug, RefreshCw, Unplug } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleHelp,
+  Info,
+  Loader2,
+  MapPin,
+  Package,
+  Plug,
+  RefreshCw,
+  ShieldCheck,
+  Unplug,
+} from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
@@ -262,6 +273,64 @@ function EnvioPage() {
                 ? t("shipping.reconnect")
                 : t("shipping.connect")}
         </button>
+
+        {/* Instruções para todas as lojas, logo abaixo do botão de conexão. */}
+        <section
+          aria-label={t("shipping.guide.title")}
+          className="rounded-xl border border-border bg-background/60 p-4"
+        >
+          <h2 className="flex items-start gap-2 text-sm font-semibold text-foreground">
+            <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+            {t("shipping.guide.title")}
+          </h2>
+          <ol className="mt-3 space-y-2">
+            {[
+              t("shipping.guide.step1"),
+              t("shipping.guide.step2"),
+              t("shipping.guide.step3"),
+              t("shipping.guide.step4"),
+              t("shipping.guide.step5"),
+              t("shipping.guide.step6"),
+            ].map((step, index) => (
+              <li key={index} className="flex gap-2 text-xs leading-relaxed text-muted-foreground">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+                  {index + 1}
+                </span>
+                <span className="min-w-0">{step}</span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <p className="flex items-center gap-2 font-semibold">
+              <ShieldCheck className="size-4 shrink-0" />
+              {t("shipping.guide.importantTitle")}
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {[
+                t("shipping.guide.important1"),
+                t("shipping.guide.important2"),
+                t("shipping.guide.important3"),
+                t("shipping.guide.important4"),
+              ].map((item, index) => (
+                <li key={index} className="flex gap-2">
+                  <span aria-hidden="true" className="shrink-0">
+                    •
+                  </span>
+                  <span className="min-w-0">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+            <CircleHelp className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold text-foreground">{t("shipping.guide.helpTitle")}</p>
+              <p className="mt-0.5">{t("shipping.guide.helpText")}</p>
+            </div>
+          </div>
+        </section>
 
         {!connected && (
           <p className="rounded-xl bg-accent/50 px-3 py-2 text-xs text-muted-foreground">

@@ -22,9 +22,29 @@ export const shipping = defineNamespace({
     connecting: "Conectando...",
     disconnect: "Desconectar",
     reconnect: "Reconectar à Melhor Envio",
-    connect: "Conectar à Melhor Envio",
+    connect: "Conectar loja",
     needAccount:
       "Você precisará de uma conta na Melhor Envio (é grátis). Ao autorizar, usaremos a sua conta para calcular fretes e gerar as etiquetas dos seus pedidos.",
+    guide: {
+      title: "Como conectar sua conta do Melhor Envio",
+      step1: "Clique no botão “Conectar loja” para iniciar a integração.",
+      step2: "Você será direcionada ao site oficial do Melhor Envio.",
+      step3:
+        "Entre na sua conta do Melhor Envio ou crie uma gratuitamente, caso ainda não tenha cadastro.",
+      step4: "Confira as permissões solicitadas e autorize a conexão com a Vitrine Criativa.",
+      step5: "Após autorizar, você será redirecionada automaticamente para sua loja.",
+      step6: "Aguarde a confirmação de que sua conta foi conectada.",
+      importantTitle: "Importante",
+      important1: "A conexão deve ser feita com a conta do Melhor Envio da própria lojista.",
+      important2: "Não compartilhe sua senha com ninguém.",
+      important3:
+        "Caso a conexão não seja concluída, verifique se autorizou as permissões solicitadas e tente novamente.",
+      important4:
+        "Se já tiver uma conta conectada, não é necessário realizar a conexão novamente, a menos que seja solicitado pelo sistema.",
+      helpTitle: "Precisa de ajuda?",
+      helpText:
+        "Se não conseguir conectar sua conta, entre em contato com o suporte da Vitrine Criativa.",
+    },
     senderTitle: "Dados do remetente",
     senderHint:
       "O endereço de onde os produtos são enviados. Usado para calcular o frete e gerar as etiquetas.",
@@ -48,7 +68,7 @@ export const shipping = defineNamespace({
     zip: "CEP",
     saveSender: "Salvar remetente",
     howItWorks: "Como funciona",
-    step1: "1. Clique em “Conectar à Melhor Envio” e autorize com sua conta.",
+    step1: "1. Clique em “Conectar loja” e autorize com sua conta.",
     step2: "2. Preencha o endereço do remetente (de onde saem os envios).",
     step3: "3. Na personalização da loja, marque “Envio” como forma de entrega.",
     step4: "4. Nos pedidos, crie o envio, pague e gere a etiqueta.",
@@ -86,9 +106,28 @@ export const shipping = defineNamespace({
     connecting: "Connecting...",
     disconnect: "Disconnect",
     reconnect: "Reconnect to Melhor Envio",
-    connect: "Connect to Melhor Envio",
+    connect: "Connect store",
     needAccount:
       "You will need a Melhor Envio account (it's free). Once you authorize, we will use your account to calculate shipping and generate labels for your orders.",
+    guide: {
+      title: "How to connect your Melhor Envio account",
+      step1: 'Click the "Connect store" button to start the integration.',
+      step2: "You will be redirected to the official Melhor Envio website.",
+      step3:
+        "Log in to your Melhor Envio account or create a free one if you don't have an account yet.",
+      step4: "Review the requested permissions and authorize the connection with Vitrine Criativa.",
+      step5: "After authorizing, you will be redirected back to your store automatically.",
+      step6: "Wait for the confirmation that your account has been connected.",
+      importantTitle: "Important",
+      important1: "The connection must be made with the store owner's own Melhor Envio account.",
+      important2: "Never share your password with anyone.",
+      important3:
+        "If the connection is not completed, check that you authorized the requested permissions and try again.",
+      important4:
+        "If an account is already connected, you do not need to connect again unless the system asks you to.",
+      helpTitle: "Need help?",
+      helpText: "If you cannot connect your account, contact Vitrine Criativa support.",
+    },
     senderTitle: "Sender details",
     senderHint:
       "The address products are shipped from. Used to calculate shipping and generate labels.",
@@ -112,7 +151,7 @@ export const shipping = defineNamespace({
     zip: "ZIP code",
     saveSender: "Save sender",
     howItWorks: "How it works",
-    step1: "1. Click “Connect to Melhor Envio” and authorize with your account.",
+    step1: '1. Click "Connect store" and authorize with your account.',
     step2: "2. Fill in the sender address (where shipments come from).",
     step3: "3. In store customization, select “Shipping” as a delivery method.",
     step4: "4. In orders, create the shipment, pay and generate the label.",
@@ -151,9 +190,28 @@ export const shipping = defineNamespace({
     connecting: "Conectando...",
     disconnect: "Desconectar",
     reconnect: "Reconectar a Melhor Envio",
-    connect: "Conectar a Melhor Envio",
+    connect: "Conectar tienda",
     needAccount:
       "Necesitarás una cuenta en Melhor Envio (es gratis). Al autorizar, usaremos tu cuenta para calcular fletes y generar las etiquetas de tus pedidos.",
+    guide: {
+      title: "Cómo conectar tu cuenta de Melhor Envio",
+      step1: 'Haz clic en el botón "Conectar tienda" para iniciar la integración.',
+      step2: "Serás redirigida al sitio oficial de Melhor Envio.",
+      step3:
+        "Inicia sesión en tu cuenta de Melhor Envio o crea una gratis si aún no tienes cuenta.",
+      step4: "Revisa los permisos solicitados y autoriza la conexión con Vitrine Criativa.",
+      step5: "Después de autorizar, volverás automáticamente a tu tienda.",
+      step6: "Espera la confirmación de que tu cuenta fue conectada.",
+      importantTitle: "Importante",
+      important1: "La conexión debe hacerse con la cuenta de Melhor Envio de la propia vendedora.",
+      important2: "No compartas tu contraseña con nadie.",
+      important3:
+        "Si la conexión no se completa, verifica que autorizaste los permisos solicitados e inténtalo de nuevo.",
+      important4:
+        "Si ya tienes una cuenta conectada, no es necesario conectarla de nuevo, salvo que el sistema lo pida.",
+      helpTitle: "¿Necesitas ayuda?",
+      helpText: "Si no puedes conectar tu cuenta, contacta con el soporte de Vitrine Criativa.",
+    },
     senderTitle: "Datos del remitente",
     senderHint:
       "La dirección desde donde se envían los productos. Se usa para calcular el flete y generar las etiquetas.",
@@ -177,7 +235,7 @@ export const shipping = defineNamespace({
     zip: "CEP",
     saveSender: "Guardar remitente",
     howItWorks: "Cómo funciona",
-    step1: "1. Haz clic en “Conectar a Melhor Envio” y autoriza con tu cuenta.",
+    step1: '1. Haz clic en "Conectar tienda" y autoriza con tu cuenta.',
     step2: "2. Completa la dirección del remitente (desde donde salen los envíos).",
     step3: "3. En la personalización de la tienda, marca “Envío” como forma de entrega.",
     step4: "4. En los pedidos, crea el envío, paga y genera la etiqueta.",

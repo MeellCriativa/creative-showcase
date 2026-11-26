@@ -11,6 +11,13 @@ import {
   meApi,
   jsonRes,
 } from "../_shared/melhor-envio.ts";
+import {
+  createOAuthState,
+  hashOAuthState,
+  getRedirectUri,
+  isMissingOptionalSchema,
+  type MeEnvironment,
+} from "../_shared/melhor-envio-oauth.ts";
 
 function digits(s: string | number | null | undefined): string {
   return String(s ?? "").replace(/\D/g, "");
@@ -34,7 +41,12 @@ serve(async (req) => {
     // Public actions (used by the buyer during checkout): quote
     const publicActions = ["quote"];
     if (publicActions.includes(action) && !user) {
-      return await handle(action, { req, user: null, url, body: await req.json().catch(() => ({})) });
+      return await handle(action, {
+        req,
+        user: null,
+        url,
+        body: await req.json().catch(() => ({})),
+      });
     }
     if (!user) {
       return jsonRes({ error: "Unauthorized" }, 401);
@@ -100,6 +112,22 @@ async function getOwnedCatalog(ctx: Ctx, catalogId: string) {
   return catalog;
 }
 
+/**
+ * Um me_order_id só pode ser operado pela loja que o criou. Sem esta checagem,
+ * qualquer dono autenticado poderia pagar/gerar etiqueta de outra loja.
+ */
+async function getOwnedMeOrder(ctx: Ctx, catalogId: string, meOrderId: number) {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("orders")
+    .select("id")
+    .eq("catalog_id", catalogId)
+    .eq("me_order_id", String(meOrderId))
+    .maybeSingle();
+  if (error || !data) throw new HttpError(404, "Envio não encontrado nesta loja.");
+  return data;
+}
+
 /* ── status ─────────────────────────────────────────────────────── */
 async function statusAction(ctx: Ctx) {
   const catalogId = ctx.url.searchParams.get("catalog_id") || (ctx.body.catalog_id as string) || "";
@@ -108,13 +136,16 @@ async function statusAction(ctx: Ctx) {
 
   const account = await getAccount(catalogId);
   const env = getPlatformEnv();
+  // Loja conectada antes da migração para produção continua em sandbox; o
+  // painel deve mostrar o ambiente do token, não o global da plataforma.
+  const accountEnv = (account?.environment as MeEnvironment) || env;
   let connected = !!(account?.connected && account?.access_token);
   let needsReconnect = false;
 
   // Validate (and silently refresh) the token so the panel never reports
   // "connected" when the OAuth token is actually expired.
   if (connected) {
-    const token = await ensureValidAccessToken(catalogId);
+    const token = await ensureValidAccessToken(catalogId, account);
     if (!token) {
       connected = false;
       needsReconnect = true;
@@ -125,11 +156,9 @@ async function statusAction(ctx: Ctx) {
     success: true,
     connected,
     needs_reconnect: needsReconnect,
-    environment: env,
+    environment: accountEnv,
     configured: hasPlatformCredentials(),
-    connectUrl: hasPlatformCredentials()
-      ? await buildAuthorizeUrl(ctx, catalogId)
-      : null,
+    connectUrl: hasPlatformCredentials() ? await buildAuthorizeUrl(ctx, catalogId) : null,
     sender: account
       ? {
           name: account.sender_name,
@@ -157,12 +186,35 @@ async function statusAction(ctx: Ctx) {
   });
 }
 
+/**
+ * Registra o state para consumo único. A tabela é opcional: se a migration
+ * ainda não tiver sido aplicada, o state assinado continua protegendo o fluxo.
+ */
+async function recordOAuthState(
+  state: string,
+  catalogId: string,
+  userId: string,
+  environment: MeEnvironment,
+) {
+  const admin = getSupabaseAdmin();
+  const { error } = await admin.from("melhor_envio_oauth_states").insert({
+    state_hash: await hashOAuthState(state),
+    catalog_id: catalogId,
+    user_id: userId,
+    environment,
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  });
+  if (error && !isMissingOptionalSchema(error)) {
+    console.error("[melhor-envio] falha ao registrar state OAuth:", error.message);
+    throw new HttpError(500, "Não foi possível iniciar a conexão com a Melhor Envio.");
+  }
+}
+
 async function buildAuthorizeUrl(ctx: Ctx, catalogId: string) {
   const env = getPlatformEnv();
   const base = getBase(env);
   const clientId = Deno.env.get("ME_CLIENT_ID") || "";
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || "https://wdcufpvlbisnqtvmbyso.supabase.co";
-  const redirectUri = `${supabaseUrl}/functions/v1/melhor-envio-callback`;
+  const redirectUri = getRedirectUri();
   // Melhor Envio expects SPACE-separated scope names (hyphenated, e.g.
   // shipping-calculate). Comma-separated names like "shipping:read" do NOT
   // exist and cause the authorization to be rejected.
@@ -179,7 +231,16 @@ async function buildAuthorizeUrl(ctx: Ctx, catalogId: string) {
     "purchases-read",
     "users-read",
   ].join(" ");
-  const state = `${catalogId}`;
+
+  // state opaco, assinado, vinculado ao lojista autenticado, à loja e ao
+  // ambiente, com validade de 10 minutos e consumo único no callback.
+  const state = await createOAuthState({
+    catalogId,
+    userId: ctx.user!.id,
+    environment: env,
+  });
+  await recordOAuthState(state, catalogId, ctx.user!.id, env);
+
   const query = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -250,7 +311,7 @@ async function quoteAction(ctx: Ctx) {
 
   const account = await getAccount(catalogId);
   const senderZip = account?.sender_zip || (b.origin_zip as string) || null;
-  const env = (account?.environment as string) || (Deno.env.get("ME_ENV") || "sandbox");
+  const env = (account?.environment as string) || Deno.env.get("ME_ENV") || "sandbox";
   // Cobertura de entrega. Em produção o Melhor Envio atende todo o Brasil.
   // No sandbox listamos os estados que retornaram frete nos testes reais
   // (RS não retornou em nenhum CEP testado — limitação do ambiente de teste).
@@ -258,8 +319,32 @@ async function quoteAction(ctx: Ctx) {
     env === "production"
       ? ["Todos os estados do Brasil"]
       : [
-          "AC","AL","AM","AP","BA","CE","DF","ES","GO","MA","MG","MS","MT","PA","PB",
-          "PE","PI","PR","RJ","RN","RO","RR","SC","SE","SP","TO",
+          "AC",
+          "AL",
+          "AM",
+          "AP",
+          "BA",
+          "CE",
+          "DF",
+          "ES",
+          "GO",
+          "MA",
+          "MG",
+          "MS",
+          "MT",
+          "PA",
+          "PB",
+          "PE",
+          "PI",
+          "PR",
+          "RJ",
+          "RN",
+          "RO",
+          "RR",
+          "SC",
+          "SE",
+          "SP",
+          "TO",
         ];
   const coverageMessage =
     env === "production"
@@ -303,9 +388,7 @@ async function quoteAction(ctx: Ctx) {
     });
   }
 
-  if (
-    products.some((p) => p.weight <= 0 || p.width <= 0 || p.height <= 0 || p.length <= 0)
-  ) {
+  if (products.some((p) => p.weight <= 0 || p.width <= 0 || p.height <= 0 || p.length <= 0)) {
     return jsonRes({
       success: false,
       error: "products_no_dimensions",
@@ -343,12 +426,7 @@ async function quoteAction(ctx: Ctx) {
     message?: string;
   };
 
-  console.log(
-    "[ME quote response] status=",
-    res.status,
-    "| body=",
-    JSON.stringify(data),
-  );
+  console.log("[ME quote response] status=", res.status, "| body=", JSON.stringify(data));
 
   if (!res.ok || raw.error) {
     const errCode = typeof raw.error === "string" ? raw.error : "";
@@ -369,14 +447,16 @@ async function quoteAction(ctx: Ctx) {
     });
   }
 
-  const list = Array.isArray(data) ? data : ((data as { services?: unknown[] })?.services || []);
+  const list = Array.isArray(data) ? data : (data as { services?: unknown[] })?.services || [];
   const quotes = (list as Array<Record<string, unknown>>)
     .filter((s) => Number(s.price) > 0)
     .map((s) => {
       const name =
         (s.company && typeof s.company === "object"
           ? ((s.company as Record<string, unknown>).name as string)
-          : "") || (s.name as string) || "Envio";
+          : "") ||
+        (s.name as string) ||
+        "Envio";
       const range = (s.delivery_range as Record<string, unknown>) || {};
       const min = Number(range.min ?? s.delivery_time ?? null) || null;
       const max = Number(range.max ?? s.delivery_time ?? null) || null;
@@ -387,7 +467,11 @@ async function quoteAction(ctx: Ctx) {
         delivery_min: min,
         delivery_max: max,
         delivery_text:
-          min != null ? (min === max ? `${min} dia${min > 1 ? "s" : ""}` : `${min} a ${max} dias`) : null,
+          min != null
+            ? min === max
+              ? `${min} dia${min > 1 ? "s" : ""}`
+              : `${min} a ${max} dias`
+            : null,
         agencyRequired: !!s.agency,
         agency: s.agency || null,
         company: s.company || null,
@@ -399,8 +483,7 @@ async function quoteAction(ctx: Ctx) {
     return jsonRes({
       success: false,
       error: "no_options",
-      message:
-        "Não conseguimos encontrar opções de entrega para este CEP no momento.",
+      message: "Não conseguimos encontrar opções de entrega para este CEP no momento.",
       environment: env,
       coverage: coveredUFs,
       coverage_message: coverageMessage,
@@ -454,7 +537,8 @@ async function cartAction(ctx: Ctx) {
       phone: (recipient.phone as string) || "",
       email: (recipient.email as string) || "",
       document: digits(recipient.document as string),
-      address: `${(recipient.street as string) || ""}, ${(recipient.number as string) || ""}`.trim(),
+      address:
+        `${(recipient.street as string) || ""}, ${(recipient.number as string) || ""}`.trim(),
       complement: (recipient.complement as string) || "",
       district: (recipient.district as string) || "",
       city: (recipient.city as string) || "",
@@ -494,7 +578,8 @@ async function cartAction(ctx: Ctx) {
   if (!res.ok || raw.error) {
     return jsonRes({
       success: false,
-      error: (raw.error?.message as string) || raw.message || "Falha ao criar o envio na Melhor Envio.",
+      error:
+        (raw.error?.message as string) || raw.message || "Falha ao criar o envio na Melhor Envio.",
     });
   }
 
@@ -509,6 +594,7 @@ async function checkoutAction(ctx: Ctx) {
   await getOwnedCatalog(ctx, catalogId);
   const meOrderId = Number(b.me_order_id);
   if (!meOrderId) throw new HttpError(400, "me_order_id é obrigatório.");
+  const ownedOrder = await getOwnedMeOrder(ctx, catalogId, meOrderId);
 
   const { res, data } = await meApi({
     catalogId,
@@ -530,7 +616,11 @@ async function checkoutAction(ctx: Ctx) {
 
   if (meOrderId) {
     const admin = getSupabaseAdmin();
-    await admin.from("orders").update({ me_status: "paid" }).eq("me_order_id", String(meOrderId));
+    await admin
+      .from("orders")
+      .update({ me_status: "paid" })
+      .eq("id", String(ownedOrder.id))
+      .eq("catalog_id", catalogId);
   }
 
   return jsonRes({ success: true, me_protocol: protocol != null ? String(protocol) : null, data });
@@ -543,6 +633,7 @@ async function generateAction(ctx: Ctx) {
   await getOwnedCatalog(ctx, catalogId);
   const meOrderId = Number(b.me_order_id);
   if (!meOrderId) throw new HttpError(400, "me_order_id é obrigatório.");
+  const ownedOrder = await getOwnedMeOrder(ctx, catalogId, meOrderId);
 
   const { res, data } = await meApi({
     catalogId,
@@ -575,7 +666,8 @@ async function generateAction(ctx: Ctx) {
         ...(tracking ? { me_tracking: tracking } : {}),
         ...(protocol ? { me_protocol: protocol } : {}),
       })
-      .eq("me_order_id", String(meOrderId));
+      .eq("id", String(ownedOrder.id))
+      .eq("catalog_id", catalogId);
   }
 
   return jsonRes({ success: true, me_protocol: protocol, me_tracking: tracking, data });
@@ -588,6 +680,7 @@ async function printAction(ctx: Ctx) {
   await getOwnedCatalog(ctx, catalogId);
   const meOrderId = Number(b.me_order_id);
   if (!meOrderId) throw new HttpError(400, "me_order_id é obrigatório.");
+  const ownedOrder = await getOwnedMeOrder(ctx, catalogId, meOrderId);
 
   const { res, data } = await meApi({
     catalogId,
@@ -610,7 +703,8 @@ async function printAction(ctx: Ctx) {
     await admin
       .from("orders")
       .update({ me_label_url: printUrl, me_status: "printed" })
-      .eq("me_order_id", String(meOrderId));
+      .eq("id", String(ownedOrder.id))
+      .eq("catalog_id", catalogId);
   }
 
   return jsonRes({ success: true, url: printUrl, data });
@@ -624,6 +718,7 @@ async function trackingAction(ctx: Ctx) {
   const meOrderIds = (b.me_order_ids as Array<string>) || (b.me_order_id ? [b.me_order_id] : []);
   const ids = meOrderIds.map((x) => Number(x)).filter((n) => n > 0);
   if (ids.length === 0) throw new HttpError(400, "me_order_id é obrigatório.");
+  for (const id of ids) await getOwnedMeOrder(ctx, catalogId, id);
 
   const { res, data } = await meApi({
     catalogId,
