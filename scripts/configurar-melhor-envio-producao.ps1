@@ -13,6 +13,14 @@ $ErrorActionPreference = "Stop"
 $PROJECT_REF = "wdcufpvlbisnqtvmbyso"
 $VITRINE_URL = "https://vitrine.meellcriativa.workers.dev"
 
+# O script pode ser chamado de qualquer pasta: o CLI do Supabase precisa da
+# raiz do repositorio para encontrar supabase/config.toml e as functions.
+Set-Location (Split-Path -Parent $PSScriptRoot)
+if (-not (Get-Command supabase -ErrorAction SilentlyContinue)) {
+  Write-Host "ERRO: CLI do Supabase nao encontrada no PATH." -ForegroundColor Red
+  exit 1
+}
+
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host " Melhor Envio - ativacao em PRODUCAO" -ForegroundColor Cyan
@@ -27,18 +35,14 @@ if ($confirm -ne "PRODUCAO") {
 }
 
 $clientId = Read-Host "ME_CLIENT_ID (app de producao)"
-$clientSecret = Read-Host "ME_CLIENT_SECRET (app de producao)"
+$secretInput = Read-Host "ME_CLIENT_SECRET (app de producao)" -AsSecureString
+$clientSecret = [System.Net.NetworkCredential]::new("", $secretInput).Password
 if ([string]::IsNullOrWhiteSpace($clientId) -or [string]::IsNullOrWhiteSpace($clientSecret)) {
   Write-Host "ERRO: client ID e secret sao obrigatorios." -ForegroundColor Red
   exit 1
 }
 
-supabase functions deploy melhor-envio --project-ref $PROJECT_REF --no-verify-jwt
-if ($LASTEXITCODE -ne 0) { Write-Host "Falha ao publicar melhor-envio." -ForegroundColor Red; exit 1 }
-
-supabase functions deploy melhor-envio-callback --project-ref $PROJECT_REF --no-verify-jwt
-if ($LASTEXITCODE -ne 0) { Write-Host "Falha ao publicar melhor-envio-callback." -ForegroundColor Red; exit 1 }
-
+# Secrets primeiro: as functions publicadas depois ja recebem o novo ambiente.
 supabase secrets set `
   --project-ref $PROJECT_REF `
   ME_CLIENT_ID=$clientId `
@@ -46,6 +50,12 @@ supabase secrets set `
   ME_ENV=production `
   VITRINE_URL=$VITRINE_URL
 if ($LASTEXITCODE -ne 0) { Write-Host "Falha ao configurar secrets." -ForegroundColor Red; exit 1 }
+
+supabase functions deploy melhor-envio --project-ref $PROJECT_REF --no-verify-jwt
+if ($LASTEXITCODE -ne 0) { Write-Host "Falha ao publicar melhor-envio." -ForegroundColor Red; exit 1 }
+
+supabase functions deploy melhor-envio-callback --project-ref $PROJECT_REF --no-verify-jwt
+if ($LASTEXITCODE -ne 0) { Write-Host "Falha ao publicar melhor-envio-callback." -ForegroundColor Red; exit 1 }
 
 Write-Host ""
 Write-Host "Pronto: novas conexoes usarao contas REAIS da Melhor Envio." -ForegroundColor Green
