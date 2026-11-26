@@ -192,10 +192,19 @@ test("instruções ficam abaixo do botão de conexão e existem em pt/en/es", ()
     "shipping.guide.step6",
     "shipping.guide.importantTitle",
     "shipping.guide.important4",
+    "shipping.guide.important5",
+    "shipping.guide.important6",
     "shipping.guide.helpTitle",
+    "shipping.sandboxNoticeTitle",
+    "shipping.sandboxNotice",
   ]) {
     assert.ok(page.includes(key), `falta usar ${key} no painel`);
   }
+  assert.match(page, /status\?\.environment === "sandbox"/);
+  assert.ok(
+    page.indexOf('t("shipping.sandboxNoticeTitle")') < buttonEnd,
+    "aviso de sandbox deve aparecer antes do botão",
+  );
 
   const i18n = source("src/i18n/namespaces/shipping.ts");
   for (const locale of ["ptBR", "en", "es"]) {
@@ -206,7 +215,12 @@ test("instruções ficam abaixo do botão de conexão e existem em pt/en/es", ()
     3,
   );
   assert.equal((i18n.match(/important1:/g) || []).length, 3);
+  assert.equal((i18n.match(/important5:/g) || []).length, 3);
+  assert.equal((i18n.match(/important6:/g) || []).length, 3);
+  assert.equal((i18n.match(/sandboxNoticeTitle:/g) || []).length, 3);
   assert.equal((i18n.match(/helpText:/g) || []).length, 3);
+  assert.match(i18n, /mesmo e-mail da sua conta na Vitrine Criativa/);
+  assert.match(i18n, /mesmo e-mail da sua loja/);
 });
 
 test("credenciais da plataforma nunca chegam ao frontend", () => {

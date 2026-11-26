@@ -248,6 +248,16 @@ function EnvioPage() {
           </div>
         )}
 
+        {connected && status?.environment === "sandbox" && (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <RefreshCw className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold">{t("shipping.sandboxNoticeTitle")}</p>
+              <p className="mt-0.5">{t("shipping.sandboxNotice")}</p>
+            </div>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={connected ? handleDisconnect : handleConnect}
@@ -312,6 +322,8 @@ function EnvioPage() {
                 t("shipping.guide.important2"),
                 t("shipping.guide.important3"),
                 t("shipping.guide.important4"),
+                t("shipping.guide.important5"),
+                t("shipping.guide.important6"),
               ].map((item, index) => (
                 <li key={index} className="flex gap-2">
                   <span aria-hidden="true" className="shrink-0">

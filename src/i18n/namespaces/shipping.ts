@@ -19,6 +19,9 @@ export const shipping = defineNamespace({
     expiredHint:
       "Sua autorização com a Melhor Envio expirou. Reconecte para voltar a calcular fretes e gerar etiquetas.",
     notConnectedHint: "Autorize sua conta da Melhor Envio para começar.",
+    sandboxNoticeTitle: "Conexão em ambiente de testes",
+    sandboxNotice:
+      "Sua loja está conectada ao Melhor Envio de testes. Para usar a conta real, desconecte e conecte novamente com o mesmo e-mail da sua loja.",
     connecting: "Conectando...",
     disconnect: "Desconectar",
     reconnect: "Reconectar à Melhor Envio",
@@ -40,7 +43,11 @@ export const shipping = defineNamespace({
       important3:
         "Caso a conexão não seja concluída, verifique se autorizou as permissões solicitadas e tente novamente.",
       important4:
-        "Se já tiver uma conta conectada, não é necessário realizar a conexão novamente, a menos que seja solicitado pelo sistema.",
+        "Se a sua loja já estava conectada ao ambiente de testes, desconecte e conecte novamente usando a sua conta real do Melhor Envio.",
+      important5:
+        "Crie a conta no Melhor Envio usando o mesmo e-mail da sua conta na Vitrine Criativa.",
+      important6:
+        "Se a loja já estiver conectada em produção com a conta correta, não é necessário conectar novamente.",
       helpTitle: "Precisa de ajuda?",
       helpText:
         "Se não conseguir conectar sua conta, entre em contato com o suporte da Vitrine Criativa.",
@@ -103,6 +110,9 @@ export const shipping = defineNamespace({
     expiredHint:
       "Your authorization with Melhor Envio expired. Reconnect to calculate shipping and generate labels again.",
     notConnectedHint: "Authorize your Melhor Envio account to get started.",
+    sandboxNoticeTitle: "Sandbox connection",
+    sandboxNotice:
+      "Your store is connected to the Melhor Envio sandbox. To use your real account, disconnect and connect again using the same email address as your store.",
     connecting: "Connecting...",
     disconnect: "Disconnect",
     reconnect: "Reconnect to Melhor Envio",
@@ -124,7 +134,11 @@ export const shipping = defineNamespace({
       important3:
         "If the connection is not completed, check that you authorized the requested permissions and try again.",
       important4:
-        "If an account is already connected, you do not need to connect again unless the system asks you to.",
+        "If your store was previously connected to the sandbox, disconnect and connect again using your real Melhor Envio account.",
+      important5:
+        "Create your Melhor Envio account using the same email address as your Vitrine Criativa account.",
+      important6:
+        "If the store is already connected in production with the correct account, you do not need to connect again.",
       helpTitle: "Need help?",
       helpText: "If you cannot connect your account, contact Vitrine Criativa support.",
     },
@@ -187,6 +201,9 @@ export const shipping = defineNamespace({
     expiredHint:
       "Tu autorización con Melhor Envio expiró. Vuelve a conectar para calcular fletes y generar etiquetas.",
     notConnectedHint: "Autoriza tu cuenta de Melhor Envio para empezar.",
+    sandboxNoticeTitle: "Conexión en entorno de pruebas",
+    sandboxNotice:
+      "Tu tienda está conectada al Melhor Envio de pruebas. Para usar tu cuenta real, desconecta y vuelve a conectar con el mismo correo de tu tienda.",
     connecting: "Conectando...",
     disconnect: "Desconectar",
     reconnect: "Reconectar a Melhor Envio",
@@ -208,7 +225,11 @@ export const shipping = defineNamespace({
       important3:
         "Si la conexión no se completa, verifica que autorizaste los permisos solicitados e inténtalo de nuevo.",
       important4:
-        "Si ya tienes una cuenta conectada, no es necesario conectarla de nuevo, salvo que el sistema lo pida.",
+        "Si tu tienda ya estaba conectada al entorno de pruebas, desconecta y vuelve a conectar con tu cuenta real de Melhor Envio.",
+      important5:
+        "Crea la cuenta en Melhor Envio usando el mismo correo electrónico de tu cuenta en Vitrine Criativa.",
+      important6:
+        "Si la tienda ya está conectada en producción con la cuenta correcta, no es necesario conectarla de nuevo.",
       helpTitle: "¿Necesitas ayuda?",
       helpText: "Si no puedes conectar tu cuenta, contacta con el soporte de Vitrine Criativa.",
     },
