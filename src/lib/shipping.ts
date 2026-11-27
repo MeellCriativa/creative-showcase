@@ -105,6 +105,28 @@ export async function quoteShipping(opts: {
   return data as QuoteResult;
 }
 
+export type ShippingAvailabilityResult = {
+  success: boolean;
+  available?: boolean;
+  error?: string;
+};
+
+/** Diz ao comprador se a loja pode calcular frete, sem expor tokens nem segredos. */
+export async function getShippingAvailability(
+  catalogId: string,
+): Promise<ShippingAvailabilityResult> {
+  const headers = await authHeaders();
+  const res = await fetch(
+    `${META_FUNCTIONS_URL}/melhor-envio?action=availability&catalog_id=${encodeURIComponent(catalogId)}`,
+    { headers },
+  );
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) {
+    return { success: false, error: data?.error || "Frete indisponível." };
+  }
+  return { success: true, available: !!data.available };
+}
+
 /* ── Admin / Melhor Envio helper calls ───────────────────────────── */
 
 export type MEStatusResult = {

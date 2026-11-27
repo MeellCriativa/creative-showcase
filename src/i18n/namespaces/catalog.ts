@@ -180,6 +180,12 @@ export const catalog = defineNamespace({
         "Ainda não recebemos a confirmação do {{provider}}. Assim que o pagamento for aprovado a loja será avisada — não é preciso pagar de novo.",
       providerFallback: "provedor",
     },
+    paymentCountdown: {
+      running: "Conclua o pagamento em {{time}}",
+      expired:
+        "O tempo para concluir terminou. Se você já pagou, aguarde a confirmação — seu pedido continua válido.",
+      newOrder: "Fazer novo pedido",
+    },
     whatsapp: {
       helloStore: "Olá! Vim pelo catálogo {{store}}",
       contactStore: "Falar no WhatsApp",
@@ -380,6 +386,12 @@ export const catalog = defineNamespace({
       pending:
         "We haven't received the confirmation from {{provider}} yet. As soon as the payment is approved the store will be notified — there's no need to pay again.",
       providerFallback: "provider",
+    },
+    paymentCountdown: {
+      running: "Complete your payment in {{time}}",
+      expired:
+        "Time to finish has run out. If you've already paid, please wait for confirmation — your order is still valid.",
+      newOrder: "Place a new order",
     },
     whatsapp: {
       helloStore: "Hi! I came from the {{store}} catalog",
@@ -584,6 +596,12 @@ export const catalog = defineNamespace({
       pending:
         "Todavía no recibimos la confirmación de {{provider}}. En cuanto se apruebe el pago, avisaremos a la tienda — no hace falta pagar de nuevo.",
       providerFallback: "proveedor",
+    },
+    paymentCountdown: {
+      running: "Completa el pago en {{time}}",
+      expired:
+        "Se acabó el tiempo para finalizar. Si ya pagaste, espera la confirmación — tu pedido sigue vigente.",
+      newOrder: "Hacer un nuevo pedido",
     },
     whatsapp: {
       helloStore: "¡Hola! Vengo del catálogo {{store}}",

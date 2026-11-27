@@ -142,6 +142,16 @@ export function bannerAspectWarning(width: number, height: number): boolean {
   return Math.abs(width / height - BANNER_RATIO) > 0.08;
 }
 
+/** Janela para o comprador concluir Pix ou checkout do provedor. */
+export const PAYMENT_WINDOW_MS = 5 * 60 * 1000;
+
+/** `05:00`, `00:42` etc. — usa teto para não mostrar `00:00` antes da hora. */
+export function formatCountdown(totalMs: number): string {
+  const seconds = Math.max(0, Math.ceil(totalMs / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export function countdownParts(endsAt: string | null, now = Date.now()) {
   if (!endsAt) return { expired: true, hours: 0, minutes: 0, seconds: 0, total: 0 };
   const total = Math.max(0, new Date(endsAt).getTime() - now);

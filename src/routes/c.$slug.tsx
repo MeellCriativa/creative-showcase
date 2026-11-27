@@ -11,7 +11,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useCurrencyRates } from "@/hooks/useRates";
 import { LanguageSelector, useI18n, type MessageKey } from "@/i18n";
-import { countdownParts, parseCheckoutConfig, type CheckoutBannerConfig, type TestimonialConfig } from "@/lib/checkoutConfig";
+import {
+  countdownParts,
+  formatCountdown,
+  PAYMENT_WINDOW_MS,
+  parseCheckoutConfig,
+  type CheckoutBannerConfig,
+  type TestimonialConfig,
+} from "@/lib/checkoutConfig";
 import {
   buildWhatsappMessage,
   finalPrice,
@@ -53,7 +60,7 @@ import {
 import { parseProductCheckoutParams } from "@/lib/productLinks";
 import { notifySellerAboutOrder } from "@/lib/sellerNotifications";
 import { SITE_OG_IMAGE } from "@/lib/site";
-import { quoteShipping } from "@/lib/shipping";
+import { getShippingAvailability, quoteShipping } from "@/lib/shipping";
 import {
   createPayment,
   createSecureOrder,
@@ -202,6 +209,8 @@ type PendingPayment = {
   token: string;
   provider?: PaymentProviderKey;
   at?: number;
+  /** ISO absoluto: sobrevive a recarregar a página e ao retorno do provedor. */
+  expiresAt?: string;
 };
 
 function readPendingPayment(): PendingPayment | null {
@@ -249,6 +258,9 @@ function PublicCatalog() {
     return new URLSearchParams(window.location.search).get("payment") === "return";
   });
   const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(null);
+  /** Contador de 5 minutos do Mercado Pago, persistido no sessionStorage. */
+  const [paymentDeadline, setPaymentDeadline] = useState<string | null>(null);
+  const [paymentNow, setPaymentNow] = useState(() => Date.now());
   /** Link direto recebido pelo comprador (produto e, opcionalmente, valor). */
   const [deepLink, setDeepLink] = useState<{
     productId: string;
@@ -439,6 +451,11 @@ function PublicCatalog() {
     const token = stored?.token ?? "";
     const provider =
       ((stored?.provider ?? params.get("provider")) as PaymentProviderKey | null) ?? null;
+    // Pedidos antigos sem `expiresAt` usam o horário de criação como referência.
+    setPaymentDeadline(
+      stored?.expiresAt ??
+        (stored?.at ? new Date(stored.at + PAYMENT_WINDOW_MS).toISOString() : null),
+    );
 
     // Limpa a URL para um refresh não reabrir o polling.
     try {
@@ -497,6 +514,25 @@ function PublicCatalog() {
     };
   }, []);
 
+  /** Atualiza o contador do retorno do provedor uma vez por segundo. */
+  useEffect(() => {
+    if (
+      !paymentDeadline ||
+      paymentReturn?.status === "settled" ||
+      paymentReturn?.status === "failed"
+    ) {
+      return;
+    }
+    setPaymentNow(Date.now());
+    const id = window.setInterval(() => setPaymentNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [paymentDeadline, paymentReturn?.status]);
+
+  const paymentCountdown = countdownParts(paymentDeadline, paymentNow);
+  const showPaymentCountdown =
+    !!paymentDeadline &&
+    (paymentReturn?.status === "checking" || paymentReturn?.status === "pending");
+
   /**
    * Métodos de pagamento online realmente habilitados nesta loja.
    *
@@ -528,6 +564,21 @@ function PublicCatalog() {
     },
   });
 
+  /**
+   * O frete é oferecido para produtos físicos quando a loja conectou o
+   * Melhor Envio — mesmo que "Envio" não esteja marcado no painel.
+   */
+  const { data: shippingAvailable } = useQuery({
+    queryKey: ["public-shipping-availability", catalog?.id],
+    enabled: !!catalog?.id,
+    retry: 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await getShippingAvailability(catalog!.id);
+      return !!res.available;
+    },
+  });
+
   const products = useMemo(() => {
     const all = data?.products ?? [];
     // `filter` guarda o id interno do filtro (ou o id da categoria), nunca o texto.
@@ -551,6 +602,22 @@ function PublicCatalog() {
       ),
     [cart, currency],
   );
+  /** Frete escolhido no carrinho, para o botão flutuante mostrar o total final. */
+  const [cartShippingCost, setCartShippingCost] = useState(0);
+  const cartGrandTotal = useMemo(
+    () =>
+      fromMinorUnits(
+        toMinorUnits(total, currency) + toMinorUnits(cartShippingCost, currency),
+        currency,
+      ),
+    [total, cartShippingCost, currency],
+  );
+  // Pedido finalizado limpa o carrinho direto no pai: sem isso o frete antigo
+  // continuaria somado no botão flutuante do próximo pedido.
+  useEffect(() => {
+    if (cart.length === 0) setCartShippingCost(0);
+  }, [cart.length]);
+
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const addToCart = useCallback(
@@ -913,6 +980,7 @@ function PublicCatalog() {
               token: created.checkout_token,
               provider: payment.provider,
               at: Date.now(),
+              expiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS).toISOString(),
             }),
           );
         } catch {
@@ -980,6 +1048,15 @@ function PublicCatalog() {
   const bgColor = loadedCatalog.background_color ?? "#FFFFFF";
   const whatsappColor = loadedCatalog.whatsapp_button_color ?? "#8b5cf6";
   const isOwner = user && user.id === loadedCatalog.user_id;
+  const catalogHasPhysical = (data?.products ?? []).some((p) => p.product_type !== "digital");
+  const configuredDeliveryMethods: string[] = Array.isArray(loadedCatalog.delivery_methods)
+    ? loadedCatalog.delivery_methods
+    : [];
+  /** Produto físico + loja conectada no ME => CEP e frete disponíveis no checkout. */
+  const deliveryMethods =
+    shippingAvailable && catalogHasPhysical && !configuredDeliveryMethods.includes("melhor_envio")
+      ? ["melhor_envio", ...configuredDeliveryMethods]
+      : configuredDeliveryMethods;
   const activePayments = Array.isArray(loadedCatalog.payment_methods)
     ? PAYMENT_METHODS.filter((m) => (loadedCatalog.payment_methods as string[]).includes(m.key))
     : [];
@@ -1044,6 +1121,38 @@ function PublicCatalog() {
             {paymentReturn.status === "failed" && <span>{t("catalog.paymentReturn.failed")}</span>}
             {paymentReturn.status === "pending" && (
               <span>{t("catalog.paymentReturn.pending", { provider: paymentProviderLabel })}</span>
+            )}
+            {showPaymentCountdown && (
+              <div
+                className={`mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs ${
+                  paymentCountdown.expired
+                    ? "border border-amber-300 bg-amber-50 text-amber-900"
+                    : "bg-white/70 text-foreground"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                <span>
+                  {paymentCountdown.expired
+                    ? t("catalog.paymentCountdown.expired")
+                    : t("catalog.paymentCountdown.running", {
+                        time: formatCountdown(paymentCountdown.total),
+                      })}
+                </span>
+                {paymentCountdown.expired && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearPendingPayment();
+                      setPaymentDeadline(null);
+                      setPaymentReturn(null);
+                    }}
+                    className="shrink-0 font-semibold underline underline-offset-2"
+                  >
+                    {t("catalog.paymentCountdown.newOrder")}
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -1304,7 +1413,7 @@ function PublicCatalog() {
         >
           <CartIcon style={loadedCatalog.cart_style ?? "carrinho"} className="size-5" />
           <span className="text-sm font-semibold">{tp("common.itemsCount", count)}</span>
-          <span className="font-bold">{money(total)}</span>
+          <span className="font-bold">{money(cartGrandTotal)}</span>
         </button>
       )}
 
@@ -1338,13 +1447,15 @@ function PublicCatalog() {
             currencyChosenByBuyer.current = true;
             setDisplayCurrency(code);
           }}
-          deliveryMethods={
-            Array.isArray(loadedCatalog.delivery_methods) ? loadedCatalog.delivery_methods : []
-          }
+          deliveryMethods={deliveryMethods}
           paymentMethods={paymentMethods ?? []}
           pixConfig={pixConfig ?? null}
           onlinePaymentAvailable={(paymentMethods?.length ?? 0) > 0 || !!pixConfig?.available}
-          onClose={() => setCartOpen(false)}
+          onShippingChange={setCartShippingCost}
+          onClose={() => {
+            setCartShippingCost(0);
+            setCartOpen(false);
+          }}
           onChangeQty={changeQty}
           onRemove={removeItem}
           onFinish={finishOrder}
@@ -2005,6 +2116,7 @@ function CartSheet({
   onClose,
   onChangeQty,
   onRemove,
+  onShippingChange,
   onFinish,
 }: {
   catalogId: string;
@@ -2025,6 +2137,7 @@ function CartSheet({
   onClose: () => void;
   onChangeQty: (key: string, delta: number) => void;
   onRemove: (key: string) => void;
+  onShippingChange: (cost: number) => void;
   onFinish: (
     name: string,
     phone: string,
@@ -2068,6 +2181,10 @@ function CartSheet({
   const [qrZoom, setQrZoom] = useState(false);
   const [pixDeclared, setPixDeclared] = useState(false);
   const [pixApproved, setPixApproved] = useState(false);
+  /** Contador de 5 minutos do Pix (ISO absoluto, como no retorno do MP). */
+  const [pixExpiresAt, setPixExpiresAt] = useState<string | null>(null);
+  const [pixNow, setPixNow] = useState(() => Date.now());
+  const quoteSignatureRef = useRef("");
   const [address, setAddress] = useState<CustomerAddress>({
     street: "",
     number: "",
@@ -2088,6 +2205,13 @@ function CartSheet({
   const hasMelhorEnvio = deliveryMethods.includes("melhor_envio");
   const hasPhysical = items.some((i) => i.product_type !== "digital");
   const hasDigital = items.some((i) => i.product_type === "digital");
+  const pixCountdown = countdownParts(pixExpiresAt, pixNow);
+  const itemSignature = items
+    .map(
+      (i) =>
+        `${i.key}|${i.quantity}|${i.weight_grams ?? ""}|${i.length_cm ?? ""}|${i.width_cm ?? ""}|${i.height_cm ?? ""}`,
+    )
+    .join(";");
 
   useEffect(() => {
     if (!pixOrder) return;
@@ -2107,13 +2231,48 @@ function CartSheet({
   }, [pixOrder]);
 
   useEffect(() => {
-    if (!deliveryMethod && deliveryMethods.length === 1) {
-      setDeliveryMethod(deliveryMethods[0]!);
+    if (deliveryMethod) return;
+    // Produto físico com frete disponível: CEP e frete aparecem na hora.
+    if (hasMelhorEnvio && hasPhysical) {
+      setDeliveryMethod("melhor_envio");
+      return;
     }
-  }, [deliveryMethods, deliveryMethod]);
+    if (deliveryMethods.length === 1) setDeliveryMethod(deliveryMethods[0]!);
+  }, [deliveryMethods, deliveryMethod, hasMelhorEnvio, hasPhysical]);
 
-  async function handleQuote() {
-    if (!isValidCep(cep)) {
+  useEffect(() => {
+    onShippingChange(shippingCost);
+  }, [onShippingChange, shippingCost]);
+
+  // Carrinho esvaziado (pedido finalizado) não pode deixar frete no total.
+  useEffect(() => {
+    if (items.length === 0) {
+      setQuotes([]);
+      setSelectedQuote("");
+      setQuoteMsg("");
+      setCoverageMsg("");
+    }
+  }, [items.length]);
+
+  // Alterou quantidade/peso/dimensões? Recalcula o frete com o mesmo CEP.
+  useEffect(() => {
+    if (!hasMelhorEnvio || !hasPhysical || !isValidCep(cep) || !itemSignature) return;
+    if (quoteSignatureRef.current === itemSignature) return;
+    quoteSignatureRef.current = itemSignature;
+    void handleQuote();
+    // handleQuote lê apenas o estado acima; incluí-lo recalcula a cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cep, hasMelhorEnvio, hasPhysical, itemSignature]);
+
+  useEffect(() => {
+    if (!pixExpiresAt || pixApproved || pixDeclared) return;
+    setPixNow(Date.now());
+    const id = window.setInterval(() => setPixNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [pixExpiresAt, pixApproved, pixDeclared]);
+
+  async function handleQuote(zip = cep) {
+    if (!isValidCep(zip)) {
       toast.error(t("catalog.shippingErrors.invalidCep"));
       return;
     }
@@ -2124,13 +2283,14 @@ function CartSheet({
       setQuoteMsg(t("catalog.shippingErrors.digitalOnly"));
       return;
     }
+    quoteSignatureRef.current = itemSignature;
     setQuoting(true);
     setQuoteMsg("");
     setQuotes([]);
     setSelectedQuote("");
     const res = await quoteShipping({
       catalogId,
-      destinationZip: cep,
+      destinationZip: zip,
       items: items.map((i) => ({
         key: i.key,
         product_type: i.product_type ?? null,
@@ -2145,7 +2305,7 @@ function CartSheet({
     setQuoting(false);
     console.log(
       "[ME quote] cep=",
-      cep,
+      zip,
       "| items=",
       items.map((i) => ({
         name: i.name,
@@ -2194,8 +2354,8 @@ function CartSheet({
     }
   }
 
-  async function lookupCep(autoFill = true) {
-    const clean = cep.replace(/\D/g, "");
+  async function lookupCep(autoFill = true, zip = cep) {
+    const clean = zip.replace(/\D/g, "");
     if (clean.length !== 8) return;
     try {
       const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`, {
@@ -2208,7 +2368,7 @@ function CartSheet({
         return;
       }
       if (autoFill) {
-        setCep(data.cep || cep);
+        setCep(data.cep || zip);
         setAddress((prev) => ({
           ...prev,
           street: data.logradouro ?? prev.street,
@@ -2226,9 +2386,11 @@ function CartSheet({
     const formatted = formatCep(value);
     setCep(formatted);
     if (formatted.replace(/\D/g, "").length === 8) {
-      void lookupCep();
-      if (deliveryMethod === "melhor_envio") {
-        void handleQuote();
+      void lookupCep(true, formatted);
+      // Não depende da modalidade já selecionada: digitou CEP com produto
+      // físico e frete disponível, cota na hora (usa o valor recém-digitado).
+      if (hasMelhorEnvio && hasPhysical) {
+        void handleQuote(formatted);
       }
     } else {
       setAddress((prev) => ({
@@ -2265,6 +2427,7 @@ function CartSheet({
       );
       if (result && typeof result === "object" && result.pix) {
         setQrZoom(false);
+        setPixExpiresAt(new Date(Date.now() + PAYMENT_WINDOW_MS).toISOString());
         setPixOrder(result);
       } else if (result) {
         onClose();
@@ -2326,6 +2489,13 @@ function CartSheet({
     });
   }
 
+  function closePix() {
+    setQrZoom(false);
+    setPixOrder(null);
+    setPixExpiresAt(null);
+    onClose();
+  }
+
   async function handleDeclarePix() {
     if (!pixOrder) return;
     const result = await declarePixPaid(pixOrder.order_id, pixOrder.checkout_token);
@@ -2360,6 +2530,35 @@ function CartSheet({
                   ? `${t("catalog.pix.holder")}: ${pixOrder.pix.holderName}`
                   : ""}
               </p>
+
+              {pixExpiresAt && !pixApproved && !pixDeclared && (
+                <div
+                  className={`rounded-xl border p-3 text-sm ${
+                    pixCountdown.expired
+                      ? "border-amber-300 bg-amber-50 text-amber-900"
+                      : "border-primary/30 bg-primary/5 text-foreground"
+                  }`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <p className="font-semibold">
+                    {pixCountdown.expired
+                      ? t("catalog.paymentCountdown.expired")
+                      : t("catalog.paymentCountdown.running", {
+                          time: formatCountdown(pixCountdown.total),
+                        })}
+                  </p>
+                  {pixCountdown.expired && (
+                    <button
+                      type="button"
+                      onClick={closePix}
+                      className="mt-2 rounded-lg border border-current/30 px-3 py-1.5 text-xs font-semibold"
+                    >
+                      {t("catalog.paymentCountdown.newOrder")}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {pixOrder.pix.qrUrl && (
                 <div className="space-y-2">
@@ -2434,11 +2633,7 @@ function CartSheet({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setQrZoom(false);
-                  setPixOrder(null);
-                  onClose();
-                }}
+                onClick={closePix}
                 className="w-full rounded-2xl border border-border py-3 text-sm font-semibold text-muted-foreground"
               >
                 {t("common.close")}

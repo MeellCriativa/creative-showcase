@@ -38,8 +38,8 @@ serve(async (req) => {
 
     const user = await verifyUser(req);
 
-    // Public actions (used by the buyer during checkout): quote
-    const publicActions = ["quote"];
+    // Public actions (used by the buyer during checkout): quote and availability
+    const publicActions = ["quote", "availability"];
     if (publicActions.includes(action) && !user) {
       return await handle(action, {
         req,
@@ -82,6 +82,8 @@ async function handle(action: string, ctx: Ctx): Promise<Response> {
       return saveSenderAction(ctx);
     case "quote":
       return quoteAction(ctx);
+    case "availability":
+      return availabilityAction(ctx);
     case "cart":
       return cartAction(ctx);
     case "checkout":
@@ -298,6 +300,27 @@ async function saveSenderAction(ctx: Ctx) {
   );
   const account = await getAccount(catalogId);
   return jsonRes({ success: true, account });
+}
+
+/* ── availability (pública: checkout da vitrine) ─────────────────── */
+async function availabilityAction(ctx: Ctx): Promise<Response> {
+  const catalogId =
+    (ctx.body.catalog_id as string) || ctx.url.searchParams.get("catalog_id") || "";
+  if (!catalogId) {
+    return jsonRes({ success: false, error: "catalog_id é obrigatório" }, 400);
+  }
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("melhor_envio_accounts")
+    .select("connected")
+    .eq("catalog_id", catalogId)
+    .maybeSingle();
+  if (error) {
+    console.error("[melhor-envio] availability falhou", error.message);
+    return jsonRes({ success: false, error: "Não foi possível consultar o frete." }, 500);
+  }
+  // Nunca devolver token, ambiente ou endereço do remetente ao comprador.
+  return jsonRes({ success: true, available: !!data?.connected });
 }
 
 /* ── quote (buyer + admin) ──────────────────────────────────────── */

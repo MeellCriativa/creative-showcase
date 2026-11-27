@@ -197,12 +197,29 @@ export async function createSecureOrder(input: SecureOrderInput): Promise<Secure
 
   if (deliveryMethod) {
     if (deliveryMethods.length > 0 && !deliveryMethods.includes(deliveryMethod)) {
-      return {
-        ok: false,
-        status: 400,
-        code: "invalid_delivery_method",
-        error: "Modalidade de entrega não disponível nesta loja.",
-      };
+      /**
+       * O checkout oferece frete automaticamente para produtos físicos quando
+       * a loja conectou o Melhor Envio, mesmo que "Envio" não esteja marcado
+       * em `delivery_methods`. Aceitamos a modalidade nesse caso — desde que
+       * a conta realmente esteja conectada. A cotação oficial abaixo ainda
+       * valida CEP, serviço, pesos e dimensões antes de gravar o pedido.
+       */
+      const meEnabled =
+        deliveryMethod === "melhor_envio" &&
+        (await admin
+          .from("melhor_envio_accounts")
+          .select("connected")
+          .eq("catalog_id", catalog.id)
+          .maybeSingle()
+          .then(({ data }) => !!data?.connected));
+      if (!meEnabled) {
+        return {
+          ok: false,
+          status: 400,
+          code: "invalid_delivery_method",
+          error: "Modalidade de entrega não disponível nesta loja.",
+        };
+      }
     }
     if (deliveryMethod === "melhor_envio") {
       const physical = priced.items.filter((item) => item.product_type !== "digital");
