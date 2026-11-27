@@ -21,9 +21,12 @@ import {
   clampInteger,
   DIGITAL_BUCKET,
   isBlockedPaymentStatus,
+  isHttpsUrl,
   isPaidPaymentStatus,
   normalizeEmail,
+  resolveDeliveryTarget,
   safeError,
+  storefrontProductUrl,
   type DeliveryEmailItem,
 } from "./digital_delivery_pure.ts";
 
@@ -310,19 +313,30 @@ async function isLinkValid(link: EmailLink): Promise<boolean> {
   return true;
 }
 
-function isHttpsUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && Boolean(url.hostname);
-  } catch {
-    return false;
-  }
+/** URL pública da vitrine; o secret permite apontar outro ambiente sem rebuild. */
+const VITRINE_URL_FALLBACK = "https://vitrine.meellcriativa.workers.dev";
+
+function vitrineBaseUrl(): string {
+  return Deno.env.get("VITRINE_URL") || VITRINE_URL_FALLBACK;
+}
+
+function storefrontLink(catalog: { slug?: string } | null, productId: string): string | null {
+  if (!catalog?.slug || !productId) return null;
+  return storefrontProductUrl(vitrineBaseUrl(), catalog.slug, productId);
+}
+
+/** Alvo do e-mail/download, com fallback para a vitrine quando não há arquivo. */
+function deliveryTarget(
+  product: Record<string, unknown> | null,
+  catalog: { slug?: string } | null,
+  productId: string,
+) {
+  return resolveDeliveryTarget(product, { storefrontUrl: storefrontLink(catalog, productId) });
 }
 
 function supportLink(catalog: { slug?: string } | null): string | null {
   if (!catalog?.slug) return null;
-  const base = Deno.env.get("VITRINE_URL")?.replace(/\/+$/, "") ?? "";
-  const link = `${base}/c/${catalog.slug}`;
+  const link = `${vitrineBaseUrl().replace(/\/+$/, "")}/c/${catalog.slug}`;
   return /^https?:\/\//.test(link) ? link : null;
 }
 
@@ -452,16 +466,14 @@ export async function deliverDigitalOrder(
     for (const product of digitalProducts) {
       const emailLabel = safeError(product.name);
       try {
-        const isExternalLink = product.digital_delivery_mode === "link";
-        const externalUrl = isExternalLink ? String(product.digital_external_url ?? "").trim() : "";
-        if (isExternalLink && !isHttpsUrl(externalUrl)) {
+        const target = deliveryTarget(
+          product as unknown as Record<string, unknown>,
+          catalog,
+          product.id,
+        );
+        if (!target) {
           outcome.failed++;
-          log("produto digital com link externo inválido", { orderId, productId: product.id });
-          continue;
-        }
-        if (!isExternalLink && !product.digital_file_path) {
-          outcome.failed++;
-          log("produto digital sem arquivo", { orderId, productId: product.id });
+          log("produto digital sem link nem arquivo", { orderId, productId: product.id });
           continue;
         }
 
@@ -516,7 +528,7 @@ export async function deliverDigitalOrder(
           expiresAt: token.expiresAt,
           productName: product.name,
           instructions: product.digital_instructions,
-          kind: isExternalLink ? "link" : "file",
+          kind: target.kind,
           productId: product.id,
           price: linePrice,
         });
@@ -525,7 +537,7 @@ export async function deliverDigitalOrder(
           downloadUrl,
           instructions: product.digital_instructions,
           expiresAt: token.expiresAt,
-          kind: isExternalLink ? "link" : "file",
+          kind: target.kind,
           price: linePrice,
         });
       } catch (error) {
@@ -734,15 +746,15 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
       .eq("id", delivery.product_id)
       .maybeSingle();
     const productRow = product as ProductRow | null;
-    const regenIsLink = productRow?.digital_delivery_mode === "link";
-    const regenExternalUrl = regenIsLink ? String(productRow?.digital_external_url ?? "").trim() : "";
-    if (regenIsLink && !isHttpsUrl(regenExternalUrl)) {
-      await finishEmail(delivery.order_id, { ok: false, error: "no_link" }, null);
-      return failed("no_link", "O link deste produto não está mais disponível.");
-    }
-    if (!regenIsLink && !productRow?.digital_file_path) {
-      await finishEmail(delivery.order_id, { ok: false, error: "no_file" }, null);
-      return failed("no_file", "O arquivo deste produto não está mais disponível.");
+    const catalog = await getCatalog(delivery.catalog_id);
+    const regenTarget = deliveryTarget(
+      productRow as unknown as Record<string, unknown> | null,
+      catalog,
+      delivery.product_id,
+    );
+    if (!regenTarget) {
+      await finishEmail(delivery.order_id, { ok: false, error: "no_link_or_file" }, null);
+      return failed("no_link_or_file", "O link deste produto não está mais disponível.");
     }
 
     const { bundle } = await readEmailBundle(delivery.order_id);
@@ -767,12 +779,11 @@ export async function regenerateDelivery(deliveryId: string): Promise<DeliveryOu
       expiresAt: token.expiresAt,
       productName: productRow.name,
       instructions: productRow.digital_instructions,
-      kind: regenIsLink ? "link" : "file",
+      kind: regenTarget.kind,
       productId: delivery.product_id,
       price: regenPrices.get(delivery.product_id),
     };
     const links = [...kept, newLink];
-    const catalog = await getCatalog(delivery.catalog_id);
     const message = buildDeliveryEmail({
       storeName: catalog?.store_name ?? "Vitrine Criativa",
       customerName: String(regenRow?.customer_name ?? "cliente"),
@@ -907,8 +918,8 @@ export async function processDownload(rawToken: string): Promise<Response> {
     .eq("id", token.product_id)
     .maybeSingle();
   const productRow = product as Record<string, unknown> | null;
-  const isExternalLink = String(productRow?.digital_delivery_mode ?? "") === "link";
-  const externalUrl = String(productRow?.digital_external_url ?? "").trim();
+  const downloadCatalog = await getCatalog(String(token.catalog_id ?? ""));
+  const target = deliveryTarget(productRow, downloadCatalog, String(token.product_id ?? ""));
 
   // Incremento atômico com comparação de versão evita uso acima do limite.
   const { data: claimed } = await admin
@@ -922,8 +933,8 @@ export async function processDownload(rawToken: string): Promise<Response> {
     .maybeSingle();
   if (!claimed) return errorPage(410, "Link indisponível", "Este link não está mais disponível.");
 
-  if (isExternalLink) {
-    if (!isHttpsUrl(externalUrl)) {
+  if (target?.kind === "link") {
+    if (!isHttpsUrl(target.url)) {
       return errorPage(404, "Link indisponível", "O link deste produto não está disponível.");
     }
     await admin.from("digital_download_events").insert({
@@ -935,7 +946,7 @@ export async function processDownload(rawToken: string): Promise<Response> {
     return new Response(null, {
       status: 302,
       headers: {
-        Location: externalUrl,
+        Location: target.url,
         "Cache-Control": "no-store, private",
         "X-Content-Type-Options": "nosniff",
       },

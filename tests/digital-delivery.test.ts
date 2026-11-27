@@ -18,9 +18,12 @@ import {
   fileExtension,
   isBlockedPaymentStatus,
   isPaidPaymentStatus,
+  isHttpsUrl,
   isValidEmail,
   normalizeEmail,
+  resolveDeliveryTarget,
   safeError,
+  storefrontProductUrl,
   validateDigitalFile,
 } from "../supabase/functions/_shared/digital_delivery_pure.ts";
 
@@ -324,4 +327,60 @@ test("RLS impede leitura anônima de entregas e tokens", () => {
   assert.match(migration, /revoke all on public\.digital_download_tokens from anon/);
   assert.match(migration, /for select to authenticated/);
   assert.ok(!migration.includes("token_hash,") === false || /grant select \(id, delivery_id/.test(migration));
+});
+
+test("produto sem arquivo ainda entrega link: externo primeiro, depois a vitrine", () => {
+  const storefront = storefrontProductUrl("https://vitrine.example/", "minha-loja", "prod-123");
+  assert.equal(storefront, "https://vitrine.example/c/minha-loja?produto=prod-123");
+  assert.equal(storefrontProductUrl("", "minha-loja", "prod-123"), null);
+  assert.equal(isHttpsUrl("http://inseguro.example/a"), false);
+
+  const fileWithPath = resolveDeliveryTarget(
+    { digital_delivery_mode: "file", digital_file_path: "pasta/arquivo.pdf" },
+    { storefrontUrl: storefront },
+  );
+  assert.deepEqual(fileWithPath, { kind: "file" });
+
+  const fileWithoutPathButExternal = resolveDeliveryTarget(
+    {
+      digital_delivery_mode: "file",
+      digital_file_path: null,
+      digital_external_url: "https://drive.google.com/file/d/abc/view",
+    },
+    { storefrontUrl: storefront },
+  );
+  assert.deepEqual(fileWithoutPathButExternal, {
+    kind: "link",
+    url: "https://drive.google.com/file/d/abc/view",
+  });
+
+  const fileWithoutAnything = resolveDeliveryTarget(
+    { digital_delivery_mode: "file", digital_file_path: null, digital_external_url: null },
+    { storefrontUrl: storefront },
+  );
+  assert.deepEqual(fileWithoutAnything, { kind: "link", url: storefront });
+
+  const linkModeValid = resolveDeliveryTarget(
+    { digital_delivery_mode: "link", digital_external_url: "https://ok.example/a" },
+    { storefrontUrl: storefront },
+  );
+  assert.deepEqual(linkModeValid, { kind: "link", url: "https://ok.example/a" });
+
+  const linkModeInvalid = resolveDeliveryTarget(
+    { digital_delivery_mode: "link", digital_external_url: "http://inseguro.example/a" },
+    { storefrontUrl: storefront },
+  );
+  assert.equal(linkModeInvalid, null);
+});
+
+test("envio, novo link e download usam o mesmo fallback de link", () => {
+  const fn = read("supabase/functions/_shared/digital_delivery.ts");
+  assert.equal((fn.match(/deliveryTarget\(/g) ?? []).length >= 4, true);
+  assert.match(
+    fn,
+    /resolveDeliveryTarget\(product, \{ storefrontUrl: storefrontLink\(catalog, productId\) \}\)/,
+  );
+  assert.match(fn, /storefrontProductUrl\(vitrineBaseUrl\(\), catalog\.slug, productId\)/);
+  assert.match(fn, /VITRINE_URL_FALLBACK = "https:\/\/vitrine\.meellcriativa\.workers\.dev"/);
+  assert.doesNotMatch(fn, /if \(!isExternalLink && !product\.digital_file_path\)/);
 });

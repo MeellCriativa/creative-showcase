@@ -91,6 +91,54 @@ export function isValidEmail(value: string): boolean {
   return /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local);
 }
 
+/** Aceita apenas URLs HTTPS absolutas (mesmo critério da constraint do banco). */
+export function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(String(value ?? "").trim());
+    return url.protocol === "https:" && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Link público do produto na vitrine, usado quando não há arquivo nem link externo. */
+export function storefrontProductUrl(
+  baseUrl: string,
+  slug: string,
+  productId: string,
+): string | null {
+  const base = String(baseUrl ?? "").replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(base) || !slug || !productId) return null;
+  return `${base}/c/${encodeURIComponent(slug)}?produto=${encodeURIComponent(productId)}`;
+}
+
+export type DeliveryTarget = { kind: "link"; url: string } | { kind: "file" } | null;
+
+/**
+ * Decide o que vai no e-mail do comprador.
+ * - modo "link": exige link externo HTTPS (configuração explícita do lojista);
+ * - modo "arquivo" com arquivo: mantém o download do Storage;
+ * - modo "arquivo" sem arquivo: usa o link externo se houver, senão a página
+ *   do produto na vitrine, para que o e-mail nunca deixe de chegar.
+ */
+export function resolveDeliveryTarget(
+  product: {
+    digital_delivery_mode?: string | null;
+    digital_external_url?: string | null;
+    digital_file_path?: string | null;
+  } | null,
+  options: { storefrontUrl: string | null },
+): DeliveryTarget {
+  const mode = String(product?.digital_delivery_mode ?? "");
+  const externalUrl = String(product?.digital_external_url ?? "").trim();
+  const filePath = String(product?.digital_file_path ?? "").trim();
+
+  if (mode === "link") return isHttpsUrl(externalUrl) ? { kind: "link", url: externalUrl } : null;
+  if (filePath) return { kind: "file" };
+  if (isHttpsUrl(externalUrl)) return { kind: "link", url: externalUrl };
+  return options.storefrontUrl ? { kind: "link", url: options.storefrontUrl } : null;
+}
+
 export function fileExtension(fileName: string): string {
   const name = String(fileName ?? "");
   const dot = name.lastIndexOf(".");
