@@ -38,6 +38,25 @@ test("checkout oferece CEP e frete automaticamente com produto físico e Melhor 
   assert.match(checkout, /<span className="font-bold">\{money\(cartGrandTotal\)\}<\/span>/);
 });
 
+test("CEP aparece sempre que Envio é escolhido e o endereço vem preenchido do CEP", () => {
+  const sheet = checkout.slice(checkout.indexOf("function CartSheet("));
+  // O CEP não pode ficar escondido só porque o carrinho tem produto digital.
+  assert.match(sheet, /\{deliveryMethod === "melhor_envio" && \(\s*<div className="space-y-2">/);
+  assert.doesNotMatch(sheet, /deliveryMethod === "melhor_envio" && hasPhysical && \(/);
+  assert.match(sheet, /autoComplete="postal-code"/);
+  assert.match(sheet, /\{hasPhysical && \(\s*<button/);
+  // ViaCEP preenche rua/bairro/cidade/UF; número e complemento seguem editáveis.
+  assert.match(sheet, /const \[addressFromCep, setAddressFromCep\] = useState\(false\)/);
+  assert.match(sheet, /setAddressFromCep\(true\)/);
+  assert.match(sheet, /readOnly=\{addressFromCep\}/);
+  assert.match(sheet, /onClick=\{\(\) => setAddressFromCep\(false\)\}/);
+  assert.match(sheet, /placeholder=\{`\$\{t\("catalog\.cart\.number"\)\} \*`\}/);
+  assert.match(sheet, /!address\.number\.trim\(\)/);
+  assert.equal((translations.match(/addressAutofilled:/g) ?? []).length, 3);
+  assert.equal((translations.match(/editAddress:/g) ?? []).length, 3);
+  assert.equal((translations.match(/numberRequired:/g) ?? []).length, 3);
+});
+
 test("backend aceita Melhor Envio sem a loja ter marcado a modalidade, mas exige conta conectada", () => {
   assert.match(orders, /deliveryMethod === "melhor_envio" &&/);
   assert.match(orders, /\.from\("melhor_envio_accounts"\)/);

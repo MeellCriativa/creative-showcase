@@ -2193,6 +2193,8 @@ function CartSheet({
     city: "",
     state: "",
   });
+  /** Endereço veio do CEP: rua/bairro/cidade/UF ficam só leitura até "Corrigir". */
+  const [addressFromCep, setAddressFromCep] = useState(false);
 
   const subtotal = total;
   const selected = quotes.find((q) => q.serviceId === selectedQuote) ?? null;
@@ -2364,7 +2366,10 @@ function CartSheet({
       if (!res.ok) return;
       const data = await res.json();
       if (data.erro) {
-        if (autoFill) toast.error(t("catalog.shippingErrors.cepNotFound"));
+        if (autoFill) {
+          setAddressFromCep(false);
+          toast.error(t("catalog.shippingErrors.cepNotFound"));
+        }
         return;
       }
       if (autoFill) {
@@ -2376,6 +2381,7 @@ function CartSheet({
           city: data.localidade ?? prev.city,
           state: data.uf ?? prev.state,
         }));
+        setAddressFromCep(true);
       }
     } catch {
       /* silencioso */
@@ -2393,6 +2399,7 @@ function CartSheet({
         void handleQuote(formatted);
       }
     } else {
+      setAddressFromCep(false);
       setAddress((prev) => ({
         ...prev,
         street: "",
@@ -2442,6 +2449,13 @@ function CartSheet({
     if (submitting) return;
     if (!customerName.trim()) {
       toast.error(t("catalog.errors.nameRequired"));
+      return;
+    }
+    if (
+      (deliveryMethod === "melhor_envio" || deliveryMethod === "local_delivery") &&
+      !address.number.trim()
+    ) {
+      toast.error(t("catalog.errors.numberRequired"));
       return;
     }
     if (hasDigital) {
@@ -2770,7 +2784,7 @@ function CartSheet({
                 <p className="text-xs text-muted-foreground">{t("catalog.cart.digitalNotice")}</p>
               )}
 
-              {deliveryMethod === "melhor_envio" && hasPhysical && (
+              {deliveryMethod === "melhor_envio" && (
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-foreground">
                     {t("catalog.cart.cepLabel")} <span className="text-destructive">*</span>
@@ -2780,25 +2794,28 @@ function CartSheet({
                     <input
                       type="text"
                       inputMode="numeric"
+                      autoComplete="postal-code"
                       value={cep}
                       onChange={(e) => handleCepChange(e.target.value)}
                       placeholder="00000-000"
                       maxLength={9}
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
-                    <button
-                      type="button"
-                      onClick={() => void handleQuote()}
-                      disabled={quoting}
-                      className="shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
-                      style={{ background: primary }}
-                    >
-                      {quoting ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        t("catalog.cart.calculateShipping")
-                      )}
-                    </button>
+                    {hasPhysical && (
+                      <button
+                        type="button"
+                        onClick={() => void handleQuote()}
+                        disabled={quoting}
+                        className="shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50"
+                        style={{ background: primary }}
+                      >
+                        {quoting ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          t("catalog.cart.calculateShipping")
+                        )}
+                      </button>
+                    )}
                   </div>
 
                   {quoteMsg && <p className="text-xs text-muted-foreground">{quoteMsg}</p>}
@@ -2842,26 +2859,48 @@ function CartSheet({
 
               {(deliveryMethod === "melhor_envio" || deliveryMethod === "local_delivery") && (
                 <div className="space-y-2 border-t border-dashed border-border pt-3">
-                  <p className="text-sm font-semibold text-foreground">
-                    {t("catalog.cart.addressTitle")}
-                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-foreground">
+                      {t("catalog.cart.addressTitle")}
+                    </p>
+                    {addressFromCep && (
+                      <button
+                        type="button"
+                        onClick={() => setAddressFromCep(false)}
+                        className="text-xs font-semibold underline underline-offset-2"
+                        style={{ color: primary }}
+                      >
+                        {t("catalog.cart.editAddress")}
+                      </button>
+                    )}
+                  </div>
+                  {addressFromCep && (
+                    <p className="text-xs text-muted-foreground">
+                      {t("catalog.cart.addressAutofilled")}
+                    </p>
+                  )}
                   <div>
                     <input
                       type="text"
+                      readOnly={addressFromCep}
                       value={address.street}
                       onChange={(e) => setAddress((p) => ({ ...p, street: e.target.value }))}
                       placeholder={t("catalog.cart.street")}
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className={`w-full rounded-xl border border-border px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)] ${
+                        addressFromCep ? "bg-muted text-muted-foreground" : "bg-card"
+                      }`}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={address.number}
-                      onChange={(e) => setAddress((p) => ({ ...p, number: e.target.value }))}
-                      placeholder={t("catalog.cart.number")}
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
-                    />
+                    <div>
+                      <input
+                        type="text"
+                        value={address.number}
+                        onChange={(e) => setAddress((p) => ({ ...p, number: e.target.value }))}
+                        placeholder={`${t("catalog.cart.number")} *`}
+                        className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      />
+                    </div>
                     <input
                       type="text"
                       value={address.complement}
@@ -2873,27 +2912,36 @@ function CartSheet({
                   <div>
                     <input
                       type="text"
+                      readOnly={addressFromCep}
                       value={address.district}
                       onChange={(e) => setAddress((p) => ({ ...p, district: e.target.value }))}
                       placeholder={t("catalog.cart.district")}
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className={`w-full rounded-xl border border-border px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)] ${
+                        addressFromCep ? "bg-muted text-muted-foreground" : "bg-card"
+                      }`}
                     />
                   </div>
                   <div className="grid grid-cols-[1fr_auto] gap-2">
                     <input
                       type="text"
+                      readOnly={addressFromCep}
                       value={address.city}
                       onChange={(e) => setAddress((p) => ({ ...p, city: e.target.value }))}
                       placeholder={t("catalog.cart.city")}
-                      className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className={`w-full rounded-xl border border-border px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)] ${
+                        addressFromCep ? "bg-muted text-muted-foreground" : "bg-card"
+                      }`}
                     />
                     <input
                       type="text"
+                      readOnly={addressFromCep}
                       value={address.state}
                       onChange={(e) => setAddress((p) => ({ ...p, state: e.target.value }))}
                       placeholder={t("catalog.cart.state")}
                       maxLength={2}
-                      className="w-16 rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
+                      className={`w-16 rounded-xl border border-border px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)] ${
+                        addressFromCep ? "bg-muted text-muted-foreground" : "bg-card"
+                      }`}
                     />
                   </div>
                 </div>
