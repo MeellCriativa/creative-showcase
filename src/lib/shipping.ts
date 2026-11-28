@@ -56,27 +56,27 @@ export async function quoteShipping(opts: {
   items: ShippingQuoteItem[];
 }): Promise<QuoteResult> {
   const headers = await authHeaders();
-  const res = await fetch(
-    `${META_FUNCTIONS_URL}/melhor-envio?action=quote`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        catalog_id: opts.catalogId,
-        destination_zip: opts.destinationZip,
-        items: opts.items.map((i) => ({
-          id: i.key ?? "x",
-          product_type: i.product_type ?? null,
-          weight_grams: i.weight_grams ?? null,
-          length_cm: i.length_cm ?? null,
-          width_cm: i.width_cm ?? null,
-          height_cm: i.height_cm ?? null,
-          quantity: i.quantity,
-          unit_price: i.unit_price ?? 0,
-        })),
-      }),
-    },
-  );
+  const res = await fetch(`${META_FUNCTIONS_URL}/melhor-envio?action=quote`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      catalog_id: opts.catalogId,
+      destination_zip: opts.destinationZip,
+      // Permite cobrar envio também em carrinho só de itens digitais quando
+      // a loja oferece Melhor Envio (material impresso, por exemplo).
+      include_digital: true,
+      items: opts.items.map((i) => ({
+        id: i.key ?? "x",
+        product_type: i.product_type ?? null,
+        weight_grams: i.weight_grams ?? null,
+        length_cm: i.length_cm ?? null,
+        width_cm: i.width_cm ?? null,
+        height_cm: i.height_cm ?? null,
+        quantity: i.quantity,
+        unit_price: i.unit_price ?? 0,
+      })),
+    }),
+  });
   const data = await res.json();
   if (data.error && data.error !== "not_connected" && data.error !== "no_origin") {
     return {

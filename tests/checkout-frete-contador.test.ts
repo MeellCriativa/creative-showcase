@@ -21,11 +21,8 @@ test("checkout oferece CEP e frete automaticamente com produto físico e Melhor 
   assert.match(checkout, /\["melhor_envio", \.\.\.configuredDeliveryMethods\]/);
 
   const sheet = checkout.slice(checkout.indexOf("function CartSheet("));
-  assert.match(
-    sheet,
-    /if \(hasMelhorEnvio && hasPhysical\) \{\s*setDeliveryMethod\("melhor_envio"\)/,
-  );
-  assert.match(sheet, /if \(hasMelhorEnvio && hasPhysical\) \{\s*void handleQuote\(formatted\)/);
+  assert.match(sheet, /if \(hasMelhorEnvio\) \{\s*setDeliveryMethod\("melhor_envio"\)/);
+  assert.match(sheet, /if \(hasMelhorEnvio\) \{\s*void handleQuote\(formatted\)/);
   assert.match(sheet, /async function handleQuote\(zip = cep\)/);
   assert.match(sheet, /quoteSignatureRef\.current = itemSignature/);
   assert.match(sheet, /void handleQuote\(\);/);
@@ -38,13 +35,29 @@ test("checkout oferece CEP e frete automaticamente com produto físico e Melhor 
   assert.match(checkout, /<span className="font-bold">\{money\(cartGrandTotal\)\}<\/span>/);
 });
 
+test("loja com Melhor Envio pode calcular frete e somar ao total mesmo em carrinho digital", () => {
+  const sheet = checkout.slice(checkout.indexOf("function CartSheet("));
+  assert.match(shippingClient, /include_digital: true/);
+  assert.match(
+    melhorEnvioFunction,
+    /includeDigital \|\| \(it\.product_type as string \| null\) !== "digital"/,
+  );
+  assert.match(melhorEnvioFunction, /isDigital \? 20 : 0/);
+  assert.match(melhorEnvioFunction, /isDigital \? 500 : 0/);
+  assert.doesNotMatch(sheet, /catalog\.shippingErrors\.digitalOnly/);
+  assert.doesNotMatch(sheet, /const physical = items\.filter/);
+  assert.match(orders, /digitalOnlyShipping/);
+  assert.match(orders, /includeDigital: digitalOnlyShipping/);
+});
+
 test("CEP aparece sempre que Envio é escolhido e o endereço vem preenchido do CEP", () => {
   const sheet = checkout.slice(checkout.indexOf("function CartSheet("));
   // O CEP não pode ficar escondido só porque o carrinho tem produto digital.
   assert.match(sheet, /\{deliveryMethod === "melhor_envio" && \(\s*<div className="space-y-2">/);
   assert.doesNotMatch(sheet, /deliveryMethod === "melhor_envio" && hasPhysical && \(/);
   assert.match(sheet, /autoComplete="postal-code"/);
-  assert.match(sheet, /\{hasPhysical && \(\s*<button/);
+  assert.match(sheet, /\{hasMelhorEnvio && \(\s*<button/);
+  assert.doesNotMatch(sheet, /catalog\.cart\.digitalNotice/);
   // ViaCEP preenche rua/bairro/cidade/UF; número e complemento seguem editáveis.
   assert.match(sheet, /const \[addressFromCep, setAddressFromCep\] = useState\(false\)/);
   assert.match(sheet, /setAddressFromCep\(true\)/);
@@ -83,7 +96,7 @@ test("Pix inicia contagem de 5 minutos e oferece novo pedido sem cancelar o pedi
   const sheet = checkout.slice(checkout.indexOf("function CartSheet("));
   assert.match(
     sheet,
-    /setPixExpiresAt\(new Date\(Date\.now\(\) \+ PAYMENT_WINDOW_MS\)\.toISOString\(\)\)/,
+    /const expiresAt = new Date\(Date\.now\(\) \+ PAYMENT_WINDOW_MS\)\.toISOString\(\)/,
   );
   assert.match(sheet, /const pixCountdown = countdownParts\(pixExpiresAt, pixNow\)/);
   assert.match(sheet, /catalog\.paymentCountdown\.running/);
@@ -93,6 +106,31 @@ test("Pix inicia contagem de 5 minutos e oferece novo pedido sem cancelar o pedi
   assert.match(sheet, /setPixExpiresAt\(null\)/);
   assert.match(sheet, /onClick=\{closePix\}/);
   assert.doesNotMatch(sheet, /cancelPixOrder|deletePixOrder/);
+});
+
+test("chave Pix fica centralizada e o lembrete persiste após fechar o pagamento", () => {
+  const sheet = checkout.slice(checkout.indexOf("function CartSheet("));
+  assert.match(checkout, /const PIX_REMINDER_KEY = "vc_pix_reminder"/);
+  assert.match(checkout, /function PixReminderCard/);
+  assert.match(checkout, /readPixReminder\(\)/);
+  assert.match(checkout, /savePixReminder\(next\)/);
+  assert.match(checkout, /getPixOrderStatus\(reminder\.orderId, reminder\.token\)/);
+  assert.match(sheet, /onPixReminder\(\{/);
+  assert.match(sheet, /keyValue: result\.pix\.keyValue \?\? null/);
+  assert.match(sheet, /text-center shadow-sm/);
+  assert.match(
+    sheet,
+    /pixKeyCopied \? <Check className="size-4" \/> : <Copy className="size-4" \/>/,
+  );
+  // Fechar a janela não apaga o lembrete: ele continua na vitrine.
+  const closePix = sheet.slice(
+    sheet.indexOf("function closePix()"),
+    sheet.indexOf("async function handleDeclarePix()"),
+  );
+  assert.doesNotMatch(closePix, /onPixReminder\(null\)/);
+  assert.match(closePix, /onClose\(\)/);
+  assert.equal((translations.match(/reminderTitle:/g) ?? []).length, 3);
+  assert.equal((translations.match(/reminderHint:/g) ?? []).length, 3);
 });
 
 test("Mercado Pago persiste o prazo e mostra o contador no retorno", () => {

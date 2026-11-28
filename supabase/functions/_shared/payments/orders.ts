@@ -76,6 +76,7 @@ async function reQuoteShipping(input: {
   catalogId: string;
   destinationZip: string;
   items: QuoteItem[];
+  includeDigital?: boolean;
 }): Promise<{ ok: true; quotes: Array<{ serviceId: string; name: string; price: number; delivery_min: number | null; delivery_text: string | null }> } | { ok: false; error: string }> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -96,6 +97,7 @@ async function reQuoteShipping(input: {
         catalog_id: input.catalogId,
         destination_zip: input.destinationZip,
         items: input.items,
+        include_digital: input.includeDigital === true,
       }),
       signal: controller.signal,
     });
@@ -223,8 +225,12 @@ export async function createSecureOrder(input: SecureOrderInput): Promise<Secure
     }
     if (deliveryMethod === "melhor_envio") {
       const physical = priced.items.filter((item) => item.product_type !== "digital");
+      // Lojas que marcaram "Envio" podem cobrar frete mesmo em carrinho só de
+      // itens digitais (material impresso, por exemplo). O volume padrão é
+      // aplicado pela Edge Function de frete.
+      const digitalOnlyShipping = physical.length === 0 && deliveryMethods.includes("melhor_envio");
       const zip = digits(input.shippingZip).slice(0, 8);
-      if (physical.length > 0) {
+      if (physical.length > 0 || digitalOnlyShipping) {
         if (zip.length !== 8) {
           return { ok: false, status: 400, code: "invalid_zip", error: "Informe um CEP válido para o envio." };
         }
@@ -235,6 +241,7 @@ export async function createSecureOrder(input: SecureOrderInput): Promise<Secure
         const requote = await reQuoteShipping({
           catalogId: catalog.id,
           destinationZip: zip,
+          includeDigital: digitalOnlyShipping,
           items: priced.items.map((item) => ({
             product_type: item.product_type,
             weight_grams: item.weight_grams,

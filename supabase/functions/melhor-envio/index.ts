@@ -329,6 +329,12 @@ async function quoteAction(ctx: Ctx) {
   const catalogId = (b.catalog_id as string) || ctx.url.searchParams.get("catalog_id") || "";
   const destinationZip = formatCep((b.destination_zip as string) || "");
   const items = (b.items as Array<Record<string, unknown>>) || [];
+  /**
+   * Lojas que vendem só produtos digitais também podem oferecer envio físico.
+   * Nesse caso o checkout envia `include_digital: true` e usamos dimensões
+   * padrão para os itens que não têm peso/medidas cadastrados.
+   */
+  const includeDigital = b.include_digital === true;
 
   if (!catalogId) throw new HttpError(400, "catalog_id é obrigatório.");
 
@@ -391,17 +397,24 @@ async function quoteAction(ctx: Ctx) {
     return jsonRes({ success: false, error: "Informe um CEP de destino válido." });
   }
 
+  // Lojas que vendem apenas itens digitais também podem oferecer envio físico
+  // (material impresso, por exemplo). Nesse caso usamos um volume padrão para
+  // os itens sem peso/medidas cadastrados; produtos físicos continuam exigindo
+  // as dimensões reais.
   const products = items
-    .filter((it) => (it.product_type as string | null) !== "digital")
-    .map((it, idx) => ({
-      id: String(it.id ?? idx),
-      width: Number(it.width_cm ?? 0),
-      height: Number(it.height_cm ?? 0),
-      length: Number(it.length_cm ?? 0),
-      weight: Number(it.weight_grams ?? 0) / 1000,
-      insurance_value: Number(it.unit_price ?? 0) * Number(it.quantity ?? 1),
-      quantity: Number(it.quantity ?? 1),
-    }));
+    .filter((it) => includeDigital || (it.product_type as string | null) !== "digital")
+    .map((it, idx) => {
+      const isDigital = (it.product_type as string | null) === "digital";
+      return {
+        id: String(it.id ?? idx),
+        width: Number(it.width_cm ?? (isDigital ? 20 : 0)),
+        height: Number(it.height_cm ?? (isDigital ? 20 : 0)),
+        length: Number(it.length_cm ?? (isDigital ? 20 : 0)),
+        weight: Number(it.weight_grams ?? (isDigital ? 500 : 0)) / 1000,
+        insurance_value: Number(it.unit_price ?? 0) * Number(it.quantity ?? 1),
+        quantity: Number(it.quantity ?? 1),
+      };
+    });
 
   if (products.length === 0) {
     return jsonRes({

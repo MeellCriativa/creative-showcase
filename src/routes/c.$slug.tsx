@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, LayoutGrid, Loader2, Minus, Plus, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  Copy,
+  LayoutGrid,
+  Loader2,
+  Minus,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { supabase, getSupabaseError } from "@/integrations/supabase/client";
@@ -235,6 +245,190 @@ function clearPendingPayment() {
   }
 }
 
+/** Lembrete do Pix após fechar a janela de pagamento. */
+const PIX_REMINDER_KEY = "vc_pix_reminder";
+
+type PixReminder = {
+  orderId: string;
+  token: string;
+  keyValue: string | null;
+  keyType: string | null;
+  holderName: string | null;
+  total: number;
+  expiresAt: string;
+  declared?: boolean;
+  at: number;
+};
+
+function readPixReminder(): PixReminder | null {
+  try {
+    const raw = sessionStorage.getItem(PIX_REMINDER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PixReminder;
+    if (!parsed?.orderId || !parsed?.token || !parsed?.expiresAt) return null;
+    if (Date.now() - (parsed.at ?? 0) > 24 * 60 * 60 * 1000) {
+      sessionStorage.removeItem(PIX_REMINDER_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function savePixReminder(reminder: PixReminder | null) {
+  try {
+    if (reminder) sessionStorage.setItem(PIX_REMINDER_KEY, JSON.stringify(reminder));
+    else sessionStorage.removeItem(PIX_REMINDER_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function copyText(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    document.execCommand("copy");
+    field.remove();
+  }
+}
+
+function PixReminderCard({
+  reminder,
+  onDismiss,
+  onUpdate,
+  onNewOrder,
+}: {
+  reminder: PixReminder;
+  onDismiss: () => void;
+  onUpdate: (patch: Partial<PixReminder>) => void;
+  onNewOrder: () => void;
+}) {
+  const { t } = useI18n();
+  const [now, setNow] = useState(() => Date.now());
+  const [copied, setCopied] = useState(false);
+  const countdown = countdownParts(reminder.expiresAt, now);
+
+  useEffect(() => {
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (reminder.declared) return;
+    let active = true;
+    const check = async () => {
+      const status = await getPixOrderStatus(reminder.orderId, reminder.token);
+      if (!active || !status.success) return;
+      if (status.payment_status === "approved") onDismiss();
+      else if (status.pix_declared_at) onUpdate({ declared: true });
+    };
+    void check();
+    const id = window.setInterval(() => void check(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [reminder.orderId, reminder.token, reminder.declared, onDismiss, onUpdate]);
+
+  async function copyKey() {
+    if (!reminder.keyValue) return;
+    await copyText(reminder.keyValue);
+    setCopied(true);
+    toast.success(t("catalog.pix.copied"));
+    window.setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <aside
+      className="fixed bottom-20 left-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 rounded-2xl border border-primary/30 bg-card/95 p-3 shadow-2xl backdrop-blur sm:bottom-6 sm:left-6 sm:translate-x-0"
+      aria-label={t("catalog.pix.reminderTitle")}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-foreground">
+            <span aria-hidden>⚡</span> {t("catalog.pix.reminderTitle")}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t("catalog.pix.reminderHint")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label={t("common.close")}
+          className="grid size-7 shrink-0 place-items-center rounded-full border border-border text-muted-foreground"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      <div
+        className={`mt-2 flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
+          countdown.expired
+            ? "bg-amber-500/15 text-amber-800"
+            : "bg-[var(--shop-accent)] text-foreground"
+        }`}
+        role="status"
+        aria-live="polite"
+      >
+        <span className="min-w-0">
+          {reminder.declared
+            ? t("catalog.pix.declared")
+            : countdown.expired
+              ? t("catalog.paymentCountdown.expired")
+              : t("catalog.paymentCountdown.running", {
+                  time: formatCountdown(countdown.total),
+                })}
+        </span>
+        {!reminder.declared && !countdown.expired && (
+          <span className="shrink-0 font-mono text-sm font-bold tabular-nums">
+            {formatCountdown(countdown.total)}
+          </span>
+        )}
+      </div>
+
+      {reminder.keyValue && (
+        <div className="mt-2 rounded-xl border border-border bg-background/70 p-2.5 text-center">
+          <p className="text-[11px] font-semibold text-muted-foreground">
+            {t("catalog.pix.keyTitle")} ({reminder.keyType})
+          </p>
+          <p className="mt-0.5 break-all font-mono text-xs font-bold text-foreground">
+            {reminder.keyValue}
+          </p>
+          <button
+            type="button"
+            onClick={() => void copyKey()}
+            className={`mt-2 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition-all active:scale-[0.98] ${
+              copied ? "bg-emerald-500 text-white" : "text-white shadow-md hover:brightness-110"
+            }`}
+            style={copied ? undefined : { background: "var(--shop-primary)" }}
+          >
+            {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {copied ? t("catalog.pix.copied") : t("catalog.pix.copyKey")}
+          </button>
+        </div>
+      )}
+
+      {countdown.expired && (
+        <button
+          type="button"
+          onClick={onNewOrder}
+          className="mt-2 w-full rounded-xl border border-[var(--shop-primary)] py-2 text-xs font-bold text-[var(--shop-primary)]"
+        >
+          {t("catalog.paymentCountdown.newOrder")}
+        </button>
+      )}
+    </aside>
+  );
+}
+
 function PublicCatalog() {
   const { slug } = Route.useParams();
   const { user } = useAuth();
@@ -261,6 +455,24 @@ function PublicCatalog() {
   /** Contador de 5 minutos do Mercado Pago, persistido no sessionStorage. */
   const [paymentDeadline, setPaymentDeadline] = useState<string | null>(null);
   const [paymentNow, setPaymentNow] = useState(() => Date.now());
+  /** Lembrete flutuante do Pix: continua após fechar a janela de pagamento. */
+  const [pixReminder, setPixReminder] = useState<PixReminder | null>(() => readPixReminder());
+  const updatePixReminder = useCallback((reminder: PixReminder | null) => {
+    setPixReminder((current) => {
+      const next = reminder ? ({ ...current, ...reminder } as PixReminder) : null;
+      savePixReminder(next);
+      return next;
+    });
+  }, []);
+  const dismissPixReminder = useCallback(() => updatePixReminder(null), [updatePixReminder]);
+  const patchPixReminder = useCallback((patch: Partial<PixReminder>) => {
+    setPixReminder((current) => {
+      if (!current) return current;
+      const next = { ...current, ...patch };
+      savePixReminder(next);
+      return next;
+    });
+  }, []);
   /** Link direto recebido pelo comprador (produto e, opcionalmente, valor). */
   const [deepLink, setDeepLink] = useState<{
     productId: string;
@@ -1071,20 +1283,33 @@ function PublicCatalog() {
     ? PROVIDER_LABELS[paymentReturn.provider]
     : t("catalog.paymentReturn.providerFallback");
 
+  const pixReminderCard = pixReminder ? (
+    <PixReminderCard
+      reminder={pixReminder}
+      onDismiss={dismissPixReminder}
+      onUpdate={patchPixReminder}
+      onNewOrder={() => setCartOpen(true)}
+    />
+  ) : null;
+
   if (!entered) {
     return (
-      <WelcomePage
-        catalog={loadedCatalog}
-        theme={theme}
-        logoSizeClass={logoSizeClass}
-        logoJustify={logoJustify}
-        onEnter={() => setEntered(true)}
-      />
+      <>
+        <WelcomePage
+          catalog={loadedCatalog}
+          theme={theme}
+          logoSizeClass={logoSizeClass}
+          logoJustify={logoJustify}
+          onEnter={() => setEntered(true)}
+        />
+        {pixReminderCard}
+      </>
     );
   }
 
   return (
     <div className="app-shell pb-28" style={{ ...theme, backgroundColor: bgColor }}>
+      {pixReminderCard}
       {/* Seletor de idioma: barra fixa no topo direito, sobre a capa e sem
           bloquear cliques (o wrapper não captura eventos). */}
       <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-end px-4 pt-3">
@@ -1459,6 +1684,7 @@ function PublicCatalog() {
           onChangeQty={changeQty}
           onRemove={removeItem}
           onFinish={finishOrder}
+          onPixReminder={updatePixReminder}
         />
       )}
 
@@ -2118,6 +2344,7 @@ function CartSheet({
   onRemove,
   onShippingChange,
   onFinish,
+  onPixReminder,
 }: {
   catalogId: string;
   items: CartItem[];
@@ -2152,6 +2379,7 @@ function CartSheet({
     },
     payment: { provider: PaymentProviderKey | "pix_manual" } | null,
   ) => Promise<boolean | PixOrderResult>;
+  onPixReminder: (reminder: PixReminder | null) => void;
 }) {
   const { t } = useI18n();
   const [customerName, setCustomerName] = useState("");
@@ -2184,6 +2412,7 @@ function CartSheet({
   /** Contador de 5 minutos do Pix (ISO absoluto, como no retorno do MP). */
   const [pixExpiresAt, setPixExpiresAt] = useState<string | null>(null);
   const [pixNow, setPixNow] = useState(() => Date.now());
+  const [pixKeyCopied, setPixKeyCopied] = useState(false);
   const quoteSignatureRef = useRef("");
   const [address, setAddress] = useState<CustomerAddress>({
     street: "",
@@ -2205,7 +2434,6 @@ function CartSheet({
   );
 
   const hasMelhorEnvio = deliveryMethods.includes("melhor_envio");
-  const hasPhysical = items.some((i) => i.product_type !== "digital");
   const hasDigital = items.some((i) => i.product_type === "digital");
   const pixCountdown = countdownParts(pixExpiresAt, pixNow);
   const itemSignature = items
@@ -2234,13 +2462,14 @@ function CartSheet({
 
   useEffect(() => {
     if (deliveryMethod) return;
-    // Produto físico com frete disponível: CEP e frete aparecem na hora.
-    if (hasMelhorEnvio && hasPhysical) {
+    // Com Melhor Envio disponível, CEP e frete aparecem na hora — inclusive
+    // em lojas que vendem só itens digitais e oferecem envio de material.
+    if (hasMelhorEnvio) {
       setDeliveryMethod("melhor_envio");
       return;
     }
     if (deliveryMethods.length === 1) setDeliveryMethod(deliveryMethods[0]!);
-  }, [deliveryMethods, deliveryMethod, hasMelhorEnvio, hasPhysical]);
+  }, [deliveryMethods, deliveryMethod, hasMelhorEnvio]);
 
   useEffect(() => {
     onShippingChange(shippingCost);
@@ -2258,13 +2487,13 @@ function CartSheet({
 
   // Alterou quantidade/peso/dimensões? Recalcula o frete com o mesmo CEP.
   useEffect(() => {
-    if (!hasMelhorEnvio || !hasPhysical || !isValidCep(cep) || !itemSignature) return;
+    if (!hasMelhorEnvio || !isValidCep(cep) || !itemSignature) return;
     if (quoteSignatureRef.current === itemSignature) return;
     quoteSignatureRef.current = itemSignature;
     void handleQuote();
     // handleQuote lê apenas o estado acima; incluí-lo recalcula a cada render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cep, hasMelhorEnvio, hasPhysical, itemSignature]);
+  }, [cep, hasMelhorEnvio, itemSignature]);
 
   useEffect(() => {
     if (!pixExpiresAt || pixApproved || pixDeclared) return;
@@ -2278,11 +2507,9 @@ function CartSheet({
       toast.error(t("catalog.shippingErrors.invalidCep"));
       return;
     }
-    const physical = items.filter((i) => i.product_type !== "digital");
-    if (physical.length === 0) {
+    if (items.length === 0) {
       setQuotes([]);
       setSelectedQuote("");
-      setQuoteMsg(t("catalog.shippingErrors.digitalOnly"));
       return;
     }
     quoteSignatureRef.current = itemSignature;
@@ -2393,9 +2620,9 @@ function CartSheet({
     setCep(formatted);
     if (formatted.replace(/\D/g, "").length === 8) {
       void lookupCep(true, formatted);
-      // Não depende da modalidade já selecionada: digitou CEP com produto
-      // físico e frete disponível, cota na hora (usa o valor recém-digitado).
-      if (hasMelhorEnvio && hasPhysical) {
+      // Não depende da modalidade já selecionada: digitou CEP com frete
+      // disponível, cota na hora (usa o valor recém-digitado).
+      if (hasMelhorEnvio) {
         void handleQuote(formatted);
       }
     } else {
@@ -2434,8 +2661,22 @@ function CartSheet({
       );
       if (result && typeof result === "object" && result.pix) {
         setQrZoom(false);
-        setPixExpiresAt(new Date(Date.now() + PAYMENT_WINDOW_MS).toISOString());
+        setPixKeyCopied(false);
+        const expiresAt = new Date(Date.now() + PAYMENT_WINDOW_MS).toISOString();
+        setPixExpiresAt(expiresAt);
         setPixOrder(result);
+        // O lembrete fica na vitrine mesmo se a janela de pagamento for fechada.
+        onPixReminder({
+          orderId: result.order_id,
+          token: result.checkout_token,
+          keyValue: result.pix.keyValue ?? null,
+          keyType: result.pix.keyType ?? null,
+          holderName: result.pix.holderName ?? null,
+          total: result.total,
+          expiresAt,
+          declared: false,
+          at: Date.now(),
+        });
       } else if (result) {
         onClose();
       }
@@ -2470,17 +2711,6 @@ function CartSheet({
       }
     }
     if (hasMelhorEnvio && deliveryMethod === "melhor_envio") {
-      const physical = items.filter((i) => i.product_type !== "digital");
-      if (physical.length === 0) {
-        void submit({
-          deliveryMethod,
-          ...(cep ? { shippingZip: cep } : {}),
-          address,
-          quote: null,
-          shippingCost: 0,
-        });
-        return;
-      }
       if (!isValidCep(cep)) {
         toast.error(t("catalog.shippingErrors.cepRequired"));
         return;
@@ -2603,22 +2833,29 @@ function CartSheet({
               )}
 
               {pixOrder.pix.keyValue && (
-                <div className="space-y-2 rounded-2xl border border-border p-4">
-                  <p className="text-sm font-semibold text-foreground">
+                <div className="rounded-2xl border border-[var(--shop-primary)]/30 bg-[var(--shop-accent)]/40 p-5 text-center shadow-sm">
+                  <p className="text-sm font-bold text-foreground">
                     {t("catalog.pix.keyTitle")} ({pixOrder.pix.keyType})
                   </p>
-                  <p className="break-all font-mono text-sm text-foreground">
+                  <p className="mt-1 break-all font-mono text-base font-bold text-foreground">
                     {pixOrder.pix.keyValue}
                   </p>
                   <button
                     type="button"
                     onClick={() => {
-                      void navigator.clipboard?.writeText(String(pixOrder.pix.keyValue));
-                      toast.success(t("catalog.pix.copied"));
+                      void copyText(String(pixOrder.pix.keyValue)).then(() => {
+                        setPixKeyCopied(true);
+                        toast.success(t("catalog.pix.copied"));
+                        window.setTimeout(() => setPixKeyCopied(false), 2000);
+                      });
                     }}
-                    className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground"
+                    className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-bold text-white shadow-md transition-all active:scale-[0.98] ${
+                      pixKeyCopied ? "bg-emerald-500" : "hover:brightness-110"
+                    }`}
+                    style={pixKeyCopied ? undefined : { background: "var(--shop-primary)" }}
                   >
-                    {t("catalog.pix.copyKey")}
+                    {pixKeyCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                    {pixKeyCopied ? t("catalog.pix.copied") : t("catalog.pix.copyKey")}
                   </button>
                 </div>
               )}
@@ -2780,10 +3017,6 @@ function CartSheet({
                 </div>
               )}
 
-              {deliveryMethod === "melhor_envio" && !hasPhysical && (
-                <p className="text-xs text-muted-foreground">{t("catalog.cart.digitalNotice")}</p>
-              )}
-
               {deliveryMethod === "melhor_envio" && (
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-foreground">
@@ -2801,7 +3034,7 @@ function CartSheet({
                       maxLength={9}
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--shop-primary)]"
                     />
-                    {hasPhysical && (
+                    {hasMelhorEnvio && (
                       <button
                         type="button"
                         onClick={() => void handleQuote()}
