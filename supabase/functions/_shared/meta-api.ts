@@ -1,13 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sanitizeForMeta, truncateForMeta } from "./meta-text.ts";
 
 const META_API_VERSION = Deno.env.get("META_CATALOG_API_VERSION") || "v23.0";
 const GRAPH_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
 export function getSupabaseAdmin() {
-  return createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
+  return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 }
 
 export async function verifyUser(req: Request) {
@@ -40,10 +38,7 @@ export async function getBusinessCatalogs(accessToken: string) {
   return data.data ?? [];
 }
 
-export async function getCatalogsForBusiness(
-  businessId: string,
-  accessToken: string,
-) {
+export async function getCatalogsForBusiness(businessId: string, accessToken: string) {
   const url = `${GRAPH_URL}/${businessId}/owned_product_catalogs?fields=id,name&access_token=${accessToken}`;
   const res = await fetch(url);
   const data = await res.json();
@@ -77,20 +72,21 @@ export function mapProductToMeta(
   storeName: string,
 ): MetaProductItem {
   const effectivePrice =
-    product.sale_price != null && product.sale_price > 0
-      ? product.sale_price
-      : product.price;
+    product.sale_price != null && product.sale_price > 0 ? product.sale_price : product.price;
+
+  const title = sanitizeForMeta(product.name || "Produto");
+  const description = sanitizeForMeta(product.description || product.name || "");
 
   return {
     id: `vc-${product.id}`,
-    title: (product.name || "Produto").substring(0, 200),
-    description: (product.description || product.name || "").substring(0, 9999),
+    title: truncateForMeta(title || "Produto", 200),
+    description: truncateForMeta(description, 9999),
     availability: product.available ? "in stock" : "out of stock",
     condition: "new",
     price: `${Number(effectivePrice).toFixed(2)} BRL`,
     link: catalogUrl,
     image_link: product.images?.[0] || "",
-    brand: storeName || "Vitrine Criativa",
+    brand: truncateForMeta(sanitizeForMeta(storeName) || "Vitrine Criativa", 200),
   };
 }
 
@@ -103,10 +99,12 @@ export async function sendBatch(
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ item_type: "PRODUCT_ITEM", requests }),
+    // Enviar bytes UTF-8 explicitamente: alguns runtimes codificam strings
+    // como Latin-1 e a Meta grava "CartÃ£o" em vez de "Cartão".
+    body: new TextEncoder().encode(JSON.stringify({ item_type: "PRODUCT_ITEM", requests })),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);

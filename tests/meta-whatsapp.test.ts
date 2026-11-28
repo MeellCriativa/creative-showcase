@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { sanitizeForMeta, truncateForMeta } from "../supabase/functions/_shared/meta-text.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (path: string) => readFileSync(`${root}${path}`, "utf8");
@@ -64,6 +65,33 @@ test("registro pendente da Meta preenche colunas obrigatórias", () => {
   assert.match(start, /token_expires_at: new Date\(0\)\.toISOString\(\)/);
   assert.match(start, /business_id: ""/);
   assert.match(start, /catalog_id_meta: ""/);
+});
+
+test("texto enviado à Meta remove emoji e símbolos quebrados no WhatsApp", () => {
+  assert.equal(sanitizeForMeta("Kit Cute Vibe 🩷 pré venda"), "Kit Cute Vibe pré venda");
+  assert.equal(
+    sanitizeForMeta("Um mimo de natal doce 🩷\nEm pdf pronto pra imprimir"),
+    "Um mimo de natal doce\nEm pdf pronto pra imprimir",
+  );
+  assert.equal(sanitizeForMeta("• Agenda A5\n• Agenda A6"), "- Agenda A5\n- Agenda A6");
+  assert.equal(sanitizeForMeta("Ação\u200B doce\u00AD"), "Ação doce");
+  assert.equal(
+    sanitizeForMeta("Cartão pra bombom — edição única"),
+    "Cartão pra bombom — edição única",
+  );
+});
+
+test("truncagem da Meta não quebra caracteres unicode ao meio", () => {
+  assert.equal(truncateForMeta("Cartão pra bombom", 6), "Cartão");
+  assert.equal(truncateForMeta("🩷abc", 1), "🩷");
+  assert.equal(truncateForMeta("abc", 10), "abc");
+});
+
+test("envio em lote usa bytes UTF-8 explícitos", () => {
+  const shared = read("supabase/functions/_shared/meta-api.ts");
+  assert.match(shared, /application\/json; charset=utf-8/);
+  assert.match(shared, /new TextEncoder\(\)\.encode\(/);
+  assert.match(shared, /sanitizeForMeta\(/);
 });
 
 test("funções Meta aceitam os nomes de secrets configurados", () => {
