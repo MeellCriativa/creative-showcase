@@ -79,6 +79,9 @@ export const customize = defineNamespace({
       eyedropper: "Conta-gotas",
       eyedropperHint: "Toque na cor que deseja usar",
       eyedropperCancel: "Cancelar",
+      eyedropperCameraHint: "Aponte a câmera para a cor e toque para capturar",
+      eyedropperFallbackHint: "Câmera indisponível — toque na cor da tela",
+      eyedropperUseScreen: "Escolher da tela",
     },
     fonts: {
       modern: "Moderna",
@@ -234,6 +237,9 @@ export const customize = defineNamespace({
       eyedropper: "Eyedropper",
       eyedropperHint: "Tap the color you want to use",
       eyedropperCancel: "Cancel",
+      eyedropperCameraHint: "Point the camera at the color and tap to capture",
+      eyedropperFallbackHint: "Camera unavailable — tap a color on the screen",
+      eyedropperUseScreen: "Choose from screen",
     },
     fonts: {
       modern: "Modern",
@@ -390,6 +396,9 @@ export const customize = defineNamespace({
       eyedropper: "Cuentagotas",
       eyedropperHint: "Toca el color que quieres usar",
       eyedropperCancel: "Cancelar",
+      eyedropperCameraHint: "Apunta la cámara al color y toca para capturarlo",
+      eyedropperFallbackHint: "Cámara no disponible — toca un color de la pantalla",
+      eyedropperUseScreen: "Elegir de la pantalla",
     },
     fonts: {
       modern: "Moderna",
