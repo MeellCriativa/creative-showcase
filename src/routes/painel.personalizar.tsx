@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ImageUploader } from "@/components/ImageUploader";
 import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { CartIcon, CART_STYLES } from "@/components/CartIcons";
+import { EyedropperColorInput } from "@/components/EyedropperColorInput";
 import { useI18n } from "@/i18n";
 import { useAuth } from "@/hooks/useAuth";
 import { useMyCatalog } from "@/hooks/useCatalog";
@@ -515,32 +516,29 @@ function PersonalizarPage() {
             );
           })}
         </div>
-        <div className="mt-3 flex items-center gap-3 text-sm text-muted-foreground">
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
           <label className="flex items-center gap-2">
             {t("customize.colors.primary")}
-            <input
-              type="color"
+            <EyedropperColorInput
               value={primary}
-              onChange={(e) => setPrimary(e.target.value)}
-              className="size-8 rounded-lg border border-border bg-card"
+              onChange={setPrimary}
+              label={t("customize.colors.primary")}
             />
           </label>
           <label className="flex items-center gap-2">
             {t("customize.colors.accent")}
-            <input
-              type="color"
+            <EyedropperColorInput
               value={accent}
-              onChange={(e) => setAccent(e.target.value)}
-              className="size-8 rounded-lg border border-border bg-card"
+              onChange={setAccent}
+              label={t("customize.colors.accent")}
             />
           </label>
           <label className="flex items-center gap-2">
             {t("customize.colors.background")}
-            <input
-              type="color"
+            <EyedropperColorInput
               value={backgroundColor}
-              onChange={(e) => setBackgroundColor(e.target.value)}
-              className="size-8 rounded-lg border border-border bg-card"
+              onChange={setBackgroundColor}
+              label={t("customize.colors.background")}
             />
           </label>
         </div>
@@ -694,11 +692,11 @@ function PersonalizarPage() {
             </button>
           ))}
           <label className="flex flex-col items-center gap-1">
-            <input
-              type="color"
+            <EyedropperColorInput
               value={whatsappButtonColor}
-              onChange={(e) => setWhatsappButtonColor(e.target.value)}
-              className="size-7 rounded-full border border-border bg-card cursor-pointer"
+              onChange={setWhatsappButtonColor}
+              label={t("customize.colors.custom")}
+              round
             />
             <span className="text-[10px] font-medium text-muted-foreground">
               {t("customize.colors.custom")}

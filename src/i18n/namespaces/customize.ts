@@ -76,6 +76,9 @@ export const customize = defineNamespace({
       background: "Fundo",
       darkGreen: "Verde escuro",
       custom: "Custom",
+      eyedropper: "Conta-gotas",
+      eyedropperHint: "Toque na cor que deseja usar",
+      eyedropperCancel: "Cancelar",
     },
     fonts: {
       modern: "Moderna",
@@ -228,6 +231,9 @@ export const customize = defineNamespace({
       background: "Background",
       darkGreen: "Dark green",
       custom: "Custom",
+      eyedropper: "Eyedropper",
+      eyedropperHint: "Tap the color you want to use",
+      eyedropperCancel: "Cancel",
     },
     fonts: {
       modern: "Modern",
@@ -381,6 +387,9 @@ export const customize = defineNamespace({
       background: "Fondo",
       darkGreen: "Verde oscuro",
       custom: "Personalizado",
+      eyedropper: "Cuentagotas",
+      eyedropperHint: "Toca el color que quieres usar",
+      eyedropperCancel: "Cancelar",
     },
     fonts: {
       modern: "Moderna",
